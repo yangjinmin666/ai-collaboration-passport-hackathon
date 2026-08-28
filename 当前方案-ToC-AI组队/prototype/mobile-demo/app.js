@@ -13,7 +13,6 @@ const people = [
     status: "未组队",
     proximity: "很近",
     signal: 3,
-    fit: 92,
     glyph: "glyph-orbit",
     evidence: "做过 3 个 ESP32 端侧项目",
     reason: "你的项目缺硬件闭环；林澈能把模型能力落到真实设备。",
@@ -28,7 +27,6 @@ const people = [
     status: "可交流",
     proximity: "附近",
     signal: 2,
-    fit: 84,
     glyph: "glyph-grid",
     evidence: "两次黑客松最佳设计奖",
     reason: "她能补齐产品表达和现场演示，让技术原型更容易被理解。",
@@ -43,7 +41,6 @@ const people = [
     status: "团队招人",
     proximity: "同场",
     signal: 1,
-    fit: 76,
     glyph: "glyph-cross",
     evidence: "从 0 到 1 做过开发者社区",
     reason: "你们对开发者协作有共同兴趣，适合交换用户验证方法。",
@@ -64,6 +61,7 @@ const state = {
   collaborationStatus: "TEAM_RECRUITING",
   connectedSources: ["GitHub"],
   previewMode: "mobile",
+  draftVersion: 0,
   tab: "discover",
   selectedId: "lin",
   visible: true,
@@ -146,6 +144,16 @@ function collaborationStatusLabel() {
   return labels[state.collaborationStatus] || labels.TEAM_RECRUITING;
 }
 
+function collaborationNeedLabel() {
+  const labels = {
+    SEEKING_TEAM: "寻找可加入的项目",
+    IDEA_RECRUITING: "共同发起者 × 1",
+    TEAM_RECRUITING: "硬件构建者 × 1",
+    TEAMED_OPEN: "可支援 Agent / API",
+  };
+  return labels[state.collaborationStatus] || labels.TEAM_RECRUITING;
+}
+
 function renderOnboarding() {
   const steps = [renderOnboardingStatus, renderOnboardingSources, renderOnboardingDraft, renderOnboardingPreview];
   return `<div class="onboarding-shell view-c">
@@ -205,14 +213,25 @@ function renderOnboardingSources() {
 }
 
 function renderOnboardingDraft() {
+  const draft = state.draftVersion % 2 === 0
+    ? {
+        role: "AI / 后端构建者",
+        summary: "Agent 将现场对话转成可执行决策",
+        vibe: "先跑通真实闭环，再把系统做漂亮；喜欢和能快速落地的人一起工作。",
+      }
+    : {
+        role: "AI 产品 / Agent 构建者",
+        summary: "把离线讨论压缩成可检索、可追踪的团队行动",
+        vibe: "擅长把模糊问题做成能演示的产品；现在想认识愿意一起打磨硬件闭环的人。",
+      };
   return `<div class="onboarding-step">
     ${onboardingGuide("AI DRAFT / REVIEW", "这是草稿，不是 AI 对你的定义。", "我们把证据、Now Building 和当前需求拼成协作护照；你决定哪些内容对外出现。")}
     <section class="draft-passport">
-      <div class="draft-head"><span class="draft-avatar">ZW</span><div><h3>周闻</h3><p>AI / 后端构建者</p></div><button data-action="draft-refresh">重组</button></div>
-      <div class="draft-section"><span>NOW BUILDING</span><strong>离线会议洞察终端</strong><small>Agent 将现场对话转成可执行决策</small></div>
+      <div class="draft-head"><span class="draft-avatar">ZW</span><div><h3>周闻</h3><p>${draft.role}</p></div><button data-action="draft-refresh">AI 重组</button></div>
+      <div class="draft-section"><span>NOW BUILDING</span><strong>离线会议洞察终端</strong><small>${draft.summary}</small></div>
       <div class="draft-section"><span>能力证据</span><div class="draft-tags"><b>Agent</b><b>API</b><b>端侧 AI</b><b>GitHub 已连接</b></div></div>
-      <div class="draft-section"><span>当前协作状态</span><strong>${collaborationStatusLabel()}</strong><small>正在寻找：硬件构建者 × 1</small></div>
-      <div class="draft-section vibe-section"><span>BUILDER'S VIBE</span><p>先跑通真实闭环，再把系统做漂亮；喜欢和能快速落地的人一起工作。</p></div>
+      <div class="draft-section"><span>当前协作状态</span><strong>${collaborationStatusLabel()}</strong><small>当前意图：${collaborationNeedLabel()}</small></div>
+      <div class="draft-section vibe-section"><span>BUILDER'S VIBE</span><p>${draft.vibe}</p></div>
     </section>
     <p class="consent-note">✓ 所有字段将由你确认后公开 · 不读取私信和非公开内容</p>
     ${renderOnboardingFooter("确认草稿 · 预览公开面")}
@@ -232,9 +251,9 @@ function renderOnboardingPreview() {
 }
 
 function renderOnboardingSurface() {
-  if (state.previewMode === "eink") return `<div class="onboarding-eink"><div><span>● 团队补位中</span><em>至 22:00</em></div><h3>周闻 / ZW</h3><p>AI · 后端 · Agent</p><section><span>当前缺口</span><strong>硬件构建者 × 1</strong></section><footer><b>碰卡直接建联</b><span>P·0087</span></footer></div>`;
-  if (state.previewMode === "passport") return `<article class="onboarding-full-passport"><header><span class="draft-avatar">ZW</span><div><h3>周闻</h3><p>AI / 后端构建者</p></div></header><p class="passport-vibe">“先跑通真实闭环，再把系统做漂亮。”</p><div><span>NOW BUILDING</span><strong>离线会议洞察终端</strong></div><div><span>项目证据</span><strong>GitHub · 7 commits this week</strong></div><div><span>正在寻找</span><strong>硬件构建者 × 1</strong></div></article>`;
-  return `<article class="onboarding-discovery-card"><div class="discovery-card-meta"><span>团队补位中</span><em>同场</em></div><h3>周闻</h3><p>AI / 后端构建者</p><div class="draft-tags"><b>Agent</b><b>API</b><b>端侧 AI</b></div><section><span>为什么值得认识</span><strong>正在为真实设备寻找硬件闭环能力</strong><small>需要确认：今天可投入时间</small></section></article>`;
+  if (state.previewMode === "eink") return `<div class="onboarding-eink"><div><span>● ${collaborationStatusLabel()}</span><em>至 22:00</em></div><h3>周闻 / ZW</h3><p>AI · 后端 · Agent</p><section><span>当前协作意图</span><strong>${collaborationNeedLabel()}</strong></section><footer><b>碰卡直接建联</b><span>P·0087</span></footer></div>`;
+  if (state.previewMode === "passport") return `<article class="onboarding-full-passport"><header><span class="draft-avatar">ZW</span><div><h3>周闻</h3><p>AI / 后端构建者</p></div></header><p class="passport-vibe">“先跑通真实闭环，再把系统做漂亮。”</p><div><span>NOW BUILDING</span><strong>离线会议洞察终端</strong></div><div><span>项目证据</span><strong>GitHub · 7 commits this week</strong></div><div><span>${collaborationStatusLabel()}</span><strong>${collaborationNeedLabel()}</strong></div></article>`;
+  return `<article class="onboarding-discovery-card"><div class="discovery-card-meta"><span>${collaborationStatusLabel()}</span><em>同场</em></div><h3>周闻</h3><p>AI / 后端构建者</p><div class="draft-tags"><b>Agent</b><b>API</b><b>端侧 AI</b></div><section><span>当前协作意图</span><strong>${collaborationNeedLabel()}</strong><small>可先在线表达意愿，也可当面碰卡直连</small></section></article>`;
 }
 
 function renderOnboardingFooter(primaryLabel, secondaryLabel = "稍后设置") {
@@ -282,7 +301,7 @@ function renderVariantA() {
         </div>
         <div class="passport-mission">
           <span>我的项目正在寻找</span>
-          <strong>硬件构建者 × 1</strong>
+          <strong>${collaborationNeedLabel()}</strong>
         </div>
         <button class="passport-sync" data-tab="profile"><span>墨水屏已同步</span><b>查看公开面</b></button>
       </section>
@@ -310,7 +329,7 @@ function renderPassportPerson(person, index) {
         <span>${person.role} · ${person.status}</span>
         <span class="reason-preview">${person.reason}</span>
       </span>
-      <span class="fit-mark"><strong>${person.fit}</strong><small>匹配</small></span>
+      <span class="fit-mark"><strong>补齐</strong><small>当前缺口</small></span>
     </button>
   `;
 }
@@ -360,11 +379,11 @@ function renderVariantC() {
         <button class="ledger-id" data-tab="profile">ZW / 0087</button>
       </header>
       <section class="ledger-status">
-        <div><span>公开状态</span><strong>${state.visible ? "团队招人" : "已暂停"}</strong></div>
-        <div><span>当前缺口</span><strong>硬件 × 1</strong></div>
+        <div><span>公开状态</span><strong>${state.visible ? collaborationStatusLabel() : "已暂停"}</strong></div>
+        <div><span>当前意图</span><strong>${collaborationNeedLabel()}</strong></div>
         <div><span>扫描范围</span><strong>同场 / 04</strong></div>
       </section>
-      <div class="ledger-rule"><span>按互补度排序</span><b>LIVE REGISTER</b></div>
+      <div class="ledger-rule"><span>按当前缺口优先</span><b>LIVE REGISTER</b></div>
       <section class="ledger-list">
         ${people.map((person, index) => `
           <button class="ledger-person" data-person="${person.id}">
@@ -374,7 +393,7 @@ function renderVariantC() {
               <span>${person.skills.join(" / ")}</span>
               <span class="ledger-reason">${person.reason}</span>
             </span>
-            <span class="ledger-fit">${person.fit}<small>/100</small></span>
+            <span class="ledger-fit">${index === 0 ? "补齐角色" : "值得认识"}</span>
           </button>
         `).join("")}
       </section>
@@ -394,8 +413,8 @@ function renderConnections() {
       ${commonHeader("连接")}
       <section class="connection-hero">
         <p class="micro-label">RELATIONSHIP GRAPH</p>
-        <h3>${state.connected.length ? "一次碰触，已经有了下一步。" : "真正的连接需要双方确认。"}</h3>
-        <p>${state.connected.length ? "关系来源、匹配理由和后续项目会被一起保存。" : "向附近的人打招呼，见面后通过 AI Passport 完成建联。"}</p>
+        <h3>${state.connected.length ? "一次碰触，已经有了下一步。" : "线上表达意愿，线下碰卡直连。"}</h3>
+        <p>${state.connected.length ? "关系来源、推荐理由和后续项目会被一起保存。" : "右滑只表示想认识；双方主动碰卡时，物理动作本身就是建联授权。"}</p>
       </section>
       <div class="filter-row"><button class="active">全部</button><button>待回应</button><button>已建联</button></div>
       <section class="connection-list">
@@ -406,7 +425,7 @@ function renderConnections() {
             <button class="primary-button full" data-tab="projects">查看共同项目</button>
           </article>
         ` : `
-          <div class="empty-state"><span class="empty-symbol">◎</span><h4>还没有正式连接</h4><p>先发现附近的人，打招呼后在线下完成一次双方确认。</p><button class="primary-button" data-tab="discover">去发现</button></div>
+          <div class="empty-state"><span class="empty-symbol">◎</span><h4>还没有正式连接</h4><p>你可以先在线表达“想认识”，也可以在现实交流后直接碰卡建联。</p><button class="primary-button" data-tab="discover">去发现</button></div>
         `}
         ${state.greeted.includes("su") && !state.connected.includes("su") ? `<article class="pending-row">${glyph(people[1], "sm")}<div><strong>苏晴</strong><span>招呼已发出 · 等待见面</span></div><em>待回应</em></article>` : ""}
       </section>
@@ -465,15 +484,15 @@ function renderProfile() {
       <section class="device-preview">
         <div class="device-preview-head"><div><p class="micro-label">AI PASSPORT / E-INK</p><h3>墨水屏公开面</h3></div><span class="sync-chip">● 已同步</span></div>
         <div class="eink-card ${state.visible ? "" : "is-hidden"}">
-          <div class="eink-top"><span>${state.visible ? "● 团队招人" : "○ 已暂停"}</span><em>87%</em></div>
+          <div class="eink-top"><span>${state.visible ? `● ${collaborationStatusLabel()}` : "○ 已暂停"}</span><em>至 22:00</em></div>
           <div class="eink-identity"><span class="eink-glyph">ZW</span><div><strong>周闻</strong><small>AI / 后端 / Agent</small></div></div>
-          <div class="eink-need"><span>正在寻找</span><b>硬件构建者 × 1</b></div>
+          <div class="eink-need"><span>当前协作意图</span><b>${collaborationNeedLabel()}</b></div>
           <div class="fake-qr" aria-label="二维码预览">${Array.from({ length: 36 }, (_, i) => `<i class="${[0,1,2,5,6,7,8,11,12,13,17,18,19,22,24,25,29,30,31,34,35].includes(i) ? "black" : ""}"></i>`).join("")}</div>
           <p>碰我建联 · P0087</p>
         </div>
         <button class="secondary-button full" data-action="sync-card">编辑卡片公开内容</button>
       </section>
-      <section class="profile-fields"><button><span>能力与项目证据</span><b>5 项 ›</b></button><button><span>设备与隐私</span><b>已连接 ›</b></button></section>
+      <section class="profile-fields"><button data-action="restart-onboarding"><span>重新组装协作护照</span><b>4 步 ›</b></button><button><span>能力与项目证据</span><b>5 项 ›</b></button><button><span>设备与隐私</span><b>已连接 ›</b></button></section>
     </div>
   `;
 }
@@ -495,10 +514,10 @@ function renderOverlay() {
     const greeted = state.greeted.includes(person.id);
     return `<div class="overlay"><button class="overlay-backdrop" data-action="close-overlay" aria-label="关闭"></button><section class="bottom-sheet person-sheet">
       <div class="sheet-handle"></div>
-      <div class="person-sheet-head">${glyph(person, "lg")}<div><span class="status-pill">${person.status}</span><h3>${person.name}</h3><p>${person.role} · ${person.proximity}</p></div><strong class="large-fit">${person.fit}<small>匹配</small></strong></div>
+      <div class="person-sheet-head">${glyph(person, "lg")}<div><span class="status-pill">${person.status}</span><h3>${person.name}</h3><p>${person.role} · ${person.proximity}</p></div><strong class="large-fit">角色互补<small>当前推荐</small></strong></div>
       <div class="skill-line">${person.skills.map((skill) => `<span>${skill}</span>`).join("")}</div>
       <article class="ai-reason"><p class="micro-label">WHY THIS PERSON</p><h4>为什么值得当面认识</h4><p>${person.reason}</p><div><span>项目证据</span><strong>${person.evidence}</strong></div><div class="caution"><span>先确认</span><strong>${person.caution}</strong></div></article>
-      <div class="sheet-actions"><button class="secondary-button" data-action="close-overlay">再看看</button><button class="primary-button" data-action="greet" data-person="${person.id}">${greeted ? "模拟碰卡" : "打个招呼"}</button></div>
+      <div class="sheet-actions"><button class="secondary-button" data-action="greet" data-person="${person.id}">${greeted ? "已表达想认识" : "想认识"}</button><button class="primary-button" data-action="direct-tap" data-person="${person.id}">模拟碰卡直连</button></div>
     </section></div>`;
   }
   if (state.overlay === "tap") {
@@ -506,8 +525,8 @@ function renderOverlay() {
       <button class="close-x" data-action="close-overlay" aria-label="关闭">×</button>
       <p class="micro-label">PHYSICAL HANDSHAKE</p><h3>把两张 AI Passport<br>靠在一起</h3>
       <div class="tap-visual"><div class="tap-passport passport-left"><span>ZW</span></div><div class="tap-waves"><i></i><i></i><i></i></div><div class="tap-passport passport-right"><span>${person.monogram}</span></div></div>
-      <p class="handshake-copy">检测到 ${person.name}。双方确认后，关系来源和匹配理由会一起保存。</p>
-      <button class="primary-button full pulse-button" data-action="confirm-connect" data-person="${person.id}">双方已确认 · 完成建联</button>
+      <p class="handshake-copy">检测到 ${person.name} 的主动碰卡信号。双方把卡靠在一起，本身就构成这次建联授权。</p>
+      <button class="primary-button full pulse-button" data-action="confirm-connect" data-person="${person.id}">模拟双方主动碰卡</button>
       <button class="text-action" data-action="close-overlay">取消本次握手</button>
     </section></div>`;
   }
@@ -535,7 +554,7 @@ function renderToast() {
 }
 
 function renderSwitcher() {
-  if (state.overlay) return "";
+  if (state.overlay || state.onboarding) return "";
   return `<div class="prototype-switcher" aria-label="原型方向切换">
     <button data-variant-step="-1" aria-label="上一个方向">←</button>
     <span><small>PROTOTYPE</small><strong>${state.variant} — ${variantNames[state.variant]}</strong></span>
@@ -548,6 +567,7 @@ function renderStateLedger() {
 }
 
 function stageLabel() {
+  if (state.onboarding) return `正在组装协作护照 · ${state.onboardingStep + 1}/4`;
   if (state.acceptedTasks.length) return "已开始协作";
   if (state.joined.length) return "已加入项目";
   if (state.connected.length) return "已碰卡建联";
@@ -580,6 +600,45 @@ function bindEvents() {
 }
 
 function handleAction(action, element) {
+  if (action === "choose-status") {
+    state.collaborationStatus = element.dataset.status;
+  }
+  if (action === "toggle-source") {
+    const source = element.dataset.source;
+    state.connectedSources = state.connectedSources.includes(source)
+      ? state.connectedSources.filter((item) => item !== source)
+      : [...state.connectedSources, source];
+  }
+  if (action === "onboarding-next") {
+    state.onboardingStep = Math.min(3, state.onboardingStep + 1);
+    document.querySelector(".screen")?.scrollTo({ top: 0, behavior: "smooth" });
+  }
+  if (action === "onboarding-back") {
+    if (state.onboardingStep > 0) state.onboardingStep -= 1;
+    else finishOnboarding(false);
+  }
+  if (action === "skip-onboarding") {
+    if (state.onboardingStep === 0) finishOnboarding(false);
+    else if (state.onboardingStep === 3) state.onboardingStep = 2;
+    else state.onboardingStep += 1;
+  }
+  if (action === "preview-mode") state.previewMode = element.dataset.mode;
+  if (action === "draft-refresh") {
+    state.draftVersion += 1;
+    showToast("AI 已根据项目证据重组表达");
+  }
+  if (action === "publish-passport") {
+    finishOnboarding(true);
+    showToast("协作护照已公开至今天 22:00");
+  }
+  if (action === "restart-onboarding") {
+    state.onboarding = true;
+    state.onboardingStep = 0;
+    state.overlay = null;
+    const url = new URL(location.href);
+    url.searchParams.set("onboarding", "1");
+    history.replaceState({}, "", url);
+  }
   if (action === "close-overlay") state.overlay = null;
   if (action === "open-person") {
     state.selectedId = element.dataset.person || state.selectedId;
@@ -594,11 +653,15 @@ function handleAction(action, element) {
     const id = element.dataset.person;
     if (!state.greeted.includes(id)) {
       state.greeted.push(id);
-      showToast(`已向 ${selectedPerson().name} 打招呼`);
-      state.overlay = "person";
+      showToast(`已向 ${selectedPerson().name} 表达“想认识”`);
     } else {
-      state.overlay = "tap";
+      showToast("你已经表达过想认识，等待对方回应即可");
     }
+    state.overlay = "person";
+  }
+  if (action === "direct-tap") {
+    state.selectedId = element.dataset.person || state.selectedId;
+    state.overlay = "tap";
   }
   if (action === "confirm-connect") {
     const id = element.dataset.person;
@@ -624,6 +687,17 @@ function handleAction(action, element) {
   }
   if (action === "sync-card") showToast("原型：公开字段编辑器将在下一轮接入");
   render();
+}
+
+function finishOnboarding(published) {
+  state.onboarding = false;
+  state.onboardingStep = 0;
+  state.tab = published ? "discover" : state.tab;
+  state.variant = "C";
+  const url = new URL(location.href);
+  url.searchParams.set("variant", "C");
+  url.searchParams.delete("onboarding");
+  history.replaceState({}, "", url);
 }
 
 function toggleTask(id) {

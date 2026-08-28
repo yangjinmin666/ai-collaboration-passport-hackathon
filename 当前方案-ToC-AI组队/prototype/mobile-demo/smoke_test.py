@@ -39,6 +39,26 @@ def main():
                 "viewport_width": page.evaluate("window.innerWidth"),
             }
 
+        page.goto(f"{BASE_URL}/?variant=C&onboarding=1")
+        page.wait_for_load_state("networkidle")
+        report["flow"]["onboarding_starts_at_status"] = page.get_by_text("你现在来现场，最需要什么？", exact=True).is_visible()
+        report["flow"]["switcher_hidden_during_onboarding"] = page.locator(".prototype-switcher").count() == 0
+        page.get_by_role("button", name="正在找队伍").click()
+        page.get_by_role("button", name="下一步 · 组装能力证据").click()
+        page.get_by_role("button", name="即刻 构建动态 添加").click()
+        page.get_by_role("button", name="交给 AI 生成草稿").click()
+        page.get_by_role("button", name="AI 重组").click()
+        page.get_by_role("button", name="确认草稿 · 预览公开面").click()
+        page.get_by_role("button", name="工牌公开面").click()
+        report["flow"]["onboarding_surface_visible"] = page.locator(".onboarding-eink").is_visible()
+        page.wait_for_timeout(350)
+        page.screenshot(path=str(OUTPUT_DIR / "onboarding-eink-preview.png"), full_page=True)
+        page.get_by_role("button", name="公开协作护照 · 进入现场").click()
+        report["flow"]["onboarding_publishes_to_c"] = (
+            page.locator("body").get_attribute("data-flow") == "product"
+            and page.locator("body").get_attribute("data-variant") == "C"
+        )
+
         page.goto(f"{BASE_URL}/?variant=A")
         page.wait_for_load_state("networkidle")
         page.locator("[data-variant-step='1']").click()
@@ -48,10 +68,10 @@ def main():
         page.wait_for_load_state("networkidle")
         page.locator(".person-row[data-person='lin']").click()
         page.screenshot(path=str(OUTPUT_DIR / "step-1-match-reason.png"), full_page=True)
-        page.get_by_role("button", name="打个招呼").click()
-        page.get_by_role("button", name="模拟碰卡").click()
+        page.get_by_role("button", name="想认识", exact=True).click()
+        page.get_by_role("button", name="模拟碰卡直连").click()
         page.screenshot(path=str(OUTPUT_DIR / "step-2-card-handshake.png"), full_page=True)
-        page.get_by_role("button", name="双方已确认 · 完成建联").click()
+        page.get_by_role("button", name="模拟双方主动碰卡").click()
         page.screenshot(path=str(OUTPUT_DIR / "step-3-connected.png"), full_page=True)
         page.get_by_role("button", name="邀请加入「离线会议洞察终端」").click()
         page.screenshot(path=str(OUTPUT_DIR / "step-4-team-joined.png"), full_page=True)
