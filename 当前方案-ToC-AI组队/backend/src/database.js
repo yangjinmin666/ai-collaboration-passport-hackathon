@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 
 const ALL_PUBLIC_PROFILE_FIELDS = [
@@ -30,6 +30,19 @@ export function openDatabase(databasePath) {
       email TEXT,
       phone TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS auth_sessions (
+      session_id TEXT PRIMARY KEY,
+      token_hash TEXT NOT NULL UNIQUE,
+      user_id TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      revoked_at TEXT,
+      FOREIGN KEY (user_id) REFERENCES users(user_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS auth_sessions_by_user
+      ON auth_sessions (user_id, expires_at);
 
     CREATE TABLE IF NOT EXISTS events (
       event_id TEXT PRIMARY KEY,
@@ -79,6 +92,8 @@ export function openDatabase(databasePath) {
       recipient_id TEXT NOT NULL,
       event_id TEXT NOT NULL,
       source TEXT NOT NULL CHECK (source IN ('nfc', 'qr', 'link')),
+      message TEXT CHECK (message IS NULL OR length(message) <= 240),
+      expires_at TEXT NOT NULL,
       status TEXT NOT NULL CHECK (
         status IN ('REQUESTED', 'ACCEPTED', 'REJECTED', 'CANCELLED', 'EXPIRED', 'BLOCKED')
       ),
@@ -101,12 +116,38 @@ export function openDatabase(databasePath) {
       user_a_id TEXT NOT NULL,
       user_b_id TEXT NOT NULL,
       source TEXT NOT NULL CHECK (source IN ('nfc', 'qr', 'link')),
+      status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'BLOCKED')),
+      blocked_at TEXT,
+      blocked_by TEXT,
       created_at TEXT NOT NULL,
       FOREIGN KEY (request_id) REFERENCES connection_requests(request_id),
       FOREIGN KEY (event_id) REFERENCES events(event_id),
       FOREIGN KEY (user_a_id) REFERENCES users(user_id),
       FOREIGN KEY (user_b_id) REFERENCES users(user_id),
+      FOREIGN KEY (blocked_by) REFERENCES users(user_id),
       CHECK (user_a_id < user_b_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS connection_request_connections (
+      request_id TEXT PRIMARY KEY,
+      connection_id TEXT NOT NULL,
+      linked_at TEXT NOT NULL,
+      FOREIGN KEY (request_id) REFERENCES connection_requests(request_id),
+      FOREIGN KEY (connection_id) REFERENCES connections(connection_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS user_blocks (
+      event_id TEXT NOT NULL,
+      blocker_id TEXT NOT NULL,
+      blocked_id TEXT NOT NULL,
+      source_request_id TEXT,
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (event_id, blocker_id, blocked_id),
+      FOREIGN KEY (event_id) REFERENCES events(event_id),
+      FOREIGN KEY (blocker_id) REFERENCES users(user_id),
+      FOREIGN KEY (blocked_id) REFERENCES users(user_id),
+      FOREIGN KEY (source_request_id) REFERENCES connection_requests(request_id),
+      CHECK (blocker_id <> blocked_id)
     );
 
     CREATE TABLE IF NOT EXISTS archived_duplicate_connections (
@@ -149,10 +190,105 @@ export function openDatabase(databasePath) {
       DEFAULT '[]'
     `);
   }
+  const requestColumns = database
+    .prepare("PRAGMA table_info(connection_requests)")
+    .all();
+  if (!requestColumns.some((column) => column.name === "message")) {
+    database.exec(`
+      ALTER TABLE connection_requests
+      ADD COLUMN message TEXT
+      CHECK (message IS NULL OR length(message) <= 240)
+    `);
+  }
+  if (!requestColumns.some((column) => column.name === "expires_at")) {
+    database.exec("ALTER TABLE connection_requests ADD COLUMN expires_at TEXT");
+    database.exec(`
+      UPDATE connection_requests
+      SET expires_at = CASE
+        WHEN (
+          SELECT events.ends_at
+          FROM events
+          WHERE events.event_id = connection_requests.event_id
+        ) IS NULL THEN strftime('%Y-%m-%dT%H:%M:%fZ', created_at, '+24 hours')
+        WHEN strftime('%Y-%m-%dT%H:%M:%fZ', created_at, '+24 hours') < (
+          SELECT events.ends_at
+          FROM events
+          WHERE events.event_id = connection_requests.event_id
+        ) THEN strftime('%Y-%m-%dT%H:%M:%fZ', created_at, '+24 hours')
+        ELSE (
+          SELECT events.ends_at
+          FROM events
+          WHERE events.event_id = connection_requests.event_id
+        )
+      END
+      WHERE expires_at IS NULL
+    `);
+  }
+  const connectionColumns = database
+    .prepare("PRAGMA table_info(connections)")
+    .all();
+  if (!connectionColumns.some((column) => column.name === "status")) {
+    database.exec(`
+      ALTER TABLE connections
+      ADD COLUMN status TEXT NOT NULL DEFAULT 'ACTIVE'
+      CHECK (status IN ('ACTIVE', 'BLOCKED'))
+    `);
+  }
+  if (!connectionColumns.some((column) => column.name === "blocked_at")) {
+    database.exec("ALTER TABLE connections ADD COLUMN blocked_at TEXT");
+  }
+  if (!connectionColumns.some((column) => column.name === "blocked_by")) {
+    database.exec(`
+      ALTER TABLE connections
+      ADD COLUMN blocked_by TEXT REFERENCES users(user_id)
+    `);
+  }
   enforceUniqueConnectionPairs(database);
+  backfillConnectionRequestConnections(database);
   seedDatabase(database);
   migrateDemoFixtures(database);
   return database;
+}
+
+function backfillConnectionRequestConnections(database) {
+  database.prepare(`
+    INSERT OR IGNORE INTO connection_request_connections (
+      request_id, connection_id, linked_at
+    )
+    SELECT request.request_id, connection.connection_id, connection.created_at
+    FROM connections connection
+    JOIN connection_requests request
+      ON request.request_id = connection.request_id
+  `).run();
+  // Older versions represented reciprocal acceptance only through pair state.
+  // A legitimate reciprocal request predates the keeper Connection; requests whose
+  // own duplicate Connection was archived must remain unlinked rather than guessed.
+  database.prepare(`
+    INSERT OR IGNORE INTO connection_request_connections (
+      request_id, connection_id, linked_at
+    )
+    SELECT request.request_id, connection.connection_id, connection.created_at
+    FROM connection_requests request
+    JOIN connections connection
+      ON connection.event_id = request.event_id
+      AND connection.user_a_id = CASE
+        WHEN request.requester_id < request.recipient_id
+          THEN request.requester_id
+        ELSE request.recipient_id
+      END
+      AND connection.user_b_id = CASE
+        WHEN request.requester_id < request.recipient_id
+          THEN request.recipient_id
+        ELSE request.requester_id
+      END
+    WHERE request.status = 'ACCEPTED'
+      AND request.created_at <= connection.created_at
+      AND NOT EXISTS (
+        SELECT 1
+        FROM archived_duplicate_connections archived
+        WHERE archived.request_id = request.request_id
+      )
+  `).run();
 }
 
 function enforceUniqueConnectionPairs(database) {
@@ -428,6 +564,62 @@ export function userExists(database, userId) {
   );
 }
 
+function hashSessionToken(token) {
+  return createHash("sha256").update(token).digest("hex");
+}
+
+export function findUserIdentity(database, userId) {
+  const row = database.prepare(`
+    SELECT user_id, display_name, avatar
+    FROM users
+    WHERE user_id = ?
+  `).get(userId);
+  if (!row) return null;
+  return {
+    id: row.user_id,
+    display_name: row.display_name,
+    avatar: row.avatar,
+  };
+}
+
+export function createAuthSession(database, { userId, now, expiresAt }) {
+  const token = randomBytes(32).toString("base64url");
+  database.prepare(`
+    INSERT INTO auth_sessions (
+      session_id, token_hash, user_id, created_at, expires_at, revoked_at
+    ) VALUES (?, ?, ?, ?, ?, NULL)
+  `).run(
+    `ses_${randomUUID()}`,
+    hashSessionToken(token),
+    userId,
+    now,
+    expiresAt,
+  );
+  return { token, expiresAt };
+}
+
+export function findSessionUserId(database, { token, now }) {
+  const row = database.prepare(`
+    SELECT user_id
+    FROM auth_sessions
+    WHERE token_hash = ?
+      AND revoked_at IS NULL
+      AND expires_at > ?
+  `).get(hashSessionToken(token), now);
+  return row?.user_id ?? null;
+}
+
+export function revokeAuthSession(database, { token, now }) {
+  const result = database.prepare(`
+    UPDATE auth_sessions
+    SET revoked_at = ?
+    WHERE token_hash = ?
+      AND revoked_at IS NULL
+      AND expires_at > ?
+  `).run(now, hashSessionToken(token), now);
+  return result.changes > 0;
+}
+
 export function isParticipantVisible(database, { userId, eventId, now }) {
   return Boolean(database.prepare(`
     SELECT 1
@@ -444,6 +636,27 @@ export function isParticipantVisible(database, { userId, eventId, now }) {
   `).get(userId, eventId, now, now, now, now));
 }
 
+export function isConnectionBlocked(
+  database,
+  { firstUserId, secondUserId, eventId },
+) {
+  return Boolean(database.prepare(`
+    SELECT 1
+    FROM user_blocks
+    WHERE event_id = ?
+      AND (
+        (blocker_id = ? AND blocked_id = ?)
+        OR (blocker_id = ? AND blocked_id = ?)
+      )
+  `).get(
+    eventId,
+    firstUserId,
+    secondUserId,
+    secondUserId,
+    firstUserId,
+  ));
+}
+
 function mapConnectionRequest(row) {
   if (!row) return null;
   return {
@@ -452,6 +665,8 @@ function mapConnectionRequest(row) {
     recipient_id: row.recipient_id,
     event_id: row.event_id,
     source: row.source,
+    message: row.message ?? null,
+    expires_at: row.expires_at,
     status: row.status,
     created_at: row.created_at,
     updated_at: row.updated_at,
@@ -468,9 +683,39 @@ export function findActiveConnectionRequest(
   `).get(requesterId, recipientId, eventId));
 }
 
+export function findLatestConnectionRequest(
+  database,
+  { requesterId, recipientId, eventId, status },
+) {
+  return mapConnectionRequest(database.prepare(`
+    SELECT *
+    FROM connection_requests
+    WHERE requester_id = ?
+      AND recipient_id = ?
+      AND event_id = ?
+      AND status = ?
+    ORDER BY updated_at DESC, request_id DESC
+    LIMIT 1
+  `).get(requesterId, recipientId, eventId, status));
+}
+
+export function countRecentConnectionRequests(
+  database,
+  { requesterId, eventId, since },
+) {
+  const row = database.prepare(`
+    SELECT count(*) AS request_count
+    FROM connection_requests
+    WHERE requester_id = ?
+      AND event_id = ?
+      AND created_at >= ?
+  `).get(requesterId, eventId, since);
+  return Number(row.request_count);
+}
+
 export function createConnectionRequest(
   database,
-  { requesterId, recipientId, eventId, source, now },
+  { requesterId, recipientId, eventId, source, message, expiresAt, now },
 ) {
   const request = {
     id: `req_${randomUUID()}`,
@@ -478,6 +723,8 @@ export function createConnectionRequest(
     recipient_id: recipientId,
     event_id: eventId,
     source,
+    message: message ?? null,
+    expires_at: expiresAt,
     status: "REQUESTED",
     created_at: now,
     updated_at: now,
@@ -486,14 +733,17 @@ export function createConnectionRequest(
   try {
     database.prepare(`
       INSERT INTO connection_requests (
-        request_id, requester_id, recipient_id, event_id, source, status, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        request_id, requester_id, recipient_id, event_id, source, message,
+        expires_at, status, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       request.id,
       request.requester_id,
       request.recipient_id,
       request.event_id,
       request.source,
+      request.message,
+      request.expires_at,
       request.status,
       request.created_at,
       request.updated_at,
@@ -520,6 +770,114 @@ export function createConnectionRequest(
   }
 }
 
+export function findEventEndsAt(database, eventId) {
+  const row = database.prepare(
+    "SELECT ends_at FROM events WHERE event_id = ?",
+  ).get(eventId);
+  return row?.ends_at ?? null;
+}
+
+export function expireConnectionRequests(database, { eventId, now }) {
+  const staleRequests = database.prepare(`
+    SELECT request.*
+    FROM connection_requests request
+    JOIN events event ON event.event_id = request.event_id
+    WHERE request.event_id = ?
+      AND request.status = 'REQUESTED'
+      AND (request.expires_at <= ? OR event.ends_at <= ?)
+  `).all(eventId, now, now);
+  if (staleRequests.length === 0) return 0;
+
+  database.exec("BEGIN IMMEDIATE");
+  try {
+    const expire = database.prepare(`
+      UPDATE connection_requests
+      SET status = 'EXPIRED', updated_at = ?
+      WHERE request_id = ? AND status = 'REQUESTED'
+    `);
+    for (const request of staleRequests) {
+      expire.run(now, request.request_id);
+      appendEventLog(database, {
+        eventId: request.event_id,
+        type: "connection_expired",
+        objectType: "connection_request",
+        objectId: request.request_id,
+        source: request.source,
+        payload: {
+          request_id: request.request_id,
+          reason: "timeout_or_event_end",
+        },
+        createdAt: now,
+      });
+    }
+    database.exec("COMMIT");
+    return staleRequests.length;
+  } catch (error) {
+    database.exec("ROLLBACK");
+    throw error;
+  }
+}
+
+export function listConnectionRequests(
+  database,
+  { userId, eventId, direction, status },
+) {
+  const ownerColumn = direction === "incoming" ? "recipient_id" : "requester_id";
+  const statusClause = status ? "AND request.status = ?" : "";
+  const parameters = status
+    ? [userId, eventId, status]
+    : [userId, eventId];
+  const rows = database.prepare(`
+    SELECT
+      request.*,
+      counterpart.user_id AS counterpart_id,
+      counterpart.display_name AS counterpart_display_name,
+      counterpart.avatar AS counterpart_avatar,
+      profile.role AS counterpart_role,
+      profile.status AS counterpart_status,
+      request_connection.connection_id
+    FROM connection_requests request
+    JOIN users counterpart
+      ON counterpart.user_id = CASE
+        WHEN ? = 'incoming' THEN request.requester_id
+        ELSE request.recipient_id
+      END
+    LEFT JOIN profiles profile
+      ON profile.user_id = counterpart.user_id
+      AND profile.event_id = request.event_id
+    LEFT JOIN connection_request_connections request_connection
+      ON request_connection.request_id = request.request_id
+    WHERE request.${ownerColumn} = ?
+      AND request.event_id = ?
+      ${statusClause}
+    ORDER BY request.updated_at DESC, request.request_id DESC
+  `).all(direction, ...parameters);
+
+  return rows.map((row) => ({
+    ...mapConnectionRequest(row),
+    direction,
+    connection_id: row.connection_id ?? null,
+    counterpart: {
+      id: row.counterpart_id,
+      display_name: row.counterpart_display_name,
+      avatar: row.counterpart_avatar,
+      role: row.counterpart_role,
+      status: row.counterpart_status,
+    },
+  }));
+}
+
+function linkConnectionRequest(
+  database,
+  { requestId, connectionId, linkedAt },
+) {
+  database.prepare(`
+    INSERT OR IGNORE INTO connection_request_connections (
+      request_id, connection_id, linked_at
+    ) VALUES (?, ?, ?)
+  `).run(requestId, connectionId, linkedAt);
+}
+
 export function findConnectionRequestById(database, requestId) {
   return mapConnectionRequest(
     database.prepare("SELECT * FROM connection_requests WHERE request_id = ?").get(requestId),
@@ -534,6 +892,8 @@ function mapConnection(row) {
     event_id: row.event_id,
     members: [row.user_a_id, row.user_b_id],
     source: row.source,
+    status: row.status,
+    blocked_at: row.blocked_at ?? null,
     created_at: row.created_at,
   };
 }
@@ -545,9 +905,13 @@ export function findConnectionById(database, connectionId) {
 }
 
 export function findConnectionByRequestId(database, requestId) {
-  return mapConnection(
-    database.prepare("SELECT * FROM connections WHERE request_id = ?").get(requestId),
-  );
+  return mapConnection(database.prepare(`
+    SELECT connection.*
+    FROM connection_request_connections request_connection
+    JOIN connections connection
+      ON connection.connection_id = request_connection.connection_id
+    WHERE request_connection.request_id = ?
+  `).get(requestId));
 }
 
 export function findConnectionBetween(
@@ -590,18 +954,35 @@ export function acceptConnectionRequest(database, { requestId, actorId, now }) {
       return null;
     }
     if (current.status === "ACCEPTED") {
-      const connection = findConnectionByRequestId(database, requestId)
-        ?? findConnectionBetween(database, {
-          firstUserId: current.requester_id,
-          secondUserId: current.recipient_id,
-          eventId: current.event_id,
-        });
+      const connection = findConnectionByRequestId(database, requestId);
       database.exec("COMMIT");
       return { request: current, connection, idempotentReplay: true };
+    }
+    if (current.status === "BLOCKED") {
+      database.exec("COMMIT");
+      return {
+        request: current,
+        connection: null,
+        idempotentReplay: true,
+        blocked: true,
+      };
     }
     if (current.status !== "REQUESTED") {
       database.exec("ROLLBACK");
       return { request: current, connection: null, idempotentReplay: false };
+    }
+    if (isConnectionBlocked(database, {
+      firstUserId: current.requester_id,
+      secondUserId: current.recipient_id,
+      eventId: current.event_id,
+    })) {
+      database.exec("ROLLBACK");
+      return {
+        request: current,
+        connection: null,
+        idempotentReplay: false,
+        blocked: true,
+      };
     }
 
     database.prepare(`
@@ -617,6 +998,11 @@ export function acceptConnectionRequest(database, { requestId, actorId, now }) {
     });
     if (existingConnection) {
       const accepted = findConnectionRequestById(database, requestId);
+      linkConnectionRequest(database, {
+        requestId,
+        connectionId: existingConnection.id,
+        linkedAt: now,
+      });
       appendConnectionAcceptedLog(database, {
         request: accepted,
         connectionId: existingConnection.id,
@@ -645,6 +1031,11 @@ export function acceptConnectionRequest(database, { requestId, actorId, now }) {
       current.source,
       now,
     );
+    linkConnectionRequest(database, {
+      requestId,
+      connectionId,
+      linkedAt: now,
+    });
     const accepted = findConnectionRequestById(database, requestId);
     const connection = findConnectionById(database, connectionId);
     appendConnectionAcceptedLog(database, {
@@ -655,6 +1046,226 @@ export function acceptConnectionRequest(database, { requestId, actorId, now }) {
     });
     database.exec("COMMIT");
     return { request: accepted, connection, idempotentReplay: false };
+  } catch (error) {
+    database.exec("ROLLBACK");
+    throw error;
+  }
+}
+
+const PENDING_REQUEST_ACTIONS = {
+  reject: {
+    status: "REJECTED",
+    eventType: "connection_rejected",
+    buildPayload: (request, now) => ({
+      request_id: request.id,
+      latency_ms: Math.max(
+        0,
+        new Date(now).getTime() - new Date(request.created_at).getTime(),
+      ),
+    }),
+  },
+  cancel: {
+    status: "CANCELLED",
+    eventType: "connection_cancelled",
+    buildPayload: (request) => ({ request_id: request.id }),
+  },
+};
+
+function resolvePendingConnectionRequest(
+  database,
+  { requestId, actorId, action, now },
+) {
+  const resolution = PENDING_REQUEST_ACTIONS[action];
+  database.exec("BEGIN IMMEDIATE");
+  try {
+    const current = findConnectionRequestById(database, requestId);
+    if (!current) {
+      database.exec("ROLLBACK");
+      return null;
+    }
+    if (current.status === resolution.status) {
+      database.exec("COMMIT");
+      return { request: current, idempotentReplay: true };
+    }
+    if (current.status !== "REQUESTED") {
+      database.exec("ROLLBACK");
+      return { request: current, idempotentReplay: false };
+    }
+
+    database.prepare(`
+      UPDATE connection_requests
+      SET status = ?, updated_at = ?
+      WHERE request_id = ? AND status = 'REQUESTED'
+    `).run(resolution.status, now, requestId);
+    const resolved = findConnectionRequestById(database, requestId);
+    appendEventLog(database, {
+      eventId: current.event_id,
+      actorId,
+      type: resolution.eventType,
+      objectType: "connection_request",
+      objectId: requestId,
+      source: current.source,
+      payload: resolution.buildPayload(current, now),
+      createdAt: now,
+    });
+    database.exec("COMMIT");
+    return { request: resolved, idempotentReplay: false };
+  } catch (error) {
+    database.exec("ROLLBACK");
+    throw error;
+  }
+}
+
+export function rejectConnectionRequest(database, parameters) {
+  return resolvePendingConnectionRequest(database, {
+    ...parameters,
+    action: "reject",
+  });
+}
+
+export function cancelConnectionRequest(database, parameters) {
+  return resolvePendingConnectionRequest(database, {
+    ...parameters,
+    action: "cancel",
+  });
+}
+
+export function blockConnectionRequest(
+  database,
+  { requestId, actorId, reasonCode, now },
+) {
+  database.exec("BEGIN IMMEDIATE");
+  try {
+    const current = findConnectionRequestById(database, requestId);
+    if (!current) {
+      database.exec("ROLLBACK");
+      return null;
+    }
+    if (![current.requester_id, current.recipient_id].includes(actorId)) {
+      database.exec("ROLLBACK");
+      return null;
+    }
+
+    const targetUserId = actorId === current.requester_id
+      ? current.recipient_id
+      : current.requester_id;
+    const existingBlock = database.prepare(`
+      SELECT 1
+      FROM user_blocks
+      WHERE event_id = ? AND blocker_id = ? AND blocked_id = ?
+    `).get(current.event_id, actorId, targetUserId);
+    const existingConnection = findConnectionBetween(database, {
+      firstUserId: current.requester_id,
+      secondUserId: current.recipient_id,
+      eventId: current.event_id,
+    });
+    if (current.status === "BLOCKED" && existingBlock) {
+      database.exec("COMMIT");
+      return {
+        request: current,
+        connection: findConnectionByRequestId(database, requestId),
+        idempotentReplay: true,
+      };
+    }
+
+    const requestsToBlock = database.prepare(`
+      SELECT request.request_id
+      FROM connection_requests request
+      WHERE request.event_id = ?
+        AND (
+          (request.requester_id = ? AND request.recipient_id = ?)
+          OR (request.requester_id = ? AND request.recipient_id = ?)
+        )
+        AND (
+          request.request_id = ?
+          OR request.status = 'REQUESTED'
+          OR (
+            request.status = 'ACCEPTED'
+            AND EXISTS (
+              SELECT 1
+              FROM connection_request_connections request_connection
+              WHERE request_connection.request_id = request.request_id
+            )
+          )
+        )
+    `).all(
+      current.event_id,
+      current.requester_id,
+      current.recipient_id,
+      current.recipient_id,
+      current.requester_id,
+      requestId,
+    );
+
+    const markBlocked = database.prepare(`
+      UPDATE connection_requests
+      SET status = 'BLOCKED', updated_at = ?
+      WHERE request_id = ?
+    `);
+    for (const request of requestsToBlock) {
+      markBlocked.run(now, request.request_id);
+    }
+    database.prepare(`
+      INSERT OR IGNORE INTO user_blocks (
+        event_id, blocker_id, blocked_id, source_request_id, created_at
+      ) VALUES (?, ?, ?, ?, ?)
+    `).run(
+      current.event_id,
+      actorId,
+      targetUserId,
+      requestId,
+      now,
+    );
+    database.prepare(`
+      UPDATE connections
+      SET status = 'BLOCKED',
+          blocked_at = COALESCE(blocked_at, ?),
+          blocked_by = COALESCE(blocked_by, ?)
+      WHERE event_id = ?
+        AND user_a_id = ?
+        AND user_b_id = ?
+    `).run(
+      now,
+      actorId,
+      current.event_id,
+      ...[current.requester_id, current.recipient_id].sort(),
+    );
+    const blocked = findConnectionRequestById(database, requestId);
+    const connection = existingConnection
+      ? findConnectionById(database, existingConnection.id)
+      : null;
+    if (connection) {
+      const linkBlockedRequest = database.prepare(`
+        INSERT OR IGNORE INTO connection_request_connections (
+          request_id, connection_id, linked_at
+        ) VALUES (?, ?, ?)
+      `);
+      for (const request of requestsToBlock) {
+        linkBlockedRequest.run(request.request_id, connection.id, now);
+      }
+    }
+    if (!existingBlock) {
+      appendEventLog(database, {
+        eventId: current.event_id,
+        actorId,
+        type: "user_blocked",
+        objectType: "user",
+        objectId: targetUserId,
+        source: current.source,
+        payload: {
+          target_id: targetUserId,
+          reason_code: reasonCode,
+          request_id: requestId,
+        },
+        createdAt: now,
+      });
+    }
+    database.exec("COMMIT");
+    return {
+      request: blocked,
+      connection,
+      idempotentReplay: Boolean(existingBlock),
+    };
   } catch (error) {
     database.exec("ROLLBACK");
     throw error;

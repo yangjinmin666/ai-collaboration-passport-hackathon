@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: Collaboration Passport API
-  version: 0.1.0
-  description: NFC/QR public profile and mutually confirmed connection slice for the hackathon demo.
+  version: 0.2.0
+  description: NFC/QR profile, protected demo sessions, request inbox, and mutually confirmed connections.
 servers:
   - url: http://127.0.0.1:8787
 paths:
@@ -53,11 +53,64 @@ paths:
         "200": { description: Authorized limited public profile }
         "400": { description: Missing event, invalid source, or malformed token encoding }
         "404": { description: Missing, inactive, paused, or expired card }
+  /api/auth/demo-sessions:
+    post:
+      summary: Issue a revocable session for a preloaded hackathon account
+      security:
+        - DemoAccessKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_id]
+              properties:
+                user_id: { type: string }
+      responses:
+        "201": { description: Bearer session issued }
+        "400": { description: Invalid JSON }
+        "403": { description: Demo access key missing or invalid }
+        "404": { description: Preloaded user not found }
+        "413": { description: Request payload exceeds 64 KiB }
+  /api/auth/session:
+    delete:
+      summary: Revoke the current Bearer session
+      security:
+        - BearerAuth: []
+      responses:
+        "204": { description: Session revoked }
+        "401": { description: Session missing, expired, invalid, or already revoked }
   /api/connections/requests:
+    get:
+      summary: Poll incoming or outgoing connection requests and their latest states
+      security:
+        - BearerAuth: []
+        - DemoHeader: []
+      parameters:
+        - in: query
+          name: event_id
+          required: true
+          schema: { type: string }
+        - in: query
+          name: direction
+          required: false
+          schema: { type: string, enum: [incoming, outgoing], default: incoming }
+        - in: query
+          name: status
+          required: false
+          schema:
+            type: string
+            enum: [REQUESTED, ACCEPTED, REJECTED, CANCELLED, EXPIRED, BLOCKED]
+      responses:
+        "200": { description: Request list plus server_time and poll_after_ms }
+        "400": { description: Missing event or invalid filter }
+        "401": { description: Authentication required }
     post:
       summary: Create an idempotent connection request
-      parameters:
-        - $ref: "#/components/parameters/DemoUser"
+      security:
+        - BearerAuth: []
+        - DemoHeader: []
       requestBody:
         required: true
         content:
@@ -69,18 +122,22 @@ paths:
                 recipient_id: { type: string }
                 event_id: { type: string }
                 source: { type: string, enum: [nfc, qr, link] }
+                message: { type: string, maxLength: 240 }
       responses:
         "201": { description: Request created }
         "200": { description: Existing pending request or existing pair connection returned }
         "400": { description: Invalid JSON or request fields }
         "401": { description: Authentication required }
-        "409": { description: Recipient unavailable or self-connection }
+        "409": { description: Recipient unavailable, blocked, or self-connection }
+        "429": { description: Per-minute creation limit or five-minute post-rejection cooldown; inspect error code and Retry-After }
         "413": { description: Request payload exceeds 64 KiB }
   /api/connections/requests/{requestId}:
     patch:
-      summary: Accept a connection request as its recipient
+      summary: Accept, reject, cancel, or block a connection request
+      security:
+        - BearerAuth: []
+        - DemoHeader: []
       parameters:
-        - $ref: "#/components/parameters/DemoUser"
         - in: path
           name: requestId
           required: true
@@ -93,20 +150,26 @@ paths:
               type: object
               required: [action]
               properties:
-                action: { type: string, const: accept }
+                action: { type: string, enum: [accept, reject, cancel, block] }
+                reason_code:
+                  type: string
+                  maxLength: 64
+                  description: Optional machine-readable reason for a block action.
       responses:
-        "200": { description: Request accepted or replayed idempotently }
-        "400": { description: Invalid path encoding, JSON, or action }
+        "200": { description: State transition completed or replayed idempotently }
+        "400": { description: Invalid path encoding, JSON, action, or block reason code }
         "401": { description: Authentication required }
-        "403": { description: Only the recipient can accept }
+        "403": { description: Accept/reject require the recipient, cancel requires the requester, and block requires either participant }
         "404": { description: Request not found }
         "409": { description: Request is no longer pending }
         "413": { description: Request payload exceeds 64 KiB }
   /api/connections/{connectionId}:
     get:
       summary: Read a connection as one of its participants
+      security:
+        - BearerAuth: []
+        - DemoHeader: []
       parameters:
-        - $ref: "#/components/parameters/DemoUser"
         - in: path
           name: connectionId
           required: true
@@ -118,10 +181,18 @@ paths:
         "403": { description: Only participants may read it }
         "404": { description: Connection not found }
 components:
-  parameters:
-    DemoUser:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque-session-token
+    DemoHeader:
+      type: apiKey
       in: header
       name: x-demo-user-id
-      required: true
-      description: Hackathon-only pre-authenticated demo identity.
-      schema: { type: string }
+      description: Deprecated hackathon-only pre-authenticated identity.
+    DemoAccessKey:
+      type: apiKey
+      in: header
+      name: x-demo-access-key
+      description: Out-of-band key used to issue random, revocable sessions for seeded demo users.

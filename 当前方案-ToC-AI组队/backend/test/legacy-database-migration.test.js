@@ -32,6 +32,22 @@ describe("legacy demo database migration", () => {
         event_id TEXT NOT NULL,
         state TEXT NOT NULL
       );
+      CREATE TABLE events (
+        event_id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        starts_at TEXT NOT NULL,
+        ends_at TEXT NOT NULL
+      );
+      CREATE TABLE connection_requests (
+        request_id TEXT PRIMARY KEY,
+        requester_id TEXT NOT NULL,
+        recipient_id TEXT NOT NULL,
+        event_id TEXT NOT NULL,
+        source TEXT NOT NULL,
+        status TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
       CREATE TABLE connections (
         connection_id TEXT PRIMARY KEY,
         request_id TEXT NOT NULL UNIQUE,
@@ -50,13 +66,23 @@ describe("legacy demo database migration", () => {
         ('card-zhou', 'tok_zhou_demo', 'user-zhou', 'hackathon-2026', 'ACTIVE'),
         ('card-lin', 'tok_lin_demo', 'user-lin', 'hackathon-2026', 'ACTIVE'),
         ('card-su', 'tok_su_paused', 'user-su', 'hackathon-2026', 'ACTIVE');
+      INSERT INTO events VALUES
+        ('hackathon-2026', 'Legacy Hackathon', '2020-01-01T00:00:00.000Z', '2099-12-31T23:59:59.999Z');
+      INSERT INTO connection_requests VALUES
+        ('req_legacy_pending', 'user-zhou', 'user-lin', 'hackathon-2026', 'link', 'REQUESTED', '2026-08-28T00:00:00.000Z', '2026-08-28T00:00:00.000Z'),
+        ('req_oldest', 'user-zhou', 'user-lin', 'hackathon-2026', 'nfc', 'ACCEPTED', '2026-08-28T00:00:00.000Z', '2026-08-28T01:00:00.000Z'),
+        ('req_reciprocal', 'user-lin', 'user-zhou', 'hackathon-2026', 'qr', 'ACCEPTED', '2026-08-28T00:30:00.000Z', '2026-08-28T01:30:00.000Z'),
+        ('req_duplicate', 'user-zhou', 'user-lin', 'hackathon-2026', 'qr', 'ACCEPTED', '2026-08-28T01:30:00.000Z', '2026-08-28T02:00:00.000Z');
       INSERT INTO connections VALUES
         ('con_oldest', 'req_oldest', 'hackathon-2026', 'user-lin', 'user-zhou', 'nfc', '2026-08-28T01:00:00.000Z'),
         ('con_duplicate', 'req_duplicate', 'hackathon-2026', 'user-lin', 'user-zhou', 'qr', '2026-08-28T02:00:00.000Z');
     `);
     legacy.close();
 
-    api = createApi({ databasePath });
+    api = createApi({
+      databasePath,
+      clock: () => new Date("2026-08-29T00:00:00.001Z"),
+    });
     const address = await api.start(0);
     baseUrl = `http://127.0.0.1:${address.port}`;
   });
@@ -95,5 +121,43 @@ describe("legacy demo database migration", () => {
     const existingPairBody = await existingPair.json();
     assert.equal(existingPair.status, 200);
     assert.equal(existingPairBody.connection.id, "con_oldest");
+  });
+
+  test("legacy pending requests retain the 24-hour expiry ceiling", async () => {
+    const inbox = await fetch(
+      `${baseUrl}/api/connections/requests?event_id=hackathon-2026&direction=incoming`,
+      { headers: { "x-demo-user-id": "user-lin" } },
+    );
+    const inboxBody = await inbox.json();
+    const migrated = inboxBody.requests.find(
+      (request) => request.id === "req_legacy_pending",
+    );
+    assert.equal(inbox.status, 200);
+    assert.equal(migrated.status, "EXPIRED");
+    assert.equal(migrated.expires_at, "2026-08-29T00:00:00.000Z");
+  });
+
+  test("legacy reciprocal acceptance is linked without attaching an archived duplicate", async () => {
+    const zhouOutgoing = await fetch(
+      `${baseUrl}/api/connections/requests?event_id=hackathon-2026&direction=outgoing`,
+      { headers: { "x-demo-user-id": "user-zhou" } },
+    );
+    const zhouBody = await zhouOutgoing.json();
+    const keeper = zhouBody.requests.find((request) => request.id === "req_oldest");
+    const archived = zhouBody.requests.find(
+      (request) => request.id === "req_duplicate",
+    );
+    assert.equal(keeper.connection_id, "con_oldest");
+    assert.equal(archived.connection_id, null);
+
+    const linOutgoing = await fetch(
+      `${baseUrl}/api/connections/requests?event_id=hackathon-2026&direction=outgoing`,
+      { headers: { "x-demo-user-id": "user-lin" } },
+    );
+    const linBody = await linOutgoing.json();
+    const reciprocal = linBody.requests.find(
+      (request) => request.id === "req_reciprocal",
+    );
+    assert.equal(reciprocal.connection_id, "con_oldest");
   });
 });

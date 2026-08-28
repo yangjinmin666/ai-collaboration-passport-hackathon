@@ -121,4 +121,53 @@ describe("connection request", () => {
     assert.equal(response.status, 400);
     assert.equal((await response.json()).error.code, "INVALID_REQUEST");
   });
+
+  test("a requester is rate limited after five newly created requests in one minute", async () => {
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const created = await fetch(`${baseUrl}/api/connections/requests`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-demo-user-id": "user-zhou",
+        },
+        body: JSON.stringify({
+          recipient_id: "user-lin",
+          event_id: "hackathon-2026",
+          source: "link",
+        }),
+      });
+      const request = (await created.json()).request;
+      assert.equal(created.status, 201);
+
+      const cancelled = await fetch(
+        `${baseUrl}/api/connections/requests/${request.id}`,
+        {
+          method: "PATCH",
+          headers: {
+            "content-type": "application/json",
+            "x-demo-user-id": "user-zhou",
+          },
+          body: JSON.stringify({ action: "cancel" }),
+        },
+      );
+      assert.equal(cancelled.status, 200);
+    }
+
+    const limited = await fetch(`${baseUrl}/api/connections/requests`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-demo-user-id": "user-zhou",
+      },
+      body: JSON.stringify({
+        recipient_id: "user-lin",
+        event_id: "hackathon-2026",
+        source: "link",
+      }),
+    });
+
+    assert.equal(limited.status, 429);
+    assert.equal(limited.headers.get("retry-after"), "60");
+    assert.equal((await limited.json()).error.code, "REQUEST_RATE_LIMITED");
+  });
 });

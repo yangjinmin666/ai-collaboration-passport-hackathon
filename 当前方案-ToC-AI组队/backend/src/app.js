@@ -3,18 +3,56 @@ import { createServer } from "node:http";
 import {
   acceptConnectionRequest,
   appendEventLog,
+  blockConnectionRequest,
+  cancelConnectionRequest,
+  countRecentConnectionRequests,
+  createAuthSession,
   createConnectionRequest,
+  expireConnectionRequests,
   findActiveConnectionRequest,
   findConnectionBetween,
   findConnectionById,
   findConnectionRequestById,
+  findEventEndsAt,
+  findLatestConnectionRequest,
   findPublicCardProfile,
+  findSessionUserId,
+  findUserIdentity,
   isParticipantVisible,
+  isConnectionBlocked,
+  listConnectionRequests,
   openDatabase,
+  rejectConnectionRequest,
+  revokeAuthSession,
   userExists,
 } from "./database.js";
 
 const SOURCES = new Set(["nfc", "qr", "link"]);
+const CONNECTION_REQUEST_STATUSES = new Set([
+  "REQUESTED",
+  "ACCEPTED",
+  "REJECTED",
+  "CANCELLED",
+  "EXPIRED",
+  "BLOCKED",
+]);
+const CONNECTION_REQUEST_RESOLVERS = {
+  block: {
+    resolve: blockConnectionRequest,
+    expectedStatus: "BLOCKED",
+    errorMessage: "This connection request can no longer be blocked.",
+  },
+  cancel: {
+    resolve: cancelConnectionRequest,
+    expectedStatus: "CANCELLED",
+    errorMessage: "This connection request can no longer be cancelled.",
+  },
+  reject: {
+    resolve: rejectConnectionRequest,
+    expectedStatus: "REJECTED",
+    errorMessage: "This connection request can no longer be rejected.",
+  },
+};
 
 function matchCardRoute(url) {
   const publicMatch = url.pathname.match(/^\/c\/([^/]+)$/);
@@ -35,19 +73,20 @@ function matchCardRoute(url) {
   };
 }
 
-function sendJson(response, status, body) {
+function sendJson(response, status, body, extraHeaders = {}) {
   response.writeHead(status, {
-    "access-control-allow-headers": "content-type, x-demo-user-id",
-    "access-control-allow-methods": "GET, POST, PATCH, OPTIONS",
+    "access-control-allow-headers": "authorization, content-type, x-demo-access-key, x-demo-user-id",
+    "access-control-allow-methods": "DELETE, GET, POST, PATCH, OPTIONS",
     "access-control-allow-origin": "*",
     "cache-control": "no-store",
     "content-type": "application/json; charset=utf-8",
+    ...extraHeaders,
   });
   response.end(JSON.stringify(body));
 }
 
-function sendError(response, status, code, message) {
-  sendJson(response, status, { error: { code, message } });
+function sendError(response, status, code, message, extraHeaders) {
+  sendJson(response, status, { error: { code, message } }, extraHeaders);
 }
 
 function readPathParameter(response, encodedValue) {
@@ -91,7 +130,31 @@ async function readJsonBody(request, response) {
   }
 }
 
-export function createApi({ databasePath, clock = () => new Date() }) {
+function readBearerToken(request) {
+  const authorization = request.headers.authorization;
+  if (typeof authorization !== "string") return null;
+  return authorization.match(/^Bearer ([A-Za-z0-9_-]+)$/)?.[1] ?? null;
+}
+
+function resolveActorId(database, request, now) {
+  if (request.headers.authorization !== undefined) {
+    const token = readBearerToken(request);
+    return token ? findSessionUserId(database, { token, now }) : null;
+  }
+  const demoUserId = request.headers["x-demo-user-id"];
+  if (typeof demoUserId !== "string" || !userExists(database, demoUserId)) {
+    return null;
+  }
+  return demoUserId;
+}
+
+export function createApi({
+  databasePath,
+  clock = () => new Date(),
+  demoAccessKey = null,
+  sessionTtlMs = 12 * 60 * 60 * 1000,
+  requestTtlMs = 24 * 60 * 60 * 1000,
+}) {
   const database = openDatabase(databasePath);
   const handleRequest = async (request, response) => {
     if (request.method === "OPTIONS") {
@@ -105,6 +168,60 @@ export function createApi({ databasePath, clock = () => new Date() }) {
         status: "ok",
         service: "collaboration-passport-api",
       });
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/auth/demo-sessions") {
+      const suppliedAccessKey = request.headers["x-demo-access-key"];
+      if (
+        typeof demoAccessKey !== "string"
+        || typeof suppliedAccessKey !== "string"
+        || suppliedAccessKey !== demoAccessKey
+      ) {
+        sendError(
+          response,
+          403,
+          "DEMO_ACCESS_DENIED",
+          "A valid demo access key is required.",
+        );
+        return;
+      }
+
+      const parsedBody = await readJsonBody(request, response);
+      if (!parsedBody.ok) return;
+      const userId = parsedBody.value?.user_id;
+      const user = typeof userId === "string"
+        ? findUserIdentity(database, userId)
+        : null;
+      if (!user) {
+        sendError(response, 404, "DEMO_USER_NOT_FOUND", "Demo user not found.");
+        return;
+      }
+
+      const nowDate = clock();
+      const expiresAt = new Date(nowDate.getTime() + sessionTtlMs).toISOString();
+      const session = createAuthSession(database, {
+        userId,
+        now: nowDate.toISOString(),
+        expiresAt,
+      });
+      sendJson(response, 201, {
+        access_token: session.token,
+        token_type: "Bearer",
+        expires_at: session.expiresAt,
+        user,
+      });
+      return;
+    }
+
+    if (request.method === "DELETE" && url.pathname === "/api/auth/session") {
+      const token = readBearerToken(request);
+      const now = clock().toISOString();
+      if (!token || !revokeAuthSession(database, { token, now })) {
+        sendError(response, 401, "AUTH_REQUIRED", "A valid session is required.");
+        return;
+      }
+      sendJson(response, 204, null);
       return;
     }
 
@@ -161,8 +278,8 @@ export function createApi({ databasePath, clock = () => new Date() }) {
     }
 
     if (request.method === "POST" && url.pathname === "/api/connections/requests") {
-      const requesterId = request.headers["x-demo-user-id"];
-      if (typeof requesterId !== "string" || !userExists(database, requesterId)) {
+      const requesterId = resolveActorId(database, request, clock().toISOString());
+      if (!requesterId) {
         sendError(response, 401, "AUTH_REQUIRED", "A valid demo user is required.");
         return;
       }
@@ -180,7 +297,12 @@ export function createApi({ databasePath, clock = () => new Date() }) {
         );
         return;
       }
-      const { recipient_id: recipientId, event_id: eventId, source } = payload;
+      const {
+        recipient_id: recipientId,
+        event_id: eventId,
+        source,
+        message: rawMessage,
+      } = payload;
       if (!recipientId || !eventId || !SOURCES.has(source)) {
         sendError(
           response,
@@ -190,8 +312,34 @@ export function createApi({ databasePath, clock = () => new Date() }) {
         );
         return;
       }
+      if (
+        rawMessage !== undefined
+        && (typeof rawMessage !== "string" || rawMessage.length > 240)
+      ) {
+        sendError(
+          response,
+          400,
+          "INVALID_MESSAGE",
+          "message must be a string of at most 240 characters.",
+        );
+        return;
+      }
       if (requesterId === recipientId) {
         sendError(response, 409, "SELF_CONNECTION", "You cannot connect with yourself.");
+        return;
+      }
+
+      if (isConnectionBlocked(database, {
+        firstUserId: requesterId,
+        secondUserId: recipientId,
+        eventId,
+      })) {
+        sendError(
+          response,
+          409,
+          "CONNECTION_BLOCKED",
+          "A connection request is not available for this participant pair.",
+        );
         return;
       }
 
@@ -219,6 +367,8 @@ export function createApi({ databasePath, clock = () => new Date() }) {
         return;
       }
 
+      expireConnectionRequests(database, { eventId, now });
+
       const existing = findActiveConnectionRequest(database, {
         requesterId,
         recipientId,
@@ -229,11 +379,58 @@ export function createApi({ databasePath, clock = () => new Date() }) {
         return;
       }
 
+      const latestRejection = findLatestConnectionRequest(database, {
+        requesterId,
+        recipientId,
+        eventId,
+        status: "REJECTED",
+      });
+      if (latestRejection) {
+        const cooldownEndsAt = new Date(latestRejection.updated_at).getTime()
+          + 5 * 60 * 1000;
+        const cooldownRemainingMs = cooldownEndsAt - new Date(now).getTime();
+        if (cooldownRemainingMs > 0) {
+          const retryAfterSeconds = Math.ceil(cooldownRemainingMs / 1000);
+          sendError(
+            response,
+            429,
+            "REQUEST_COOLDOWN",
+            "This participant declined recently. Try again after the cooldown.",
+            { "retry-after": String(retryAfterSeconds) },
+          );
+          return;
+        }
+      }
+
+      const rateWindowStart = new Date(
+        new Date(now).getTime() - 60 * 1000,
+      ).toISOString();
+      const recentRequestCount = countRecentConnectionRequests(database, {
+        requesterId,
+        eventId,
+        since: rateWindowStart,
+      });
+      if (recentRequestCount >= 5) {
+        sendError(
+          response,
+          429,
+          "REQUEST_RATE_LIMITED",
+          "Too many connection requests. Try again in one minute.",
+          { "retry-after": "60" },
+        );
+        return;
+      }
+
       const connectionRequest = createConnectionRequest(database, {
         requesterId,
         recipientId,
         eventId,
         source,
+        message: rawMessage?.trim() || null,
+        expiresAt: new Date(Math.min(
+          new Date(now).getTime() + requestTtlMs,
+          new Date(findEventEndsAt(database, eventId)).getTime(),
+        )).toISOString(),
         now,
       });
       sendJson(response, 201, {
@@ -243,12 +440,58 @@ export function createApi({ databasePath, clock = () => new Date() }) {
       return;
     }
 
+    if (request.method === "GET" && url.pathname === "/api/connections/requests") {
+      const now = clock().toISOString();
+      const actorId = resolveActorId(database, request, now);
+      if (!actorId) {
+        sendError(response, 401, "AUTH_REQUIRED", "A valid session is required.");
+        return;
+      }
+      const eventId = url.searchParams.get("event_id");
+      const direction = url.searchParams.get("direction") ?? "incoming";
+      const status = url.searchParams.get("status");
+      if (!eventId) {
+        sendError(response, 400, "EVENT_REQUIRED", "event_id is required.");
+        return;
+      }
+      if (!new Set(["incoming", "outgoing"]).has(direction)) {
+        sendError(
+          response,
+          400,
+          "INVALID_DIRECTION",
+          "direction must be incoming or outgoing.",
+        );
+        return;
+      }
+      if (status && !CONNECTION_REQUEST_STATUSES.has(status)) {
+        sendError(response, 400, "INVALID_STATUS", "status is invalid.");
+        return;
+      }
+
+      expireConnectionRequests(database, { eventId, now });
+
+      const requests = listConnectionRequests(database, {
+        userId: actorId,
+        eventId,
+        direction,
+        status,
+      });
+      sendJson(response, 200, {
+        requests,
+        sync: {
+          server_time: now,
+          poll_after_ms: 2500,
+        },
+      });
+      return;
+    }
+
     const connectionRequestMatch = url.pathname.match(
       /^\/api\/connections\/requests\/([^/]+)$/,
     );
     if (request.method === "PATCH" && connectionRequestMatch) {
-      const actorId = request.headers["x-demo-user-id"];
-      if (typeof actorId !== "string" || !userExists(database, actorId)) {
+      const actorId = resolveActorId(database, request, clock().toISOString());
+      if (!actorId) {
         sendError(response, 401, "AUTH_REQUIRED", "A valid demo user is required.");
         return;
       }
@@ -260,31 +503,130 @@ export function createApi({ databasePath, clock = () => new Date() }) {
         payload === null
         || typeof payload !== "object"
         || Array.isArray(payload)
-        || payload.action !== "accept"
+        || !new Set(["accept", "reject", "cancel", "block"]).has(payload.action)
       ) {
-        sendError(response, 400, "INVALID_ACTION", "action must be accept.");
+        sendError(
+          response,
+          400,
+          "INVALID_ACTION",
+          "action must be accept, reject, cancel, or block.",
+        );
+        return;
+      }
+      if (
+        payload.action === "block"
+        && payload.reason_code !== undefined
+        && (
+          typeof payload.reason_code !== "string"
+          || payload.reason_code.length > 64
+        )
+      ) {
+        sendError(
+          response,
+          400,
+          "INVALID_REASON_CODE",
+          "reason_code must be a string of at most 64 characters.",
+        );
         return;
       }
 
       const requestId = readPathParameter(response, connectionRequestMatch[1]);
       if (requestId === null) return;
+      const now = clock().toISOString();
+      const eventId = findConnectionRequestById(database, requestId)?.event_id;
+      if (eventId) expireConnectionRequests(database, { eventId, now });
       const connectionRequest = findConnectionRequestById(database, requestId);
       if (!connectionRequest) {
         sendError(response, 404, "REQUEST_NOT_FOUND", "Connection request not found.");
         return;
       }
-      if (connectionRequest.recipient_id !== actorId) {
+      if (
+        payload.action === "accept"
+        && connectionRequest.status === "EXPIRED"
+      ) {
+        sendError(
+          response,
+          409,
+          "REQUEST_EXPIRED",
+          "This connection request has expired.",
+        );
+        return;
+      }
+      if (
+        payload.action === "cancel"
+        && connectionRequest.requester_id !== actorId
+      ) {
+        sendError(
+          response,
+          403,
+          "REQUESTER_ONLY",
+          "Only the requester can cancel this connection request.",
+        );
+        return;
+      }
+      if (
+        new Set(["accept", "reject"]).has(payload.action)
+        && connectionRequest.recipient_id !== actorId
+      ) {
         sendError(
           response,
           403,
           "RECIPIENT_ONLY",
-          "Only the request recipient can accept this connection.",
+          "Only the request recipient can accept or reject this connection.",
+        );
+        return;
+      }
+      if (
+        payload.action === "block"
+        && ![
+          connectionRequest.requester_id,
+          connectionRequest.recipient_id,
+        ].includes(actorId)
+      ) {
+        sendError(
+          response,
+          403,
+          "PARTICIPANT_ONLY",
+          "Only request participants can block this relationship.",
         );
         return;
       }
 
-      const now = clock().toISOString();
+      const resolver = CONNECTION_REQUEST_RESOLVERS[payload.action];
+      if (resolver) {
+        const result = resolver.resolve(database, {
+          requestId,
+          actorId,
+          reasonCode: payload.reason_code ?? "not_specified",
+          now,
+        });
+        if (result.request.status !== resolver.expectedStatus) {
+          sendError(
+            response,
+            409,
+            "REQUEST_NOT_PENDING",
+            resolver.errorMessage,
+          );
+          return;
+        }
+        sendJson(response, 200, {
+          request: result.request,
+          connection: result.connection ?? null,
+          idempotent_replay: result.idempotentReplay,
+        });
+        return;
+      }
+
       const result = acceptConnectionRequest(database, { requestId, actorId, now });
+      if (result.blocked) {
+        sendError(
+          response,
+          409,
+          "CONNECTION_BLOCKED",
+          "This participant pair can no longer establish a connection.",
+        );
+        return;
+      }
       if (!result.connection) {
         sendError(
           response,
@@ -304,8 +646,8 @@ export function createApi({ databasePath, clock = () => new Date() }) {
 
     const connectionMatch = url.pathname.match(/^\/api\/connections\/([^/]+)$/);
     if (request.method === "GET" && connectionMatch) {
-      const actorId = request.headers["x-demo-user-id"];
-      if (typeof actorId !== "string" || !userExists(database, actorId)) {
+      const actorId = resolveActorId(database, request, clock().toISOString());
+      if (!actorId) {
         sendError(response, 401, "AUTH_REQUIRED", "A valid demo user is required.");
         return;
       }
