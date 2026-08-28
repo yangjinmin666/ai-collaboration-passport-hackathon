@@ -12,6 +12,71 @@ BASE_URL = "http://127.0.0.1:4173"
 OUTPUT_DIR = Path(__file__).with_name("artifacts")
 
 
+def mobile_visual_baseline(page) -> dict:
+    """Return violations of the frozen mobile type and touch-target rules."""
+    return page.evaluate(
+        """() => {
+            const isVisible = (element) => {
+                const style = getComputedStyle(element);
+                const box = element.getBoundingClientRect();
+                return style.display !== 'none'
+                    && style.visibility !== 'hidden'
+                    && Number(style.opacity) > 0
+                    && box.width > 0
+                    && box.height > 0;
+            };
+            const label = (element) => {
+                const raw = element.getAttribute('aria-label') || element.textContent || element.tagName;
+                return raw.replace(/\\s+/g, ' ').trim().slice(0, 48);
+            };
+            const typeExclusions = '.eink-card, .onboarding-eink';
+            const textNodes = [...document.querySelectorAll('body *')].filter((element) =>
+                isVisible(element)
+                && !element.closest(typeExclusions)
+                && [...element.childNodes].some((node) => node.nodeType === Node.TEXT_NODE && node.textContent.trim())
+            );
+            const fontViolations = textNodes.map((element) => ({
+                element,
+                size: parseFloat(getComputedStyle(element).fontSize),
+            })).filter(({size}) => size < 10).map(({element, size}) => ({
+                selector: element.className ? `.${String(element.className).trim().replace(/\\s+/g, '.')}` : element.tagName.toLowerCase(),
+                label: label(element),
+                size,
+            }));
+
+            const controlExclusions = '.radar-person, .radar-self, .overlay-backdrop';
+            const controls = [...document.querySelectorAll('button, a[href], input, select, textarea, [role="button"]')]
+                .filter((element) => isVisible(element) && !element.closest(controlExclusions));
+            const touchViolations = controls.map((element) => {
+                const box = element.getBoundingClientRect();
+                return {element, width: box.width, height: box.height};
+            }).filter(({width, height}) => width < 44 || height < 44).map(({element, width, height}) => ({
+                selector: element.className ? `.${String(element.className).trim().replace(/\\s+/g, '.')}` : element.tagName.toLowerCase(),
+                label: label(element),
+                width: Math.round(width * 10) / 10,
+                height: Math.round(height * 10) / 10,
+            }));
+
+            return {
+                minimumFontSize: Math.min(...textNodes.map((element) => parseFloat(getComputedStyle(element).fontSize))),
+                fontViolations,
+                touchViolations,
+            };
+        }"""
+    )
+
+
+def assert_mobile_visual_baseline(page, report: dict, label: str):
+    baseline = mobile_visual_baseline(page)
+    report[label] = {
+        "minimum_font_size": baseline["minimumFontSize"],
+        "font_violations": len(baseline["fontViolations"]),
+        "touch_violations": len(baseline["touchViolations"]),
+    }
+    assert not baseline["fontViolations"], baseline["fontViolations"]
+    assert not baseline["touchViolations"], baseline["touchViolations"]
+
+
 def bottom_center_brightness(png: bytes) -> float:
     """Measure whether the avatar crop exposes a full-width gray gutter."""
     image = Image.open(BytesIO(png)).convert("RGB")
@@ -67,7 +132,7 @@ def subject_pixel_ratio(png: bytes) -> float:
 
 def main():
     OUTPUT_DIR.mkdir(exist_ok=True)
-    report = {"variants": {}, "flow": {}, "errors": []}
+    report = {"variants": {}, "flow": {}, "visual_baseline": {}, "errors": []}
 
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
@@ -97,6 +162,8 @@ def main():
             assert report["variants"][variant]["nav_buttons"] == 4
             assert report["variants"][variant]["discovery_tabs"] == 3
             assert report["variants"][variant]["prototype_switcher_removed"]
+            assert report["variants"][variant]["body_scroll_width"] <= report["variants"][variant]["viewport_width"]
+            assert_mobile_visual_baseline(page, report["visual_baseline"], f"variant_{variant}")
             if variant == "A":
                 report["variants"][variant]["active_recommendation_cards"] = page.locator(".recommendation-card-active").count()
                 report["variants"][variant]["recommendation_progress_count"] = page.locator(".recommendation-progress i").count()
@@ -194,14 +261,17 @@ def main():
         page.wait_for_load_state("networkidle")
         report["flow"]["onboarding_starts_at_status"] = page.get_by_text("你现在来现场，最需要什么？", exact=True).is_visible()
         report["flow"]["discovery_tabs_hidden_during_onboarding"] = page.locator(".discovery-tabs").count() == 0
+        assert_mobile_visual_baseline(page, report["visual_baseline"], "onboarding_status")
         page.get_by_role("button", name="正在找队伍").click()
         page.get_by_role("button", name="下一步 · 组装能力证据").click()
+        assert_mobile_visual_baseline(page, report["visual_baseline"], "onboarding_evidence")
         page.get_by_role("button", name="即刻 构建动态 添加").click()
         page.get_by_role("button", name="交给 AI 生成草稿").click()
         page.get_by_role("button", name="AI 重组").click()
         page.get_by_role("button", name="确认草稿 · 预览公开面").click()
         page.get_by_role("button", name="工牌公开面").click()
         report["flow"]["onboarding_surface_visible"] = page.locator(".onboarding-eink").is_visible()
+        assert_mobile_visual_baseline(page, report["visual_baseline"], "onboarding_preview")
         page.wait_for_timeout(350)
         page.screenshot(path=str(OUTPUT_DIR / "onboarding-eink-preview.png"), full_page=True)
         page.get_by_role("button", name="公开协作护照 · 进入现场").click()
@@ -253,6 +323,7 @@ def main():
         page.goto(f"{BASE_URL}/?variant=A")
         page.wait_for_load_state("networkidle")
         page.locator(".recommendation-card-active").click()
+        assert_mobile_visual_baseline(page, report["visual_baseline"], "person_detail_sheet")
         page.screenshot(path=str(OUTPUT_DIR / "step-1-match-reason.png"), full_page=True)
         page.get_by_role("button", name="想认识", exact=True).click()
         page.get_by_role("button", name="模拟碰卡直连").click()
@@ -313,6 +384,7 @@ def main():
         assert report["flow"]["project_sos_visible"]
         page.wait_for_timeout(260)
         page.screenshot(path=str(OUTPUT_DIR / "workspace-mobile.png"), full_page=True)
+        assert_mobile_visual_baseline(page, report["visual_baseline"], "workspace_mobile")
 
         report["flow"] = {
             **report["flow"],

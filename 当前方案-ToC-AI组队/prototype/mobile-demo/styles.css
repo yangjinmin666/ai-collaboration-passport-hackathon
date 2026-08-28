@@ -18,6 +18,23 @@
   --radius-xl: 30px;
   --radius-lg: 22px;
   --radius-md: 16px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --type-display: 28px;
+  --type-page-title: 24px;
+  --type-section-title: 18px;
+  --type-card-title: 16px;
+  --type-body: 14px;
+  --type-label: 12px;
+  --type-micro: 10px;
+  --leading-tight: 1.15;
+  --leading-title: 1.3;
+  --leading-body: 1.5;
+  --touch-target: 44px;
   font-family: "SF Pro Display", "PingFang SC", "Helvetica Neue", Arial, sans-serif;
   color: var(--ink);
   background: var(--paper);
@@ -569,6 +586,141 @@ body[data-flow="onboarding"] .onboarding-shell { background: #fff; background-im
   .app-nav { bottom: 10px; }
   .screen { padding-bottom: 96px; }
   .radar-field { width: 286px; height: 286px; margin-top: -2px; }
+
+  /* Mobile typography foundation: real-device sizes, not scaled mockup sizes. */
+  .micro-label, .eyebrow { font-size: var(--type-micro); line-height: 1.4; }
+  .app-brand strong { font-size: 22px; line-height: var(--leading-tight); }
+  .app-brand span, .event-context { font-size: var(--type-micro); line-height: 1.4; }
+  .discovery-tabs button, .workspace-tabs button, .preview-tabs button { min-height: var(--touch-target); font-size: 13px; }
+  .app-nav button { min-height: 56px; }
+  .app-nav button small { font-size: 11px; line-height: 1.35; }
+  .app-nav button i { min-width: 18px; height: 18px; font-size: var(--type-micro); }
+  .primary-button, .secondary-button { min-height: var(--touch-target); font-size: var(--type-body); line-height: 1.4; }
+  .text-action { min-height: var(--touch-target); font-size: 13px; }
+  .close-x, .onboarding-back { width: var(--touch-target); height: var(--touch-target); }
+
+  /* Passport and discovery deck. */
+  .status-pill { font-size: var(--type-label); }
+  .passport-id { font-size: var(--type-micro); }
+  .passport-role { font-size: var(--type-body); line-height: var(--leading-body); }
+  .passport-tags span { font-size: var(--type-label); }
+  .passport-mission { font-size: var(--type-body); line-height: var(--leading-body); }
+  .passport-mission strong { font-size: var(--type-body); }
+  .passport-sync { min-height: var(--touch-target); font-size: var(--type-label); }
+  .recommendation-intro span, .recommendation-intro em { font-size: var(--type-label); }
+  .recommendation-intro strong { font-size: var(--type-body); }
+  .recommendation-card-head { font-size: var(--type-label); }
+  .recommendation-person h3 { font-size: var(--type-display); }
+  .recommendation-person p { font-size: var(--type-body); }
+  .recommendation-skills span { font-size: var(--type-label); }
+  .recommendation-evidence span, .recommendation-reason span { font-size: 11px; }
+  .recommendation-evidence strong, .recommendation-reason p { font-size: var(--type-body); line-height: var(--leading-body); }
+  .recommendation-card-active > footer span { font-size: 11px; }
+  .recommendation-card-active > footer b { font-size: var(--type-label); }
+  .recommendation-actions small { font-size: 11px; }
+  .recommendation-hint { font-size: var(--type-micro); }
+  .recommendation-boundary span { font-size: var(--type-label); }
+  .recommendation-boundary p { font-size: 11px; line-height: var(--leading-body); }
+
+  /* Onboarding: one readable hierarchy across all four steps. */
+  .onboarding-header > strong { font-size: var(--type-label); }
+  .guide-mark { font-size: var(--type-label); }
+  .passport-guide p, .status-choice > span, .source-card > span, .draft-section > span { font-size: var(--type-micro); }
+  .passport-guide h2 { font-size: var(--type-page-title); line-height: var(--leading-title); }
+  .passport-guide div > span { font-size: var(--type-body); line-height: var(--leading-body); }
+  .status-choice { min-height: 72px; }
+  .status-choice strong { font-size: var(--type-card-title); }
+  .status-choice small { font-size: var(--type-label); line-height: var(--leading-body); }
+  .visibility-receipt span, .visibility-receipt em, .visibility-receipt strong { font-size: var(--type-label); }
+  .source-card { min-height: 64px; }
+  .source-card strong { font-size: var(--type-body); }
+  .source-card small, .source-card em { font-size: var(--type-label); }
+  .now-building-card p { font-size: 13px; line-height: var(--leading-body); }
+  .now-building-card > div:first-child span { font-size: var(--type-micro); }
+  .now-building-card h3 { font-size: 20px; }
+  .now-building-card > div:last-child span { font-size: 11px; }
+  .draft-head h3 { font-size: var(--type-section-title); }
+  .draft-head p, .draft-head button, .draft-section > small, .draft-tags b { font-size: var(--type-label); }
+  .draft-head button { min-height: var(--touch-target); }
+  .draft-section > strong, .vibe-section p { font-size: var(--type-body); line-height: var(--leading-body); }
+  .consent-note { font-size: 11px; line-height: var(--leading-body); }
+  .discovery-card-meta, .onboarding-discovery-card section span, .onboarding-discovery-card section small { font-size: var(--type-micro); }
+  .onboarding-discovery-card > p, .onboarding-discovery-card section strong { font-size: var(--type-label); }
+  .onboarding-full-passport h3 { font-size: var(--type-section-title); }
+  .onboarding-full-passport header p, .passport-vibe { font-size: var(--type-label); line-height: var(--leading-body); }
+  .onboarding-full-passport > div span { font-size: var(--type-micro); }
+  .onboarding-full-passport > div strong { font-size: var(--type-body); }
+  .publish-scope span, .publish-scope small, .onboarding-footer .text-action, .onboarding-footer .primary-button { font-size: var(--type-label); }
+
+  /* Nearby, directory and connections. */
+  .mobile-discovery-note span { font-size: var(--type-label); }
+  .mobile-discovery-note small { font-size: 11px; line-height: var(--leading-body); }
+  .radar-copy h3, .directory-copy h3 { font-size: 22px; line-height: var(--leading-title); }
+  .radar-copy > p, .directory-copy p, .ticket-reason { font-size: var(--type-body); line-height: var(--leading-body); }
+  .radar-person { font-size: var(--type-micro); }
+  .ticket-head p { font-size: var(--type-card-title); }
+  .ticket-head span { font-size: var(--type-label); }
+  .ledger-header p { font-size: var(--type-micro); }
+  .ledger-id { min-height: var(--touch-target); font-size: var(--type-label); }
+  .ledger-status span { font-size: var(--type-micro); }
+  .ledger-status strong { font-size: var(--type-body); }
+  .ledger-rule, .ledger-main { font-size: var(--type-label); }
+  .ledger-name { font-size: var(--type-section-title); }
+  .ledger-name em, .ledger-fit, .ledger-fit small { font-size: var(--type-micro); }
+  .ledger-scan { min-height: var(--touch-target); font-size: var(--type-body); }
+  .connection-stamp span { font-size: var(--type-micro); }
+  .connection-stamp b { font-size: var(--type-body); }
+  .connection-summary span { font-size: var(--type-body); }
+  .connection-summary em { font-size: var(--type-micro); }
+  .connection-hero > p, .empty-state p { font-size: var(--type-body); line-height: var(--leading-body); }
+  .filter-row button { min-height: var(--touch-target); font-size: var(--type-label); }
+  .connection-card-head h4 { font-size: var(--type-section-title); }
+  .connection-card-head p, .connection-context span, .connection-context small, .pending-row div, .pending-row em { font-size: var(--type-label); }
+  .source-chip, .sync-chip, .ai-badge { font-size: var(--type-micro); }
+  .connection-context strong { font-size: var(--type-body); }
+
+  /* RALLY Room: clear at a glance, detailed only after entering. */
+  .collaboration-empty h3 { font-size: 22px; }
+  .collaboration-empty > p:not(.micro-label) { font-size: var(--type-body); line-height: var(--leading-body); }
+  .collaboration-inbox article strong { font-size: var(--type-body); }
+  .collaboration-inbox article small, .collaboration-inbox article em { font-size: var(--type-label); }
+  .workspace-live, .workspace-room-label, .workspace-project-meta, .workspace-project-meta strong, .workspace-project-meta b { font-size: var(--type-micro); }
+  .workspace-avatar-stack span { font-size: var(--type-micro); }
+  .workspace-project-head h3 { font-size: var(--type-page-title); line-height: var(--leading-title); }
+  .workspace-project-head > p { font-size: 13px; line-height: var(--leading-body); }
+  .workspace-launch-track i, .workspace-launch-track b, .workspace-launch-track small { font-size: var(--type-micro); }
+  .workspace-section-title h3, .agent-proposal > header h3 { font-size: var(--type-section-title); line-height: var(--leading-title); }
+  .workspace-section-title > span, .workspace-next-action > header > span, .agent-proposal > header > span { font-size: var(--type-micro); }
+  .workspace-next-action > header h3 { font-size: 20px; line-height: var(--leading-title); }
+  .workspace-next-action > p, .workspace-started-card > p:not(.micro-label), .agent-proposal > p { font-size: var(--type-body); line-height: var(--leading-body); }
+  .workspace-assignment-preview article strong, .workspace-activity-preview article strong, .workspace-members strong, .assignment-list strong, .workspace-timeline strong { font-size: 13px; line-height: 1.4; }
+  .workspace-assignment-preview article small, .workspace-assignment-preview > small, .workspace-activity-preview article small, .workspace-members small, .assignment-list small, .workspace-timeline small { font-size: 11px; line-height: 1.4; }
+  .workspace-started-card h3 { font-size: 21px; }
+  .workspace-started-card .secondary-button { min-height: var(--touch-target); }
+  .workspace-activity-preview h3 { font-size: var(--type-card-title); }
+  .workspace-activity-preview > header button { min-height: var(--touch-target); font-size: var(--type-label); }
+  .workspace-sos-live span, .workspace-members em, .assignment-list article > b, .assignment-list em { font-size: var(--type-micro); }
+  .workspace-sos-live strong, .workspace-governance span, .workspace-risk span, .record-policy b, .workspace-handoff > div:first-child span { font-size: 13px; }
+  .workspace-sos-live small, .workspace-governance p, .workspace-risk p, .record-policy p, .workspace-handoff > div:first-child p, .proposal-confirmed span, .workspace-section-copy { font-size: var(--type-label); line-height: var(--leading-body); }
+  .assignment-list button, .workspace-sos-button, .workspace-handoff button { min-height: var(--touch-target); font-size: var(--type-label); }
+  .task-item { min-height: 64px; }
+  .task-item strong { font-size: var(--type-body); }
+  .task-item small, .task-item em { font-size: var(--type-label); }
+  .task-item .task-done { font-size: 11px; line-height: 1.4; }
+
+  /* Profile, sheets and feedback. E-ink preview keeps scaled-device typography. */
+  .profile-intro p { font-size: var(--type-body); }
+  .visibility-panel h3 { font-size: var(--type-section-title); }
+  .visibility-panel p:last-child { font-size: 13px; line-height: var(--leading-body); }
+  .toggle { min-width: 52px; min-height: var(--touch-target); }
+  .profile-fields button { min-height: var(--touch-target); font-size: var(--type-body); }
+  .person-sheet-head p { font-size: 13px; }
+  .large-fit { font-size: 11px; }.large-fit small { font-size: var(--type-micro); }
+  .skill-line span { font-size: var(--type-label); }
+  .ai-reason > p:not(.micro-label), .handshake-copy, .success-card > p { font-size: var(--type-body); line-height: var(--leading-body); }
+  .ai-reason div span { font-size: 11px; }.ai-reason div strong { font-size: 13px; }
+  .stamp span, .stamp small { font-size: var(--type-micro); }
+  .toast { max-width: calc(100vw - 32px); font-size: 13px; line-height: 1.4; text-align: center; }
 }
 
 @media (prefers-reduced-motion: reduce) {
