@@ -149,44 +149,11 @@ body::before {
 .glyph-md { width: 54px; height: 54px; border-radius: 50%; }
 .glyph-lg { width: 70px; height: 70px; border-radius: 50%; }
 .glyph-xl { width: 86px; height: 86px; border-radius: 50%; }
-.memoji-avatar {
-  --avatar-bg: #edf3ff;
-  --skin: #dca882;
-  --hair: #27303b;
-  --shirt: #3978f6;
-  --eye: #202831;
-  --mouth: #a85e5a;
-  flex: 0 0 auto;
-  display: block;
-  overflow: hidden;
-  border: 1px solid #d9dee5;
-  border-radius: 50%;
-  background-color: var(--avatar-bg);
-  background-image:
-    radial-gradient(circle at 42% 44%, var(--eye) 0 2.4%, transparent 2.8%),
-    radial-gradient(circle at 58% 44%, var(--eye) 0 2.4%, transparent 2.8%),
-    radial-gradient(ellipse at 50% 58%, transparent 0 4.5%, var(--mouth) 4.8% 6%, transparent 6.3%),
-    radial-gradient(ellipse at 50% 43%, var(--skin) 0 24%, transparent 24.5%),
-    radial-gradient(ellipse at 50% 31%, var(--hair) 0 28%, transparent 28.5%),
-    radial-gradient(ellipse at 50% 104%, var(--shirt) 0 43%, transparent 43.5%),
-    linear-gradient(145deg, rgba(255,255,255,.95), var(--avatar-bg));
-  background-position: center;
-  background-repeat: no-repeat;
-  background-size: auto;
-  box-shadow: inset 0 0 0 2px rgba(255,255,255,.72);
-}
-.memoji-1 { --avatar-bg:#fff0ec; --skin:#edb58f; --hair:#6d3d2c; --shirt:#a9443a; }
-.memoji-2 { --avatar-bg:#eef6ff; --skin:#f0bf9a; --hair:#332d39; --shirt:#3156a5; }
-.memoji-3 { --avatar-bg:#f2efff; --skin:#c98e69; --hair:#171d29; --shirt:#4b3ca3; }
-.memoji-4 { --avatar-bg:#edf7f1; --skin:#d8a078; --hair:#2f261f; --shirt:#3b9870; }
-.memoji-5 { --avatar-bg:#eef4ff; --skin:#d7a17a; --hair:#242a33; --shirt:#264f9e; }
-.memoji-6 { --avatar-bg:#fff5e8; --skin:#efbd91; --hair:#814d32; --shirt:#9a5b1c; }
-.memoji-7 { --avatar-bg:#f5f0ff; --skin:#a96f50; --hair:#26202b; --shirt:#5b429a; }
-.memoji-8 { --avatar-bg:#edf8fa; --skin:#f0c09a; --hair:#9b5732; --shirt:#267c88; }
-.memoji-9 { --avatar-bg:#fff0f5; --skin:#e4aa83; --hair:#3b2826; --shirt:#9d365f; }
-.memoji-10 { --avatar-bg:#f2f4f7; --skin:#bd805e; --hair:#20252c; --shirt:#596474; }
-.memoji-11 { --avatar-bg:#eff8ec; --skin:#edb48e; --hair:#826143; --shirt:#65a54d; }
-.memoji-12 { --avatar-bg:#fff4eb; --skin:#d2946f; --hair:#32231f; --shirt:#994228; }
+.memoji-avatar { flex: 0 0 auto; display: block; overflow: hidden; border: 1px solid #d9dee5; border-radius: 50%; background-color: #fff; background-image: url("./assets/default-memoji-grid.jpg"); background-repeat: no-repeat; background-size: 450% 600%; box-shadow: inset 0 0 0 2px rgba(255,255,255,.7); }
+.memoji-1 { background-position: 8.140% 5.116%; }.memoji-2 { background-position: 50% 5.233%; }.memoji-3 { background-position: 91.362% 5.581%; }
+.memoji-4 { background-position: 5.482% 33.837%; }.memoji-5 { background-position: 49.003% 33.953%; }.memoji-6 { background-position: 92.359% 33.721%; }
+.memoji-7 { background-position: 5.149% 64.302%; }.memoji-8 { background-position: 50.166% 64.535%; }.memoji-9 { background-position: 92.359% 63.721%; }
+.memoji-10 { background-position: 6.312% 93.256%; }.memoji-11 { background-position: 49.668% 93.140%; }.memoji-12 { background-position: 91.030% 93.256%; }
 .radar-self .memoji-avatar { width: 100%; height: 100%; border: 0; border-radius: inherit; }
 .glyph-grid { background-color: #ffe2d6; background-image: linear-gradient(rgba(24,32,30,.12) 1px, transparent 1px), linear-gradient(90deg, rgba(24,32,30,.12) 1px, transparent 1px); background-size: 9px 9px; }
 .glyph-grid i { border-radius: 0; transform: rotate(45deg); }
@@ -301,7 +268,7 @@ body[data-flow="onboarding"] .screen { padding-bottom: 0; background: #fff; }
 .draft-passport { overflow: hidden; border: 1px solid #dfe5ec; border-radius: 22px; background: #fff; box-shadow: 0 14px 40px rgba(38,60,90,.09); }
 .draft-head { display: grid; grid-template-columns: 48px 1fr auto; align-items: center; gap: 10px; padding: 14px; background: linear-gradient(120deg, #f4f8ff, #fff); }
 .draft-avatar { width: 46px; height: 46px; display: grid; place-items: center; border-radius: 50%; background: var(--guide-blue); color: #fff; font-family: "SFMono-Regular", Consolas, monospace; font-size: 11px; font-weight: 850; }
-.draft-avatar.memoji-avatar { display: block; border: 1px solid #d9dee5; color: transparent; }
+.draft-avatar.memoji-avatar { display: block; border: 1px solid #d9dee5; background-color: #f2f2f2; background-image: url("./assets/default-memoji-grid.jpg"); color: transparent; }
 .draft-head h3 { margin: 0; font-size: 17px; }.draft-head p { margin: 3px 0 0; color: #74808a; font-size: 9px; }
 .draft-head button { padding: 6px 8px; border: 1px solid #b9d1fb; border-radius: 10px; background: #fff; color: var(--guide-blue-deep); font-size: 8px; cursor: pointer; }
 .draft-section { display: grid; gap: 5px; padding: 11px 14px; border-top: 1px solid #e8ebef; }

@@ -12,6 +12,19 @@ BASE_URL = "http://127.0.0.1:4173"
 OUTPUT_DIR = Path(__file__).with_name("artifacts")
 
 
+def bottom_center_brightness(png: bytes) -> float:
+    """Measure whether the avatar crop exposes a full-width gray gutter."""
+    image = Image.open(BytesIO(png)).convert("RGB")
+    center_x = image.width // 2
+    y = image.height - 6
+    half_sample_width = max(2, round(image.width * 0.2))
+    brightnesses = sorted(
+        sum(image.getpixel((x, y))) / 3
+        for x in range(center_x - half_sample_width, center_x + half_sample_width + 1)
+    )
+    return brightnesses[round((len(brightnesses) - 1) * 0.8)]
+
+
 def subject_offset_from_center(png: bytes) -> tuple[float, float]:
     """Return the visual subject's bounding-box offset from its circular frame."""
     image = Image.open(BytesIO(png)).convert("RGB")
@@ -24,7 +37,7 @@ def subject_offset_from_center(png: bytes) -> tuple[float, float]:
             if (x - center_x) ** 2 + (y - center_y) ** 2 > radius ** 2:
                 continue
             red, green, blue = image.getpixel((x, y))
-            if max(red, green, blue) < 170:
+            if max(red, green, blue) - min(red, green, blue) > 10 or max(red, green, blue) < 190:
                 subject_pixels.append((x, y))
     x_values = [x for x, _ in subject_pixels]
     y_values = [y for _, y in subject_pixels]
@@ -129,14 +142,21 @@ def main():
                 )
                 assert report["variants"][variant]["center_avatar_is_circle"], center_avatar_geometry
 
+                radar_avatar_brightness = bottom_center_brightness(
+                    page.locator(".radar-person .memoji-avatar").first.screenshot()
+                )
                 page.locator(".app-nav [data-tab='profile']").click()
-                avatar_backgrounds = page.locator(".memoji-avatar").evaluate_all(
-                    "avatars => avatars.map(avatar => getComputedStyle(avatar).backgroundImage)"
+                profile_avatar_brightness = bottom_center_brightness(
+                    page.locator(".profile-intro .memoji-avatar").screenshot()
                 )
                 report["variants"][variant]["avatar_circle_has_no_gray_gutter"] = all(
-                    "default-memoji-grid" not in background for background in avatar_backgrounds
+                    brightness >= 248
+                    for brightness in (radar_avatar_brightness, profile_avatar_brightness)
                 )
-                assert report["variants"][variant]["avatar_circle_has_no_gray_gutter"]
+                assert report["variants"][variant]["avatar_circle_has_no_gray_gutter"], {
+                    "radar": radar_avatar_brightness,
+                    "profile": profile_avatar_brightness,
+                }
 
                 page.evaluate(
                     """() => {
