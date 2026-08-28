@@ -1,0 +1,127 @@
+openapi: 3.1.0
+info:
+  title: Collaboration Passport API
+  version: 0.1.0
+  description: NFC/QR public profile and mutually confirmed connection slice for the hackathon demo.
+servers:
+  - url: http://127.0.0.1:8787
+paths:
+  /health:
+    get:
+      summary: Check service readiness
+      responses:
+        "200":
+          description: Service is ready
+  /c/{opaqueToken}:
+    get:
+      summary: Resolve the URL encoded on an NFC card or its QR fallback
+      parameters:
+        - in: path
+          name: opaqueToken
+          required: true
+          schema: { type: string }
+        - in: query
+          name: event
+          required: true
+          schema: { type: string }
+        - in: query
+          name: src
+          required: false
+          schema: { type: string, enum: [nfc, qr, link], default: link }
+      responses:
+        "200": { description: Only fields included in the owner's active visibility grant }
+        "400": { description: Missing event, invalid source, or malformed token encoding }
+        "404": { description: Missing, inactive, paused, or expired card }
+  /api/cards/{opaqueToken}/profile:
+    get:
+      deprecated: true
+      summary: Compatibility alias for reading the authorized public profile
+      parameters:
+        - in: path
+          name: opaqueToken
+          required: true
+          schema: { type: string }
+        - in: query
+          name: event_id
+          required: true
+          schema: { type: string }
+        - in: query
+          name: source
+          required: false
+          schema: { type: string, enum: [nfc, qr, link], default: link }
+      responses:
+        "200": { description: Authorized limited public profile }
+        "400": { description: Missing event, invalid source, or malformed token encoding }
+        "404": { description: Missing, inactive, paused, or expired card }
+  /api/connections/requests:
+    post:
+      summary: Create an idempotent connection request
+      parameters:
+        - $ref: "#/components/parameters/DemoUser"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [recipient_id, event_id, source]
+              properties:
+                recipient_id: { type: string }
+                event_id: { type: string }
+                source: { type: string, enum: [nfc, qr, link] }
+      responses:
+        "201": { description: Request created }
+        "200": { description: Existing pending request or existing pair connection returned }
+        "400": { description: Invalid JSON or request fields }
+        "401": { description: Authentication required }
+        "409": { description: Recipient unavailable or self-connection }
+        "413": { description: Request payload exceeds 64 KiB }
+  /api/connections/requests/{requestId}:
+    patch:
+      summary: Accept a connection request as its recipient
+      parameters:
+        - $ref: "#/components/parameters/DemoUser"
+        - in: path
+          name: requestId
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action: { type: string, const: accept }
+      responses:
+        "200": { description: Request accepted or replayed idempotently }
+        "400": { description: Invalid path encoding, JSON, or action }
+        "401": { description: Authentication required }
+        "403": { description: Only the recipient can accept }
+        "404": { description: Request not found }
+        "409": { description: Request is no longer pending }
+        "413": { description: Request payload exceeds 64 KiB }
+  /api/connections/{connectionId}:
+    get:
+      summary: Read a connection as one of its participants
+      parameters:
+        - $ref: "#/components/parameters/DemoUser"
+        - in: path
+          name: connectionId
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Connection }
+        "400": { description: Malformed connection id encoding }
+        "401": { description: Authentication required }
+        "403": { description: Only participants may read it }
+        "404": { description: Connection not found }
+components:
+  parameters:
+    DemoUser:
+      in: header
+      name: x-demo-user-id
+      required: true
+      description: Hackathon-only pre-authenticated demo identity.
+      schema: { type: string }
