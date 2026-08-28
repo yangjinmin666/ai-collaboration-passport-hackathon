@@ -230,9 +230,9 @@ const rankedPeople = [...people];
 const radarPeople = rankedPeople;
 
 const variantNames = {
-  A: "协作护照",
-  B: "邻近雷达",
-  C: "墨水名册",
+  A: "发现 · 推荐",
+  B: "发现 · 附近",
+  C: "发现 · 名册",
 };
 
 const startsInOnboarding = new URLSearchParams(location.search).get("onboarding") === "1";
@@ -245,6 +245,7 @@ const state = {
   connectedSources: ["GitHub"],
   previewMode: "mobile",
   draftVersion: 0,
+  recommendationIndex: 0,
   tab: "discover",
   selectedId: "lin",
   visible: !startsInOnboarding,
@@ -273,12 +274,6 @@ function setVariant(key) {
   render();
 }
 
-function cycleVariant(direction) {
-  const keys = ["A", "B", "C"];
-  const index = keys.indexOf(state.variant);
-  setVariant(keys[(index + direction + keys.length) % keys.length]);
-}
-
 function selectedPerson() {
   return people.find((person) => person.id === state.selectedId) || people[0];
 }
@@ -299,7 +294,7 @@ function render() {
   document.body.dataset.flow = state.onboarding ? "onboarding" : "product";
   const phone = `
     <main class="prototype-stage">
-      <section class="phone-shell" aria-label="AI 协作护照手机端原型">
+      <section class="phone-shell" aria-label="即碰即协作手机端原型">
         <div class="phone-status"><span>09:41</span><span class="phone-island"></span><span>5G&nbsp;&nbsp;●</span></div>
         <div class="screen">
           ${state.onboarding ? renderOnboarding() : renderCurrentView()}
@@ -315,7 +310,7 @@ function render() {
     </main>
   `;
 
-  app.innerHTML = `${phone}${renderOverlay()}${renderToast()}${renderSwitcher()}`;
+  app.innerHTML = `${phone}${renderOverlay()}${renderToast()}`;
   bindEvents();
 }
 
@@ -458,62 +453,87 @@ function commonHeader(title = "发现") {
   return `
     <header class="app-header">
       <h2>${title}</h2>
-      <span class="event-context"><i></i>AI Hardware · 2026</span>
+      <span class="event-context"><i></i>当前活动 · 2026</span>
     </header>
   `;
 }
 
+function renderDiscoveryTabs() {
+  return `<nav class="discovery-tabs" aria-label="发现浏览方式">
+    ${[["A", "推荐"], ["B", "附近"], ["C", "名册"]].map(([key, label]) => `
+      <button class="${state.variant === key ? "active" : ""}" data-discovery-view="${key}" aria-pressed="${state.variant === key}">${label}</button>
+    `).join("")}
+  </nav>`;
+}
+
 function renderVariantA() {
-  const visibilityLabel = state.visible ? "活动内可见" : "已暂停展示";
+  const person = recommendedPerson();
+  const nextPerson = rankedPeople[(state.recommendationIndex + 1) % rankedPeople.length];
   return `
     <div class="view view-a">
       ${commonHeader("发现")}
-      <section class="my-passport">
-        <div class="passport-topline">
-          <span class="status-pill ${state.visible ? "status-open" : "status-paused"}"><i></i>${visibilityLabel}</span>
-          <span class="passport-id">P·0087</span>
-        </div>
-        <div class="passport-main">
-          ${glyph(currentUser, "lg")}
-          <div>
-            <p class="passport-name">${currentUser.name}</p>
-            <p class="passport-role">${currentUser.role}</p>
-            <div class="passport-tags">${currentUser.skills.map((skill) => `<span>${skill}</span>`).join("")}</div>
+      ${renderDiscoveryTabs()}
+      <section class="recommendation-intro">
+        <div><span>为你的项目推荐</span><strong>${collaborationNeedLabel()}</strong></div>
+        <em>${state.recommendationIndex + 1} / ${rankedPeople.length}</em>
+      </section>
+      <section class="recommendation-deck" aria-label="协作者推荐卡片">
+        <article class="recommendation-card recommendation-card-next" aria-hidden="true">
+          ${glyph(nextPerson, "xl")}
+        </article>
+        <article class="recommendation-card recommendation-card-active" tabindex="0" data-swipe-card data-person-id="${person.id}" aria-label="${person.name}，${person.role}。点击查看完整信息，左右滑动表达意愿">
+          <header class="recommendation-card-head">
+            <span class="status-pill status-open"><i></i>${person.status}</span>
+            <span>${person.proximity}</span>
+          </header>
+          <div class="recommendation-person">
+            ${glyph(person, "xl")}
+            <div><h3>${person.name}</h3><p>${person.role}</p></div>
           </div>
-        </div>
-        <div class="passport-mission">
-          <span>我的项目正在寻找</span>
-          <strong>${collaborationNeedLabel()}</strong>
-        </div>
-        <button class="passport-sync" data-tab="profile"><span>墨水屏已同步</span><b>查看公开面</b></button>
+          <div class="recommendation-skills">${person.skills.map((skill) => `<span>${skill}</span>`).join("")}</div>
+          <section class="recommendation-evidence"><span>做过什么</span><strong>${person.evidence}</strong></section>
+          <section class="recommendation-reason"><span>为什么值得聊</span><p>${person.reason}</p></section>
+          <footer><span>点击查看完整信息</span><b>${person.fit}</b></footer>
+          <div class="swipe-verdict swipe-verdict-no">暂不看</div>
+          <div class="swipe-verdict swipe-verdict-yes">想认识</div>
+        </article>
       </section>
-
-      <section class="role-roster" aria-label="现场角色预设">
-        <div class="role-roster-head"><div><p class="micro-label">LIVE ROLE MAP</p><h3>现场有 ${people.length} 位可协作的人</h3></div><span>点击头像查看</span></div>
-        <div class="role-roster-grid">
-          ${people.map(renderRoleRosterPerson).join("")}
-        </div>
+      <section class="recommendation-actions" aria-label="推荐操作">
+        <button class="recommendation-dismiss" data-action="dismiss-recommendation" data-person="${person.id}" aria-label="暂不看 ${person.name}"><span>×</span><small>暂不看</small></button>
+        <button class="recommendation-detail" data-action="open-person" data-person="${person.id}" aria-label="查看 ${person.name} 的完整信息"><span>•••</span><small>看详情</small></button>
+        <button class="recommendation-like" data-action="like-recommendation" data-person="${person.id}" aria-label="向 ${person.name} 表达想认识"><span>认识</span><small>想认识</small></button>
       </section>
-
-      <section class="section-block">
-        <div class="section-heading">
-          <div><p class="micro-label">现场协作者 · ${rankedPeople.length} 人</p><h3>优先看看这些人</h3></div>
-          <button class="text-action" data-action="refresh">重新扫描</button>
-        </div>
-        <div class="people-stack">
-          ${rankedPeople.map(renderPassportPerson).join("")}
-        </div>
+      <p class="recommendation-hint"><span>← 左滑暂不看</span><span>右滑想认识 →</span></p>
+      <section class="recommendation-progress" aria-label="推荐浏览进度">
+        ${rankedPeople.map((item, index) => `<i class="${index === state.recommendationIndex ? "active" : ""}" title="${item.name}"></i>`).join("")}
+      </section>
+      <section class="recommendation-boundary">
+        <span>线上只表达意愿</span>
+        <p>线下碰卡后才会直接交换双方授权信息并建联。</p>
       </section>
     </div>
   `;
 }
 
-function renderRoleRosterPerson(person) {
-  return `<button class="role-roster-person ${state.selectedId === person.id ? "selected" : ""}" data-person="${person.id}" aria-label="${person.name}，${person.role}">
-    ${glyph(person, "xs")}
-    <span>${person.name}</span>
-    <small>${person.teamRole}</small>
-  </button>`;
+function recommendedPerson() {
+  return rankedPeople[state.recommendationIndex % rankedPeople.length];
+}
+
+function advanceRecommendation() {
+  state.recommendationIndex = (state.recommendationIndex + 1) % rankedPeople.length;
+  state.selectedId = recommendedPerson().id;
+}
+
+function expressRecommendationInterest(personId) {
+  const person = people.find((item) => item.id === personId) || recommendedPerson();
+  if (!state.greeted.includes(person.id)) state.greeted.push(person.id);
+  showToast(`已向 ${person.name} 表达“想认识”`);
+  advanceRecommendation();
+}
+
+function dismissRecommendation() {
+  advanceRecommendation();
+  showToast("已跳过，继续看下一位");
 }
 
 function radarPosition(index, total) {
@@ -529,25 +549,13 @@ function radarPosition(index, total) {
   return `--radar-x:${x.toFixed(2)}%;--radar-y:${y.toFixed(2)}%`;
 }
 
-function renderPassportPerson(person) {
-  return `
-    <button class="person-row ${state.selectedId === person.id ? "selected" : ""}" data-person="${person.id}">
-      ${glyph(person, "sm")}
-      <span class="person-copy">
-        <span class="person-title"><strong>${person.name}</strong><em>${person.proximity}</em></span>
-        <span>${person.role} · ${person.status}</span>
-        <span class="reason-preview">${person.reason}</span>
-      </span>
-      <span class="fit-mark"><strong>${person.fit}</strong><small>${person.fitDetail}</small></span>
-    </button>
-  `;
-}
-
 function renderVariantB() {
   const person = selectedPerson();
   return `
     <div class="view view-b">
-      ${commonHeader("附近")}
+      ${commonHeader("发现")}
+      ${renderDiscoveryTabs()}
+      <div class="mobile-discovery-note"><span>● 手机前台发现</span><small>仅在打开本页时更新，离开后停止</small></div>
       <section class="radar-copy">
         <span class="status-pill ${state.visible ? "status-open" : "status-paused"}"><i></i>${state.visible ? "附近可见" : "已暂停展示"}</span>
         <h3>附近有 ${radarPeople.length} 位协作者</h3>
@@ -580,19 +588,17 @@ function renderVariantB() {
 }
 
 function renderVariantC() {
-  const latestConnection = people.find((person) => person.id === state.connected.at(-1));
   return `
     <div class="view view-c">
-      <header class="ledger-header">
-        <div><p>AI COLLABORATION REGISTER</p><h2>附近名册</h2></div>
-        <button class="ledger-id" data-tab="profile">ZW / 0087</button>
-      </header>
+      ${commonHeader("发现")}
+      ${renderDiscoveryTabs()}
+      <section class="directory-copy"><span class="status-pill status-open"><i></i>本场活动</span><h3>活动名册</h3><p>查看明确授权参加当前活动的成员，名册仍属于你手机上的发现页。</p></section>
       <section class="ledger-status">
-        <div><span>公开状态</span><strong>${state.visible ? collaborationStatusLabel() : "已暂停"}</strong></div>
-        <div><span>当前意图</span><strong>${collaborationNeedLabel()}</strong></div>
-        <div><span>扫描范围</span><strong>同场 / ${String(people.length).padStart(2, "0")}</strong></div>
+        <div><span>可见成员</span><strong>${String(people.length).padStart(2, "0")} 人</strong></div>
+        <div><span>当前筛选</span><strong>全部角色</strong></div>
+        <div><span>排序方式</span><strong>项目缺口</strong></div>
       </section>
-      <div class="ledger-rule"><span>按当前缺口优先</span><b>LIVE REGISTER</b></div>
+      <div class="ledger-rule"><span>按当前缺口优先</span><b>EVENT DIRECTORY</b></div>
       <section class="ledger-list">
         ${people.map((person) => `
           <button class="ledger-person" data-person="${person.id}">
@@ -606,11 +612,7 @@ function renderVariantC() {
           </button>
         `).join("")}
       </section>
-      <button class="ledger-scan" data-action="refresh"><span>◉</span>重新读取附近信号</button>
-      <div class="connection-stamp ${state.connected.length ? "is-stamped" : ""}">
-        <span>${state.connected.length ? "CONNECTED" : "READY TO CONNECT"}</span>
-        <b>${latestConnection ? latestConnection.pairLabel : "PHYSICAL HANDSHAKE"}</b>
-      </div>
+      <button class="ledger-scan" data-action="refresh"><span>↻</span>刷新活动名册</button>
     </div>
   `;
 }
@@ -772,15 +774,6 @@ function renderToast() {
   return state.toast ? `<div class="toast" role="status">${state.toast}</div>` : "";
 }
 
-function renderSwitcher() {
-  if (state.overlay || state.onboarding) return "";
-  return `<div class="prototype-switcher" aria-label="原型方向切换">
-    <button data-variant-step="-1" aria-label="上一个方向">←</button>
-    <span><small>PROTOTYPE</small><strong>${state.variant} — ${variantNames[state.variant]}</strong></span>
-    <button data-variant-step="1" aria-label="下一个方向">→</button>
-  </div>`;
-}
-
 function renderStateLedger() {
   return `<div class="state-ledger"><span>当前状态</span><strong>${stageLabel()}</strong><small>刷新后重置 · 硬件事件为模拟</small></div>`;
 }
@@ -791,13 +784,13 @@ function stageLabel() {
   if (state.joined.length) return "已加入项目";
   if (state.connected.length) return "已碰卡建联";
   if (state.greeted.length) return "已发送招呼";
-  return "发现附近的人";
+  return `正在浏览${variantNames[state.variant]}`;
 }
 
 function variantDescription() {
-  if (state.variant === "B") return "把空间关系放在第一位。用户先感知“人就在附近”，再查看为什么值得认识。";
-  if (state.variant === "C") return "把墨水屏语言直接延伸到手机：高对比、名册化、强调身份记录与连接盖章。";
-  return "把个人公开身份和团队缺口放在第一位，附近的人是围绕当前项目出现的候选搭档。";
+  if (state.variant === "B") return "手机端发现的附近模式：只在前台开启时更新，再进入统一人物详情。";
+  if (state.variant === "C") return "手机端发现的名册模式：浏览本场活动中已授权可见的完整成员。";
+  return "手机端发现的推荐模式：围绕当前项目缺口解释谁值得先聊。";
 }
 
 function bindEvents() {
@@ -815,7 +808,92 @@ function bindEvents() {
   }));
   document.querySelectorAll("[data-action]").forEach((element) => element.addEventListener("click", () => handleAction(element.dataset.action, element)));
   document.querySelectorAll("[data-task]").forEach((element) => element.addEventListener("click", () => toggleTask(element.dataset.task)));
-  document.querySelectorAll("[data-variant-step]").forEach((element) => element.addEventListener("click", () => cycleVariant(Number(element.dataset.variantStep))));
+  document.querySelectorAll("[data-discovery-view]").forEach((element) => element.addEventListener("click", () => setVariant(element.dataset.discoveryView)));
+  bindRecommendationSwipe();
+}
+
+function bindRecommendationSwipe() {
+  const card = document.querySelector("[data-swipe-card]");
+  if (!card) return;
+
+  let startX = 0;
+  let deltaX = 0;
+  let dragging = false;
+
+  const resetCard = () => {
+    card.classList.remove("is-dragging", "is-positive", "is-negative");
+    card.style.removeProperty("--swipe-x");
+    card.style.removeProperty("--swipe-rotate");
+    card.style.removeProperty("--swipe-progress");
+  };
+
+  const completeSwipe = (direction) => {
+    card.classList.remove("is-dragging");
+    card.classList.add(direction === "right" ? "is-swiping-right" : "is-swiping-left");
+    window.setTimeout(() => {
+      if (direction === "right") expressRecommendationInterest(card.dataset.personId);
+      else dismissRecommendation();
+      render();
+    }, 190);
+  };
+
+  card.addEventListener("pointerdown", (event) => {
+    dragging = true;
+    startX = event.clientX;
+    deltaX = 0;
+    card.classList.add("is-dragging");
+    try {
+      card.setPointerCapture?.(event.pointerId);
+    } catch {
+      // Synthetic pointer events used by the prototype test do not create an active browser pointer.
+    }
+  });
+
+  card.addEventListener("pointermove", (event) => {
+    if (!dragging) return;
+    deltaX = event.clientX - startX;
+    card.classList.toggle("is-positive", deltaX > 0);
+    card.classList.toggle("is-negative", deltaX < 0);
+    card.style.setProperty("--swipe-x", `${deltaX}px`);
+    card.style.setProperty("--swipe-rotate", `${deltaX * 0.035}deg`);
+    card.style.setProperty("--swipe-progress", String(Math.min(Math.abs(deltaX) / 90, 1)));
+  });
+
+  card.addEventListener("pointerup", () => {
+    if (!dragging) return;
+    dragging = false;
+    if (Math.abs(deltaX) >= 72) completeSwipe(deltaX > 0 ? "right" : "left");
+    else if (Math.abs(deltaX) < 7) {
+      state.selectedId = card.dataset.personId;
+      state.overlay = "person";
+      render();
+    } else resetCard();
+  });
+
+  card.addEventListener("pointercancel", () => {
+    dragging = false;
+    resetCard();
+  });
+
+  card.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      event.stopPropagation();
+      completeSwipe("left");
+    }
+    if (event.key === "ArrowRight") {
+      event.preventDefault();
+      event.stopPropagation();
+      completeSwipe("right");
+    }
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      event.stopPropagation();
+      state.selectedId = card.dataset.personId;
+      state.overlay = "person";
+      render();
+    }
+  });
 }
 
 function handleAction(action, element) {
@@ -863,6 +941,8 @@ function handleAction(action, element) {
     state.selectedId = element.dataset.person || state.selectedId;
     state.overlay = "person";
   }
+  if (action === "dismiss-recommendation") dismissRecommendation();
+  if (action === "like-recommendation") expressRecommendationInterest(element.dataset.person);
   if (action === "next-person") {
     const pool = state.variant === "B" ? radarPeople : people;
     const index = pool.findIndex((person) => person.id === state.selectedId);
@@ -951,8 +1031,6 @@ window.addEventListener("popstate", () => {
 window.addEventListener("keydown", (event) => {
   const tag = event.target?.tagName?.toLowerCase();
   if (["input", "textarea"].includes(tag) || event.target?.isContentEditable) return;
-  if (event.key === "ArrowLeft") cycleVariant(-1);
-  if (event.key === "ArrowRight") cycleVariant(1);
   if (event.key === "Escape" && state.overlay) {
     state.overlay = null;
     render();

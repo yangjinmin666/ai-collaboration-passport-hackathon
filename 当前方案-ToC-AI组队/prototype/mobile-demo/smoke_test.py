@@ -89,15 +89,22 @@ def main():
                 "title": page.title(),
                 "variant": page.locator("body").get_attribute("data-variant"),
                 "nav_buttons": page.locator(".app-nav button").count(),
-                "switcher_visible": page.locator(".prototype-switcher").is_visible(),
+                "discovery_tabs": page.locator(".discovery-tabs button").count(),
+                "prototype_switcher_removed": page.locator(".prototype-switcher").count() == 0,
                 "body_scroll_width": page.evaluate("document.body.scrollWidth"),
                 "viewport_width": page.evaluate("window.innerWidth"),
             }
+            assert report["variants"][variant]["discovery_tabs"] == 3
+            assert report["variants"][variant]["prototype_switcher_removed"]
             if variant == "A":
-                report["variants"][variant]["role_roster_count"] = page.locator(".role-roster-person").count()
-                report["variants"][variant]["ranked_people_count"] = page.locator(".person-row").count()
-                assert report["variants"][variant]["role_roster_count"] == 11
-                assert report["variants"][variant]["ranked_people_count"] == 11
+                report["variants"][variant]["active_recommendation_cards"] = page.locator(".recommendation-card-active").count()
+                report["variants"][variant]["recommendation_progress_count"] = page.locator(".recommendation-progress i").count()
+                report["variants"][variant]["table_like_lists_removed"] = (
+                    page.locator(".role-roster-person, .person-row").count() == 0
+                )
+                assert report["variants"][variant]["active_recommendation_cards"] == 1
+                assert report["variants"][variant]["recommendation_progress_count"] == 11
+                assert report["variants"][variant]["table_like_lists_removed"]
             if variant == "B":
                 report["variants"][variant]["radar_people_count"] = page.locator(".radar-person").count()
                 assert report["variants"][variant]["radar_people_count"] == 11
@@ -185,7 +192,7 @@ def main():
         page.goto(f"{BASE_URL}/?variant=C&onboarding=1")
         page.wait_for_load_state("networkidle")
         report["flow"]["onboarding_starts_at_status"] = page.get_by_text("你现在来现场，最需要什么？", exact=True).is_visible()
-        report["flow"]["switcher_hidden_during_onboarding"] = page.locator(".prototype-switcher").count() == 0
+        report["flow"]["discovery_tabs_hidden_during_onboarding"] = page.locator(".discovery-tabs").count() == 0
         page.get_by_role("button", name="正在找队伍").click()
         page.get_by_role("button", name="下一步 · 组装能力证据").click()
         page.get_by_role("button", name="即刻 构建动态 添加").click()
@@ -218,12 +225,33 @@ def main():
 
         page.goto(f"{BASE_URL}/?variant=A")
         page.wait_for_load_state("networkidle")
-        page.locator("[data-variant-step='1']").click()
-        report["flow"]["switcher_reaches_b"] = page.locator("body").get_attribute("data-variant") == "B"
+        page.locator("[data-discovery-view='B']").click()
+        report["flow"]["discovery_tabs_reach_nearby"] = page.locator("body").get_attribute("data-variant") == "B"
+        assert report["flow"]["discovery_tabs_reach_nearby"]
 
         page.goto(f"{BASE_URL}/?variant=A")
         page.wait_for_load_state("networkidle")
-        page.locator(".person-row[data-person='lin']").click()
+        first_recommendation = page.locator(".recommendation-person h3").inner_text()
+        page.locator(".recommendation-card-active").evaluate(
+            """card => {
+                const box = card.getBoundingClientRect();
+                const startX = box.left + box.width / 2;
+                const y = box.top + box.height / 2;
+                card.dispatchEvent(new PointerEvent('pointerdown', {bubbles:true, pointerId:7, clientX:startX, clientY:y}));
+                card.dispatchEvent(new PointerEvent('pointermove', {bubbles:true, pointerId:7, clientX:startX + 110, clientY:y}));
+                card.dispatchEvent(new PointerEvent('pointerup', {bubbles:true, pointerId:7, clientX:startX + 110, clientY:y}));
+            }"""
+        )
+        page.wait_for_timeout(260)
+        report["flow"]["right_swipe_advances_recommendation"] = (
+            page.locator(".recommendation-person h3").inner_text() != first_recommendation
+            and page.locator(".recommendation-intro em").inner_text() == "2 / 11"
+        )
+        assert report["flow"]["right_swipe_advances_recommendation"]
+
+        page.goto(f"{BASE_URL}/?variant=A")
+        page.wait_for_load_state("networkidle")
+        page.locator(".recommendation-card-active").click()
         page.screenshot(path=str(OUTPUT_DIR / "step-1-match-reason.png"), full_page=True)
         page.get_by_role("button", name="想认识", exact=True).click()
         page.get_by_role("button", name="模拟碰卡直连").click()
