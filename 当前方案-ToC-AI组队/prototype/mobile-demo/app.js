@@ -3,6 +3,15 @@
  * Three variants of the nearby-discovery experience, switchable via ?variant=.
  */
 
+const currentUser = {
+  id: "zhou",
+  name: "周闻",
+  monogram: "ZW",
+  avatar: "memoji-5",
+  role: "AI / 后端构建者",
+  skills: ["Agent", "API", "端侧 AI"],
+};
+
 const people = [
   {
     id: "lin",
@@ -18,6 +27,10 @@ const people = [
     evidence: "做过 3 个 ESP32 端侧项目",
     reason: "你的项目缺硬件闭环；林澈能把模型能力落到真实设备。",
     caution: "现场可投入时间还没有确认",
+    fit: "补齐硬件",
+    fitDetail: "核心缺口",
+    pairLabel: "AI × HARDWARE",
+    teamRole: "硬件",
   },
   {
     id: "su",
@@ -33,6 +46,105 @@ const people = [
     evidence: "两次黑客松最佳设计奖",
     reason: "她能补齐产品表达和现场演示，让技术原型更容易被理解。",
     caution: "目前优先寻找有社会议题的项目",
+    fit: "补齐设计",
+    fitDetail: "演示表达",
+    pairLabel: "AI × DESIGN",
+    teamRole: "设计",
+  },
+  {
+    id: "qixi",
+    name: "七喜",
+    monogram: "QX",
+    avatar: "memoji-2",
+    role: "创意技术开发者",
+    skills: ["生成艺术", "WebGL", "声音交互"],
+    status: "正在找队伍",
+    proximity: "很近",
+    signal: 3,
+    glyph: "glyph-cross",
+    evidence: "做过 4 个生成式互动装置",
+    reason: "她能把碰卡动作变成可感知的现场反馈，让硬件交互更有记忆点。",
+    caution: "对后端与供应链不熟悉",
+    fit: "增强体验",
+    fitDetail: "可选能力",
+    pairLabel: "AI × CREATIVE",
+    teamRole: "创意技术",
+  },
+  {
+    id: "shenlan",
+    name: "沈蓝",
+    monogram: "SL",
+    avatar: "memoji-3",
+    role: "隐私与身份工程师",
+    skills: ["数字身份", "权限", "端侧隐私"],
+    status: "项目 SOS",
+    proximity: "附近",
+    signal: 2,
+    glyph: "glyph-grid",
+    evidence: "负责过匿名社交产品的隐私模型",
+    reason: "她能快速检查公开身份、碰卡授权和拉黑机制是否存在隐私漏洞。",
+    caution: "只接受 1 小时以内的定点支援",
+    fit: "安全救援",
+    fitDetail: "SOS 支援",
+    pairLabel: "AI × PRIVACY",
+    teamRole: "隐私",
+  },
+  {
+    id: "baiyu",
+    name: "白榆",
+    monogram: "BY",
+    avatar: "memoji-8",
+    role: "多模态算法工程师",
+    skills: ["Embedding", "RAG", "推荐"],
+    status: "可支援",
+    proximity: "同场",
+    signal: 1,
+    glyph: "glyph-orbit",
+    evidence: "开源过 2 个轻量级语义检索项目",
+    reason: "她能把能力标签检索做成可解释推荐，而不是给人一个生硬匹配分。",
+    caution: "不会参与硬件打样",
+    fit: "模型支援",
+    fitDetail: "可支援",
+    pairLabel: "AI × MODEL",
+    teamRole: "算法",
+  },
+  {
+    id: "miya",
+    name: "米娅",
+    monogram: "MY",
+    avatar: "memoji-9",
+    role: "品牌与路演设计师",
+    skills: ["品牌", "叙事", "Demo Day"],
+    status: "已组队 · 可支援",
+    proximity: "附近",
+    signal: 2,
+    glyph: "glyph-sun",
+    evidence: "辅导过 6 支黑客松团队完成路演",
+    reason: "她能把从发现到碰卡建联的核心故事压缩成评委一眼看懂的 90 秒演示。",
+    caution: "仅在今晚彩排时段有空",
+    fit: "补齐路演",
+    fitDetail: "冲刺阶段",
+    pairLabel: "AI × STORY",
+    teamRole: "路演",
+  },
+  {
+    id: "qiaohe",
+    name: "乔禾",
+    monogram: "QH",
+    avatar: "memoji-7",
+    role: "用户研究与现场运营",
+    skills: ["访谈", "可用性测试", "活动运营"],
+    status: "现场支援",
+    proximity: "同场",
+    signal: 1,
+    glyph: "glyph-grid",
+    evidence: "现场完成过 30 人快速概念测试",
+    reason: "她可以直接帮你们在会场验证：用户是否愿意公开状态并主动碰卡。",
+    caution: "需要先给出明确的三个验证问题",
+    fit: "现场验证",
+    fitDetail: "快速反馈",
+    pairLabel: "AI × RESEARCH",
+    teamRole: "用户研究",
   },
   {
     id: "alan",
@@ -48,8 +160,74 @@ const people = [
     evidence: "从 0 到 1 做过开发者社区",
     reason: "你们对开发者协作有共同兴趣，适合交换用户验证方法。",
     caution: "双方项目方向暂时不同",
+    fit: "交换验证",
+    fitDetail: "同类赛道",
+    pairLabel: "AI × PRODUCT",
+    teamRole: "产品",
+  },
+  {
+    id: "aguang",
+    name: "阿光",
+    monogram: "AG",
+    avatar: "memoji-6",
+    role: "开发者社区增长",
+    skills: ["社区", "内容", "裂变"],
+    status: "团队急聘",
+    proximity: "附近",
+    signal: 2,
+    glyph: "glyph-sun",
+    evidence: "运营过 8000 人 AI 开发者社群",
+    reason: "他能帮助验证黑客松现场裂变路径，并设计碰卡后的邀请与分享机制。",
+    caution: "更关心获客，不负责产品交互",
+    fit: "增长支援",
+    fitDetail: "获客裂变",
+    pairLabel: "AI × GROWTH",
+    teamRole: "增长",
+  },
+  {
+    id: "hanche",
+    name: "韩彻",
+    monogram: "HC",
+    avatar: "memoji-11",
+    role: "安全研究员",
+    skills: ["红队", "风控", "滥用防护"],
+    status: "项目 SOS",
+    proximity: "同场",
+    signal: 1,
+    glyph: "glyph-orbit",
+    evidence: "做过社交产品反骚扰与举报系统",
+    reason: "他能在半小时内审查建联、撤回与拉黑边界，避免 Demo 留下明显安全漏洞。",
+    caution: "只处理明确的安全问题清单",
+    fit: "安全加固",
+    fitDetail: "SOS 支援",
+    pairLabel: "AI × SECURITY",
+    teamRole: "安全",
+  },
+  {
+    id: "carlo",
+    name: "卡洛",
+    monogram: "KL",
+    avatar: "memoji-12",
+    role: "工业与结构设计师",
+    skills: ["CMF", "结构", "快速打样"],
+    status: "正在找队伍",
+    proximity: "附近",
+    signal: 2,
+    glyph: "glyph-cross",
+    evidence: "48 小时内完成过可佩戴设备外壳",
+    reason: "他能把 NFC 卡片和未来墨水屏工牌做成可佩戴、可展示的实体原型。",
+    caution: "需要今天内冻结尺寸和器件清单",
+    fit: "补齐结构",
+    fitDetail: "工牌落地",
+    pairLabel: "AI × INDUSTRIAL",
+    teamRole: "工业设计",
   },
 ];
+
+// The discovery dataset is never truncated by the UI. AI ranking changes order,
+// not eligibility: every nearby person remains available in every discovery view.
+const rankedPeople = [...people];
+const radarPeople = rankedPeople;
 
 const variantNames = {
   A: "协作护照",
@@ -276,11 +454,8 @@ function renderCurrentView() {
 function commonHeader(title = "发现") {
   return `
     <header class="app-header">
-      <div>
-        <p class="micro-label">2026 AI HARDWARE HACKATHON</p>
-        <h2>${title}</h2>
-      </div>
-      <button class="mini-avatar" data-tab="profile" aria-label="打开我的身份"><span class="memoji-avatar memoji-5"></span></button>
+      <h2>${title}</h2>
+      <span class="event-context"><i></i>AI Hardware · 2026</span>
     </header>
   `;
 }
@@ -289,18 +464,18 @@ function renderVariantA() {
   const visibilityLabel = state.visible ? "活动内可见" : "已暂停展示";
   return `
     <div class="view view-a">
-      ${commonHeader("协作护照")}
+      ${commonHeader("发现")}
       <section class="my-passport">
         <div class="passport-topline">
           <span class="status-pill ${state.visible ? "status-open" : "status-paused"}"><i></i>${visibilityLabel}</span>
           <span class="passport-id">P·0087</span>
         </div>
         <div class="passport-main">
-          ${glyph({ name: "周闻", avatar: "memoji-5" }, "lg")}
+          ${glyph(currentUser, "lg")}
           <div>
-            <p class="passport-name">周闻</p>
-            <p class="passport-role">AI / 后端构建者</p>
-            <div class="passport-tags"><span>Agent</span><span>API</span><span>端侧 AI</span></div>
+            <p class="passport-name">${currentUser.name}</p>
+            <p class="passport-role">${currentUser.role}</p>
+            <div class="passport-tags">${currentUser.skills.map((skill) => `<span>${skill}</span>`).join("")}</div>
           </div>
         </div>
         <div class="passport-mission">
@@ -310,30 +485,57 @@ function renderVariantA() {
         <button class="passport-sync" data-tab="profile"><span>墨水屏已同步</span><b>查看公开面</b></button>
       </section>
 
+      <section class="role-roster" aria-label="现场角色预设">
+        <div class="role-roster-head"><div><p class="micro-label">LIVE ROLE MAP</p><h3>现场有 ${people.length} 位可协作的人</h3></div><span>点击头像查看</span></div>
+        <div class="role-roster-grid">
+          ${people.map(renderRoleRosterPerson).join("")}
+        </div>
+      </section>
+
       <section class="section-block">
         <div class="section-heading">
-          <div><p class="micro-label">NEARBY / 04</p><h3>附近的互补搭档</h3></div>
+          <div><p class="micro-label">现场协作者 · ${rankedPeople.length} 人</p><h3>优先看看这些人</h3></div>
           <button class="text-action" data-action="refresh">重新扫描</button>
         </div>
         <div class="people-stack">
-          ${people.map(renderPassportPerson).join("")}
+          ${rankedPeople.map(renderPassportPerson).join("")}
         </div>
       </section>
     </div>
   `;
 }
 
-function renderPassportPerson(person, index) {
+function renderRoleRosterPerson(person) {
+  return `<button class="role-roster-person ${state.selectedId === person.id ? "selected" : ""}" data-person="${person.id}" aria-label="${person.name}，${person.role}">
+    ${glyph(person, "xs")}
+    <span>${person.name}</span>
+    <small>${person.teamRole}</small>
+  </button>`;
+}
+
+function radarPosition(index, total) {
+  const innerCount = total > 8 ? Math.ceil(total * 0.36) : Math.min(total, 3);
+  const onInnerRing = index < innerCount;
+  const ringIndex = onInnerRing ? index : index - innerCount;
+  const ringTotal = onInnerRing ? innerCount : Math.max(total - innerCount, 1);
+  const radius = onInnerRing ? 25 : 38;
+  const offset = onInnerRing ? -22 : -82;
+  const angle = (offset + (ringIndex * 360) / ringTotal) * (Math.PI / 180);
+  const x = 50 + Math.cos(angle) * radius;
+  const y = 50 + Math.sin(angle) * radius;
+  return `--radar-x:${x.toFixed(2)}%;--radar-y:${y.toFixed(2)}%`;
+}
+
+function renderPassportPerson(person) {
   return `
     <button class="person-row ${state.selectedId === person.id ? "selected" : ""}" data-person="${person.id}">
-      <span class="row-index">0${index + 1}</span>
       ${glyph(person, "sm")}
       <span class="person-copy">
         <span class="person-title"><strong>${person.name}</strong><em>${person.proximity}</em></span>
         <span>${person.role} · ${person.status}</span>
         <span class="reason-preview">${person.reason}</span>
       </span>
-      <span class="fit-mark"><strong>补齐</strong><small>当前缺口</small></span>
+      <span class="fit-mark"><strong>${person.fit}</strong><small>${person.fitDetail}</small></span>
     </button>
   `;
 }
@@ -342,20 +544,19 @@ function renderVariantB() {
   const person = selectedPerson();
   return `
     <div class="view view-b">
-      ${commonHeader("邻近雷达")}
+      ${commonHeader("附近")}
       <section class="radar-copy">
         <span class="status-pill ${state.visible ? "status-open" : "status-paused"}"><i></i>${state.visible ? "附近可见" : "已暂停展示"}</span>
-        <h3>你缺的能力，<br>现在就在同一个房间。</h3>
-        <p>根据项目缺口和现场信号，优先显示 3 位值得当面认识的人。</p>
+        <h3>附近有 ${radarPeople.length} 位协作者</h3>
+        <p>已根据你正在补齐的能力排序。点击头像，看看为什么值得聊。</p>
       </section>
-      <section class="radar-field" aria-label="附近人员雷达">
-        <div class="radar-ring ring-one"></div><div class="radar-ring ring-two"></div><div class="radar-ring ring-three"></div>
+      <section class="radar-field" aria-label="附近人员扫描区">
         <div class="radar-sweep"></div>
-        <button class="radar-self" data-tab="profile" aria-label="打开我的身份"><span class="memoji-avatar memoji-5"></span></button>
-        ${people.map((item, index) => `
-          <button class="radar-person radar-person-${index + 1} ${state.selectedId === item.id ? "active" : ""}" data-person="${item.id}" aria-label="选择 ${item.name}">
-            ${glyph(item, index === 0 ? "md" : "sm")}
-            <span>${item.name}</span>
+        <button class="radar-self" data-tab="profile" aria-label="打开我的身份">${glyph(currentUser, "sm")}</button>
+        ${radarPeople.map((item, index) => `
+          <button class="radar-person ${state.selectedId === item.id ? "active" : ""}" style="${radarPosition(index, radarPeople.length)}" data-person="${item.id}" aria-label="选择 ${item.name}">
+            ${glyph(item, "sm")}
+            <span class="radar-person-name">${item.name}</span>
           </button>
         `).join("")}
       </section>
@@ -376,6 +577,7 @@ function renderVariantB() {
 }
 
 function renderVariantC() {
+  const latestConnection = people.find((person) => person.id === state.connected.at(-1));
   return `
     <div class="view view-c">
       <header class="ledger-header">
@@ -385,80 +587,81 @@ function renderVariantC() {
       <section class="ledger-status">
         <div><span>公开状态</span><strong>${state.visible ? collaborationStatusLabel() : "已暂停"}</strong></div>
         <div><span>当前意图</span><strong>${collaborationNeedLabel()}</strong></div>
-        <div><span>扫描范围</span><strong>同场 / 04</strong></div>
+        <div><span>扫描范围</span><strong>同场 / ${String(people.length).padStart(2, "0")}</strong></div>
       </section>
       <div class="ledger-rule"><span>按当前缺口优先</span><b>LIVE REGISTER</b></div>
       <section class="ledger-list">
-        ${people.map((person, index) => `
+        ${people.map((person) => `
           <button class="ledger-person" data-person="${person.id}">
-            <span class="ledger-number">${String(index + 1).padStart(2, "0")}</span>
             ${glyph(person, "xs")}
             <span class="ledger-main">
               <span class="ledger-name">${person.name}<em>${person.status}</em></span>
               <span>${person.skills.join(" / ")}</span>
               <span class="ledger-reason">${person.reason}</span>
             </span>
-            <span class="ledger-fit">${index === 0 ? "补齐角色" : "值得认识"}</span>
+            <span class="ledger-fit">${person.fit}</span>
           </button>
         `).join("")}
       </section>
       <button class="ledger-scan" data-action="refresh"><span>◉</span>重新读取附近信号</button>
       <div class="connection-stamp ${state.connected.length ? "is-stamped" : ""}">
         <span>${state.connected.length ? "CONNECTED" : "READY TO CONNECT"}</span>
-        <b>${state.connected.length ? "AI × HARDWARE" : "PHYSICAL HANDSHAKE"}</b>
+        <b>${latestConnection ? latestConnection.pairLabel : "PHYSICAL HANDSHAKE"}</b>
       </div>
     </div>
   `;
 }
 
 function renderConnections() {
-  const lin = people[0];
+  const connectedPeople = people.filter((person) => state.connected.includes(person.id));
+  const pendingPeople = people.filter((person) => state.greeted.includes(person.id) && !state.connected.includes(person.id));
   return `
     <div class="view utility-view">
       ${commonHeader("连接")}
       <section class="connection-hero">
-        <p class="micro-label">RELATIONSHIP GRAPH</p>
-        <h3>${state.connected.length ? "一次碰触，已经有了下一步。" : "线上表达意愿，线下碰卡直连。"}</h3>
-        <p>${state.connected.length ? "关系来源、推荐理由和后续项目会被一起保存。" : "右滑只表示想认识；双方主动碰卡时，物理动作本身就是建联授权。"}</p>
+        <div class="connection-summary"><strong>${connectedPeople.length}</strong><span>位已建联</span>${pendingPeople.length ? `<em>${pendingPeople.length} 个待回应</em>` : ""}</div>
+        <p>${connectedPeople.length ? "认识原因、碰卡来源和后续项目都会保存在这里。" : "线上表达想认识，或在见面后直接碰卡建联。"}</p>
       </section>
       <div class="filter-row"><button class="active">全部</button><button>待回应</button><button>已建联</button></div>
       <section class="connection-list">
-        ${state.connected.includes("lin") ? `
+        ${connectedPeople.length ? connectedPeople.map((person) => `
           <article class="connection-card">
-            <div class="connection-card-head">${glyph(lin, "md")}<div><h4>${lin.name}</h4><p>${lin.role}</p></div><span class="source-chip">碰卡建联</span></div>
-            <div class="connection-context"><span>认识于</span><strong>AI Hardware Hackathon</strong><small>刚刚 · 互补：AI × Hardware</small></div>
+            <div class="connection-card-head">${glyph(person, "md")}<div><h4>${person.name}</h4><p>${person.role}</p></div><span class="source-chip">碰卡建联</span></div>
+            <div class="connection-context"><span>认识于</span><strong>AI Hardware Hackathon</strong><small>刚刚 · ${person.pairLabel}</small></div>
             <button class="primary-button full" data-tab="projects">查看共同项目</button>
           </article>
-        ` : `
+        `).join("") : `
           <div class="empty-state"><span class="empty-symbol">◎</span><h4>还没有正式连接</h4><p>你可以先在线表达“想认识”，也可以在现实交流后直接碰卡建联。</p><button class="primary-button" data-tab="discover">去发现</button></div>
         `}
-        ${state.greeted.includes("su") && !state.connected.includes("su") ? `<article class="pending-row">${glyph(people[1], "sm")}<div><strong>苏晴</strong><span>招呼已发出 · 等待见面</span></div><em>待回应</em></article>` : ""}
+        ${pendingPeople.map((person) => `<article class="pending-row">${glyph(person, "sm")}<div><strong>${person.name}</strong><span>招呼已发出 · 等待见面</span></div><em>待回应</em></article>`).join("")}
       </section>
     </div>
   `;
 }
 
 function renderProjects() {
-  const joined = state.joined.includes("lin");
+  const joinedPeople = people.filter((person) => state.joined.includes(person.id));
+  const joined = joinedPeople.length > 0;
+  const latestMember = joinedPeople.at(-1);
   const taskAccepted = state.acceptedTasks.includes("hardware-choice");
   return `
     <div class="view utility-view">
       ${commonHeader("项目")}
       <section class="project-card">
-        <div class="project-kicker"><span>PROJECT 01</span><em>${joined ? "3 / 4 人" : "2 / 4 人"}</em></div>
+        <div class="project-kicker"><span>PROJECT 01</span><em>${2 + joinedPeople.length} 人协作</em></div>
         <h3>离线会议洞察终端</h3>
         <p>让线下讨论自动沉淀为可检索的决策、分歧与行动项。</p>
         <div class="team-line">
-          <span class="team-avatar">ZW</span><span class="team-avatar">YK</span>${joined ? `<span class="team-avatar new">LC</span>` : `<span class="team-gap">＋ 硬件</span>`}
+          <span class="team-avatar">${currentUser.monogram}</span><span class="team-avatar">YK</span>${joined ? joinedPeople.map((person) => `<span class="team-avatar new" title="${person.name} · ${person.teamRole}">${person.monogram}</span>`).join("") : `<span class="team-gap">＋ 待补位</span>`}
         </div>
       </section>
       ${joined ? `
         <section class="launch-pack">
           <div class="section-heading"><div><p class="micro-label">AI LAUNCH PACK</p><h3>把关系变成第一步</h3></div><span class="ai-badge">AI 建议</span></div>
-          <div class="role-coverage"><span>角色覆盖</span><div><b>AI / 后端</b><b>产品</b><b class="new-role">硬件</b><i>设计待补</i></div></div>
-          <article class="risk-note"><strong>需要先确认</strong><p>林澈今天可投入 6 小时，建议把硬件闭环缩成一台可演示设备。</p></article>
+          <div class="role-coverage"><span>角色覆盖</span><div><b>AI / 后端</b><b>产品</b>${joinedPeople.map((person) => `<b class="new-role">${person.teamRole}</b>`).join("")}<i>按项目缺口继续补位</i></div></div>
+          <article class="risk-note"><strong>需要先确认</strong><p>${latestMember.name}：${latestMember.caution}。</p></article>
           <div class="task-list">
-            ${renderTask("hardware-choice", "确定传感器与主控选型", "林澈", taskAccepted)}
+            ${renderTask("hardware-choice", `确认${latestMember.teamRole}交付边界`, latestMember.name, taskAccepted)}
             ${renderTask("data-link", "定义端侧数据上报接口", "周闻", state.acceptedTasks.includes("data-link"))}
             ${renderTask("demo-check", "冻结 90 秒演示验收脚本", "全员", state.acceptedTasks.includes("demo-check"))}
           </div>
@@ -477,10 +680,10 @@ function renderTask(id, title, owner, accepted) {
 function renderProfile() {
   return `
     <div class="view utility-view profile-view">
-      ${commonHeader("我的协作身份")}
+      ${commonHeader("我的")}
       <section class="profile-intro">
-        ${glyph({ name: "周闻", avatar: "memoji-5" }, "xl")}
-        <div><h3>周闻</h3><p>AI / 后端构建者</p><span class="passport-id">PASSPORT P·0087</span></div>
+        ${glyph(currentUser, "xl")}
+        <div><h3>${currentUser.name}</h3><p>${currentUser.role}</p><span class="passport-id">PASSPORT P·0087</span></div>
       </section>
       <section class="visibility-panel">
         <div><p class="micro-label">DISCOVERABILITY</p><h3>${state.visible ? "活动内可见" : "已暂停展示"}</h3><p>只展示你主动选择的公开字段，活动结束后自动隐藏。</p></div>
@@ -519,7 +722,7 @@ function renderOverlay() {
     const greeted = state.greeted.includes(person.id);
     return `<div class="overlay"><button class="overlay-backdrop" data-action="close-overlay" aria-label="关闭"></button><section class="bottom-sheet person-sheet">
       <div class="sheet-handle"></div>
-      <div class="person-sheet-head">${glyph(person, "lg")}<div><span class="status-pill">${person.status}</span><h3>${person.name}</h3><p>${person.role} · ${person.proximity}</p></div><strong class="large-fit">角色互补<small>当前推荐</small></strong></div>
+      <div class="person-sheet-head">${glyph(person, "lg")}<div><span class="status-pill">${person.status}</span><h3>${person.name}</h3><p>${person.role} · ${person.proximity}</p></div><strong class="large-fit">${person.fit}<small>${person.fitDetail}</small></strong></div>
       <div class="skill-line">${person.skills.map((skill) => `<span>${skill}</span>`).join("")}</div>
       <article class="ai-reason"><p class="micro-label">WHY THIS PERSON</p><h4>为什么值得当面认识</h4><p>${person.reason}</p><div><span>项目证据</span><strong>${person.evidence}</strong></div><div class="caution"><span>先确认</span><strong>${person.caution}</strong></div></article>
       <div class="sheet-actions"><button class="secondary-button" data-action="greet" data-person="${person.id}">${greeted ? "已表达想认识" : "想认识"}</button><button class="primary-button" data-action="direct-tap" data-person="${person.id}">模拟碰卡直连</button></div>
@@ -538,7 +741,7 @@ function renderOverlay() {
   if (state.overlay === "success") {
     return `<div class="overlay success-overlay"><section class="success-card">
       <div class="success-mark">✓</div><p class="micro-label">CONNECTION STAMP</p><h3>你和 ${person.name}<br>已经建立协作关系</h3>
-      <div class="stamp"><span>CONNECTED</span><strong>AI × HARDWARE</strong><small>HACKATHON 01 · JUST NOW</small></div>
+      <div class="stamp"><span>CONNECTED</span><strong>${person.pairLabel}</strong><small>HACKATHON 01 · JUST NOW</small></div>
       <p>下一步不是交换联系方式，而是邀请对方进入一个明确项目。</p>
       <button class="primary-button full" data-action="invite-team" data-person="${person.id}">邀请加入「离线会议洞察终端」</button>
       <button class="secondary-button full" data-action="view-connection">稍后处理</button>
@@ -650,10 +853,11 @@ function handleAction(action, element) {
     state.overlay = "person";
   }
   if (action === "next-person") {
-    const index = people.findIndex((person) => person.id === state.selectedId);
-    state.selectedId = people[(index + 1) % people.length].id;
+    const pool = state.variant === "B" ? radarPeople : people;
+    const index = pool.findIndex((person) => person.id === state.selectedId);
+    state.selectedId = pool[(Math.max(index, 0) + 1) % pool.length].id;
   }
-  if (action === "refresh") showToast("已读取附近 4 个协作信号");
+  if (action === "refresh") showToast(`已读取附近 ${people.length} 个协作信号`);
   if (action === "greet") {
     const id = element.dataset.person;
     if (!state.greeted.includes(id)) {

@@ -1,13 +1,68 @@
 """PROTOTYPE smoke test for the mobile demo."""
 
 import json
+from io import BytesIO
 from pathlib import Path
 
+from PIL import Image
 from playwright.sync_api import sync_playwright
 
 
 BASE_URL = "http://127.0.0.1:4173"
 OUTPUT_DIR = Path(__file__).with_name("artifacts")
+
+
+def bottom_center_brightness(png: bytes) -> float:
+    """Measure whether the avatar crop exposes a full-width gray gutter."""
+    image = Image.open(BytesIO(png)).convert("RGB")
+    center_x = image.width // 2
+    y = image.height - 6
+    half_sample_width = max(2, round(image.width * 0.2))
+    brightnesses = sorted(
+        sum(image.getpixel((x, y))) / 3
+        for x in range(center_x - half_sample_width, center_x + half_sample_width + 1)
+    )
+    return brightnesses[round((len(brightnesses) - 1) * 0.8)]
+
+
+def subject_offset_from_center(png: bytes) -> tuple[float, float]:
+    """Return the visual subject's bounding-box offset from its circular frame."""
+    image = Image.open(BytesIO(png)).convert("RGB")
+    center_x = (image.width - 1) / 2
+    center_y = (image.height - 1) / 2
+    radius = min(image.size) / 2 - 4
+    subject_pixels = []
+    for y in range(image.height):
+        for x in range(image.width):
+            if (x - center_x) ** 2 + (y - center_y) ** 2 > radius ** 2:
+                continue
+            red, green, blue = image.getpixel((x, y))
+            if max(red, green, blue) - min(red, green, blue) > 10 or max(red, green, blue) < 190:
+                subject_pixels.append((x, y))
+    x_values = [x for x, _ in subject_pixels]
+    y_values = [y for _, y in subject_pixels]
+    subject_center_x = (min(x_values) + max(x_values)) / 2
+    subject_center_y = (min(y_values) + max(y_values)) / 2
+    return subject_center_x - center_x, subject_center_y - center_y
+
+
+def subject_pixel_ratio(png: bytes) -> float:
+    """Measure that a rendered avatar contains a face instead of a blank white crop."""
+    image = Image.open(BytesIO(png)).convert("RGB")
+    center_x = (image.width - 1) / 2
+    center_y = (image.height - 1) / 2
+    radius = min(image.size) / 2 - 3
+    inside = 0
+    subject = 0
+    for y in range(image.height):
+        for x in range(image.width):
+            if (x - center_x) ** 2 + (y - center_y) ** 2 > radius ** 2:
+                continue
+            inside += 1
+            red, green, blue = image.getpixel((x, y))
+            if max(red, green, blue) - min(red, green, blue) > 12 or max(red, green, blue) < 205:
+                subject += 1
+    return subject / inside
 
 
 def main():
@@ -38,6 +93,93 @@ def main():
                 "body_scroll_width": page.evaluate("document.body.scrollWidth"),
                 "viewport_width": page.evaluate("window.innerWidth"),
             }
+            if variant == "A":
+                report["variants"][variant]["role_roster_count"] = page.locator(".role-roster-person").count()
+                report["variants"][variant]["ranked_people_count"] = page.locator(".person-row").count()
+                assert report["variants"][variant]["role_roster_count"] == 11
+                assert report["variants"][variant]["ranked_people_count"] == 11
+            if variant == "B":
+                report["variants"][variant]["radar_people_count"] = page.locator(".radar-person").count()
+                assert report["variants"][variant]["radar_people_count"] == 11
+                avatar_subject_ratios = [
+                    subject_pixel_ratio(page.locator(".radar-person .memoji-avatar").nth(index).screenshot())
+                    for index in range(page.locator(".radar-person .memoji-avatar").count())
+                ]
+                report["variants"][variant]["radar_avatars_have_subjects"] = all(
+                    ratio >= 0.06 for ratio in avatar_subject_ratios
+                )
+                assert report["variants"][variant]["radar_avatars_have_subjects"], avatar_subject_ratios
+            if variant == "C":
+                report["variants"][variant]["ledger_people_count"] = page.locator(".ledger-person").count()
+                assert report["variants"][variant]["ledger_people_count"] == 11
+            if variant == "B":
+                center_avatar_geometry = page.locator(".radar-self").evaluate(
+                    """button => {
+                        const avatar = button.firstElementChild;
+                        const buttonBox = button.getBoundingClientRect();
+                        const avatarBox = avatar.getBoundingClientRect();
+                        const style = getComputedStyle(button);
+                        const innerWidth = buttonBox.width
+                            - parseFloat(style.borderLeftWidth)
+                            - parseFloat(style.borderRightWidth);
+                        const innerHeight = buttonBox.height
+                            - parseFloat(style.borderTopWidth)
+                            - parseFloat(style.borderBottomWidth);
+                        return {
+                            avatarWidth: avatarBox.width,
+                            avatarHeight: avatarBox.height,
+                            innerWidth,
+                            innerHeight,
+                            overflow: style.overflow,
+                        };
+                    }"""
+                )
+                report["variants"][variant]["center_avatar_is_circle"] = (
+                    abs(center_avatar_geometry["avatarWidth"] - center_avatar_geometry["avatarHeight"]) < 0.5
+                    and abs(center_avatar_geometry["avatarWidth"] - center_avatar_geometry["innerWidth"]) < 0.5
+                    and abs(center_avatar_geometry["avatarHeight"] - center_avatar_geometry["innerHeight"]) < 0.5
+                    and center_avatar_geometry["overflow"] == "hidden"
+                )
+                assert report["variants"][variant]["center_avatar_is_circle"], center_avatar_geometry
+
+                radar_avatar_brightness = bottom_center_brightness(
+                    page.locator(".radar-person .memoji-avatar").first.screenshot()
+                )
+                page.locator(".app-nav [data-tab='profile']").click()
+                profile_avatar_brightness = bottom_center_brightness(
+                    page.locator(".profile-intro .memoji-avatar").screenshot()
+                )
+                report["variants"][variant]["avatar_circle_has_no_gray_gutter"] = (
+                    min(radar_avatar_brightness, profile_avatar_brightness) >= 248
+                )
+                assert report["variants"][variant]["avatar_circle_has_no_gray_gutter"], {
+                    "radar": radar_avatar_brightness,
+                    "profile": profile_avatar_brightness,
+                }
+
+                page.evaluate(
+                    """() => {
+                        const gallery = document.createElement('div');
+                        gallery.id = 'avatar-centering-test';
+                        gallery.style.cssText = 'position:fixed;inset:0;z-index:9999;display:grid;grid-template-columns:repeat(4,86px);gap:8px;padding:8px;background:#fff';
+                        gallery.innerHTML = Array.from({length: 12}, (_, index) =>
+                            `<span class="memoji-avatar memoji-${index + 1} glyph-xl" data-avatar-test="${index + 1}"></span>`
+                        ).join('');
+                        document.body.appendChild(gallery);
+                    }"""
+                )
+                avatar_offsets = {
+                    str(index): subject_offset_from_center(
+                        page.locator(f'[data-avatar-test="{index}"]').screenshot()
+                    )
+                    for index in range(1, 13)
+                }
+                page.locator("#avatar-centering-test").evaluate("gallery => gallery.remove()")
+                report["variants"][variant]["avatar_subjects_are_centered"] = all(
+                    abs(horizontal) <= 1.5 and abs(vertical) <= 1.5
+                    for horizontal, vertical in avatar_offsets.values()
+                )
+                assert report["variants"][variant]["avatar_subjects_are_centered"], avatar_offsets
 
         page.goto(f"{BASE_URL}/?variant=C&onboarding=1")
         page.wait_for_load_state("networkidle")

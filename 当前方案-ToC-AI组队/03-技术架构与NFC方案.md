@@ -62,7 +62,7 @@ flowchart LR
 
 ## 2. 数据模型落地
 
-以 PRD §8.1 的 15 个实体为准，落地为以下表结构与关键约束。字段只列工程上必须的部分；状态枚举值与 PRD 状态机一致，禁止新增。
+以 PRD §8.1 的核心实体为准，落地为以下表结构与关键约束。字段只列工程上必须的部分；96 小时 P0 仍以建联主链为先，方向谱系和 Leader 任期属于协作空间扩展模型。
 
 ### 2.1 核心表
 
@@ -73,14 +73,18 @@ flowchart LR
 | profiles | user_id FK、当前状态、能力标签（3–5）、兴趣、投入时间、协作偏好 | 当前状态枚举：未组队／有 Idea 找人／团队缺人／已组队但可交流 |
 | visibility_grants | user_id FK、event_id FK、范围、公开字段、开始／到期时间、状态 | 状态：Hidden／Visible／Paused／Expired；默认 Hidden |
 | evidences | evidence_id PK、user_id FK、类型、URL、标题、验证状态 | 无证据的能力标签必须标记"自我声明"；删除证据后旧匹配理由不得继续引用 |
-| projects | project_id PK、owner FK、event_id FK、一句目标、主题、阶段 | MVP 一个用户同时可为未组队者和项目发起人（PRD §13.3） |
+| projects | project_id PK、created_by FK、event_id FK、一句目标、主题、阶段 | created_by 只记录创建动作，不等于项目发起归属、永久 Owner 或 Leader |
+| project_origins | project_id FK、originator_id FK、类型、确认状态、created_at | 支持共同发起；确认后只追加更正，不原地覆盖 |
+| project_directions | direction_id PK、project_id FK、parent／supersedes、目标用户、问题、结果、状态 | 用 Pivot／Fork 保存 A→B 演进；完全独立方向不得覆盖旧方向 |
+| direction_origins | direction_id FK、originator_id FK、类型、确认状态 | 每个方向独立记录 0→1 发起者，不从项目发起人自动继承 |
+| leadership_terms | term_id PK、project_id、direction_id、leader_id、开始／结束、产生方式 | Leader 绑定方向／阶段任期，可交接，不改变发起归属 |
 | role_needs | role_need_id PK、project_id FK、角色、说明、数量、状态 | 每项目最多 3 个缺口；MVP 每缺口 1 人（PRD §15 开放问题 5） |
 | match_candidates | candidate_id PK、source、规则分、理由、风险、生成时间 | 理由只引用已有输入字段；重新生成需使旧理由失效 |
 | nfc_assets | card_id PK、opaque_token 唯一、owner FK、启用状态 | token 为不可读随机标识，不含姓名／手机号／长期密钥 |
 | connection_requests | request_id PK、requester、recipient、event_id、source、状态 | 状态：Requested／Accepted／Rejected／Cancelled／Expired／Blocked；**唯一约束：(requester, recipient, event_id) 上仅允许一个有效请求** |
 | connections | connection_id PK、两个 user_id、event_id、source、created_at | 只能由 Requested → Accepted 迁移创建 |
 | team_invitations | invitation_id PK、project_id、invitee、inviter、状态 | 状态：Pending／Joined／Declined／Cancelled；邀请前服务端校验 Connection 存在 |
-| team_memberships | membership_id PK、project_id、user_id、role、状态 | 创建前服务端校验缺口有效且有容量；并发占席只允许一个成功 |
+| team_memberships | membership_id PK、project_id、user_id、team_role、governance_role、状态 | 团队职能与治理权限分开；创建前校验缺口与容量 |
 | collaboration_packs | pack_id PK、project_id、role_map、gap、risk、tasks（3 个）、version、fallback_used | 输出可编辑；模板降级时 fallback_used=true |
 | event_logs | event_id PK、actor、event_type、object、source、前后状态、timestamp | 只增不改；重复操作不重复入账（幂等） |
 

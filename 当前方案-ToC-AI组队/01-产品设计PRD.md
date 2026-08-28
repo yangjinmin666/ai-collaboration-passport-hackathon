@@ -393,7 +393,11 @@ flowchart LR
 | Collaboration Profile | 技能、兴趣、偏好、证据、投入时间 | 用户可编辑的协作身份 |
 | Visibility Grant | 范围、公开字段、开始／到期时间、状态 | 记录显式授权，而不是资料默认公开 |
 | Evidence | 类型、URL、标题、所有者、验证状态 | 支撑能力标签的项目／作品证据 |
-| Project | 目标、主题、阶段、owner、团队状态 | Idea／团队的协作对象 |
+| Project | 目标、主题、阶段、created_by、团队状态 | Idea／团队的协作对象；创建者不等于永久 Leader |
+| Project Origin | 最初 Idea、发起人／共同发起人、确认记录 | 永久保存项目 0→1 来源，与治理权限分开 |
+| Direction Version | 用户、问题、结果、父方向／被替代方向、状态 | 用 Pivot 或 Fork 保存方向演进，不覆盖旧 Idea |
+| Direction Origin | direction、发起人／共同发起人、确认记录 | 每个被采用方向独立保存 0→1 发起归属 |
+| Leadership Term | project、direction／phase、leader、开始／结束、产生方式 | Leader 按当前方向和阶段确认、复核与交接 |
 | Role Need | 角色、重要性、数量、说明、urgency、expires_at、状态 | 定义团队真正缺什么；急招是带紧急标记和期限的 Role Need |
 | Match Candidate | source、规则分、理由、风险、生成时间 | 人—项目／人—人推荐结果 |
 | NFC Asset | card_id、opaque_token、owner、启用状态 | 将实体入口映射到有限公开资料 |
@@ -401,7 +405,7 @@ flowchart LR
 | Connection Request | requester、recipient、source、event、状态 | 记录发起与双向确认 |
 | Connection | 两个用户、event、source、consent_mode、context、created_at | 请求被接受或双卡握手成功后的协作关系 |
 | Team Invitation | project、invitee、inviter、状态 | 把连接转成项目成员 |
-| Team Membership | project、user、role、状态 | 团队角色与成员关系 |
+| Team Membership | project、user、team_role、governance_role、状态 | 团队职能与治理权限分开记录 |
 | Aid Request | project、类型、问题、已尝试、所需能力、期望结果、紧急性、地点、截止、回报方式、状态 | 表达不以入队为前提的短时项目援助需求 |
 | Aid Offer | aid_request、helper、可用时间、说明、状态 | 支援者响应一条 SOS |
 | Aid Session | aid_request、requester、helper、开始／结束、结果、双方确认 | 记录实际发生并可能沉淀为证据的援助过程 |
