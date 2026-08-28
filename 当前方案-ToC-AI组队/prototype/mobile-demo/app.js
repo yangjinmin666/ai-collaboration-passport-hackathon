@@ -8,6 +8,7 @@ const people = [
     id: "lin",
     name: "林澈",
     monogram: "LC",
+    avatar: "memoji-4",
     role: "硬件构建者",
     skills: ["嵌入式", "IoT", "结构打样"],
     status: "未组队",
@@ -22,6 +23,7 @@ const people = [
     id: "su",
     name: "苏晴",
     monogram: "SQ",
+    avatar: "memoji-1",
     role: "交互设计师",
     skills: ["交互", "视觉", "路演"],
     status: "可交流",
@@ -36,6 +38,7 @@ const people = [
     id: "alan",
     name: "阿岚",
     monogram: "AL",
+    avatar: "memoji-10",
     role: "产品发起人",
     skills: ["产品", "用户研究", "商业"],
     status: "团队招人",
@@ -100,6 +103,7 @@ function selectedPerson() {
 }
 
 function glyph(person, size = "md") {
+  if (person.avatar) return `<span class="memoji-avatar ${person.avatar} glyph-${size}" aria-label="${person.name || "默认头像"}"></span>`;
   return `<span class="identity-glyph ${person.glyph} glyph-${size}" aria-hidden="true"><i></i><b>${person.monogram}</b></span>`;
 }
 
@@ -227,7 +231,7 @@ function renderOnboardingDraft() {
   return `<div class="onboarding-step">
     ${onboardingGuide("AI DRAFT / REVIEW", "这是草稿，不是 AI 对你的定义。", "我们把证据、Now Building 和当前需求拼成协作护照；你决定哪些内容对外出现。")}
     <section class="draft-passport">
-      <div class="draft-head"><span class="draft-avatar">ZW</span><div><h3>周闻</h3><p>${draft.role}</p></div><button data-action="draft-refresh">AI 重组</button></div>
+      <div class="draft-head"><span class="memoji-avatar memoji-5 draft-avatar" aria-label="周闻的默认头像"></span><div><h3>周闻</h3><p>${draft.role}</p></div><button data-action="draft-refresh">AI 重组</button></div>
       <div class="draft-section"><span>NOW BUILDING</span><strong>离线会议洞察终端</strong><small>${draft.summary}</small></div>
       <div class="draft-section"><span>能力证据</span><div class="draft-tags"><b>Agent</b><b>API</b><b>端侧 AI</b><b>GitHub 已连接</b></div></div>
       <div class="draft-section"><span>当前协作状态</span><strong>${collaborationStatusLabel()}</strong><small>当前意图：${collaborationNeedLabel()}</small></div>
@@ -252,7 +256,7 @@ function renderOnboardingPreview() {
 
 function renderOnboardingSurface() {
   if (state.previewMode === "eink") return `<div class="onboarding-eink"><div><span>● ${collaborationStatusLabel()}</span><em>至 22:00</em></div><h3>周闻 / ZW</h3><p>AI · 后端 · Agent</p><section><span>当前协作意图</span><strong>${collaborationNeedLabel()}</strong></section><footer><b>碰卡直接建联</b><span>P·0087</span></footer></div>`;
-  if (state.previewMode === "passport") return `<article class="onboarding-full-passport"><header><span class="draft-avatar">ZW</span><div><h3>周闻</h3><p>AI / 后端构建者</p></div></header><p class="passport-vibe">“先跑通真实闭环，再把系统做漂亮。”</p><div><span>NOW BUILDING</span><strong>离线会议洞察终端</strong></div><div><span>项目证据</span><strong>GitHub · 7 commits this week</strong></div><div><span>${collaborationStatusLabel()}</span><strong>${collaborationNeedLabel()}</strong></div></article>`;
+  if (state.previewMode === "passport") return `<article class="onboarding-full-passport"><header><span class="memoji-avatar memoji-5 draft-avatar" aria-label="周闻的默认头像"></span><div><h3>周闻</h3><p>AI / 后端构建者</p></div></header><p class="passport-vibe">“先跑通真实闭环，再把系统做漂亮。”</p><div><span>NOW BUILDING</span><strong>离线会议洞察终端</strong></div><div><span>项目证据</span><strong>GitHub · 7 commits this week</strong></div><div><span>${collaborationStatusLabel()}</span><strong>${collaborationNeedLabel()}</strong></div></article>`;
   return `<article class="onboarding-discovery-card"><div class="discovery-card-meta"><span>${collaborationStatusLabel()}</span><em>同场</em></div><h3>周闻</h3><p>AI / 后端构建者</p><div class="draft-tags"><b>Agent</b><b>API</b><b>端侧 AI</b></div><section><span>当前协作意图</span><strong>${collaborationNeedLabel()}</strong><small>可先在线表达意愿，也可当面碰卡直连</small></section></article>`;
 }
 
@@ -276,7 +280,7 @@ function commonHeader(title = "发现") {
         <p class="micro-label">2026 AI HARDWARE HACKATHON</p>
         <h2>${title}</h2>
       </div>
-      <button class="mini-avatar" data-tab="profile" aria-label="打开我的身份">ZW</button>
+      <button class="mini-avatar" data-tab="profile" aria-label="打开我的身份"><span class="memoji-avatar memoji-5"></span></button>
     </header>
   `;
 }
@@ -292,7 +296,7 @@ function renderVariantA() {
           <span class="passport-id">P·0087</span>
         </div>
         <div class="passport-main">
-          ${glyph({ monogram: "ZW", glyph: "glyph-sun" }, "lg")}
+          ${glyph({ name: "周闻", avatar: "memoji-5" }, "lg")}
           <div>
             <p class="passport-name">周闻</p>
             <p class="passport-role">AI / 后端构建者</p>
@@ -347,7 +351,7 @@ function renderVariantB() {
       <section class="radar-field" aria-label="附近人员雷达">
         <div class="radar-ring ring-one"></div><div class="radar-ring ring-two"></div><div class="radar-ring ring-three"></div>
         <div class="radar-sweep"></div>
-        <button class="radar-self" data-tab="profile">ZW</button>
+        <button class="radar-self" data-tab="profile" aria-label="打开我的身份"><span class="memoji-avatar memoji-5"></span></button>
         ${people.map((item, index) => `
           <button class="radar-person radar-person-${index + 1} ${state.selectedId === item.id ? "active" : ""}" data-person="${item.id}" aria-label="选择 ${item.name}">
             ${glyph(item, index === 0 ? "md" : "sm")}
@@ -388,6 +392,7 @@ function renderVariantC() {
         ${people.map((person, index) => `
           <button class="ledger-person" data-person="${person.id}">
             <span class="ledger-number">${String(index + 1).padStart(2, "0")}</span>
+            ${glyph(person, "xs")}
             <span class="ledger-main">
               <span class="ledger-name">${person.name}<em>${person.status}</em></span>
               <span>${person.skills.join(" / ")}</span>
@@ -474,7 +479,7 @@ function renderProfile() {
     <div class="view utility-view profile-view">
       ${commonHeader("我的协作身份")}
       <section class="profile-intro">
-        ${glyph({ monogram: "ZW", glyph: "glyph-sun" }, "xl")}
+        ${glyph({ name: "周闻", avatar: "memoji-5" }, "xl")}
         <div><h3>周闻</h3><p>AI / 后端构建者</p><span class="passport-id">PASSPORT P·0087</span></div>
       </section>
       <section class="visibility-panel">
