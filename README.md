@@ -1,4 +1,7 @@
-# AI Collaboration Passport
+# RALLY｜集结
+
+> **找到队友，马上开工。**<br>
+> **Find your crew. Start building.**
 
 面向黑客松和高密度共创现场的 To C 实时组队与协作启动产品。
 
@@ -23,7 +26,7 @@ cd 当前方案-ToC-AI组队/prototype/mobile-demo
 - `http://localhost:4173/?variant=B`
 - `http://localhost:4173/?variant=C`
 
-当前稳定展示入口为 C 版。Bonjour 风格的协作护照引导仍在迭代中，未完成部分默认不会进入主演示流程。
+当前主演示入口为“发现 · 推荐”（A）。协作护照引导用于建立身份底层，不作为独立产品入口。
 
 ## 当前阶段
 

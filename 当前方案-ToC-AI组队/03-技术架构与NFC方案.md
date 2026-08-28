@@ -4,12 +4,12 @@ version: "0.1"
 created: 2026-08-28
 updated: 2026-08-28
 status: draft
-product: AI组队与协作产品（工作名）
+product: RALLY｜集结
 release: 96小时黑客松MVP
 team_size: 3
 ---
 
-# To C AI 组队与协作产品：技术架构与 NFC 方案
+# RALLY｜集结：技术架构与 NFC 方案
 
 > 本文承接 [01-产品设计PRD.md](./01-产品设计PRD.md) §8／§9／§13.3 与 [02-96小时功能排期表.md](./02-96小时功能排期表.md) §6／§8，把其中的架构决策深化为可实施的工程方案。PRD 定义"做什么和验收什么"，本文定义"怎么实现"。任何与 PRD 冲突之处以 PRD 为准，并回写修订本文。
 

@@ -1,4 +1,4 @@
-# Collaboration Passport Backend
+# RALLY Backend
 
 96 小时黑客松 MVP 的前两条服务端竖切：NFC／QR 公开资料入口、双向确认建联，以及两台手机可轮询的请求箱。
 

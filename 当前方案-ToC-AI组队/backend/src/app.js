@@ -168,7 +168,7 @@ export function createApi({
     if (request.method === "GET" && url.pathname === "/health") {
       sendJson(response, 200, {
         status: "ok",
-        service: "collaboration-passport-api",
+        service: "rally-api",
       });
       return;
     }

@@ -85,7 +85,9 @@ body::before {
 .view { min-height: 100%; padding: 18px 18px 30px; }
 
 .app-header { min-height: 34px; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
-.app-header h2 { margin: 0; font-size: 23px; line-height: 1; letter-spacing: -.04em; }
+.app-brand { display: grid; gap: 2px; }
+.app-brand strong { font-size: 21px; line-height: .9; letter-spacing: -.045em; }
+.app-brand span { color: #74818e; font-size: 8px; font-weight: 700; letter-spacing: .08em; }
 .ledger-header h2 { margin: 3px 0 0; font-size: 28px; line-height: 1; letter-spacing: -.045em; }
 .event-context { min-width: 0; display: inline-flex; align-items: center; gap: 5px; overflow: hidden; padding: 6px 9px; border: 1px solid #dce3eb; border-radius: 999px; background: #fff; color: #657383; font-size: 8px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
 .event-context i { width: 5px; height: 5px; flex: 0 0 auto; border-radius: 50%; background: var(--guide-blue); }

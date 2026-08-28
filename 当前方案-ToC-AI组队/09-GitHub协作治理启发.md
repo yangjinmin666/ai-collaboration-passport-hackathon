@@ -4,7 +4,7 @@ version: "1.1"
 created: 2026-08-29
 updated: 2026-08-29
 status: research-complete
-product: AI组队与协作产品（工作名）
+product: RALLY｜集结
 scope: 黑客松协作空间的归属、权限、变更治理与贡献记录
 sources: GitHub 官方文档
 ---

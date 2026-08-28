@@ -6,7 +6,7 @@ updated: 2026-08-29
 status: ready-for-review
 ---
 
-# 手机端可交互 Demo
+# RALLY｜集结：手机端可交互 Demo
 
 ## 1. Demo 目的
 

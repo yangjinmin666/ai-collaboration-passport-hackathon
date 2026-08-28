@@ -13,7 +13,7 @@ describe("legacy demo database migration", () => {
   let temporaryDirectory;
 
   before(async () => {
-    temporaryDirectory = mkdtempSync(join(tmpdir(), "collaboration-passport-"));
+    temporaryDirectory = mkdtempSync(join(tmpdir(), "rally-"));
     const databasePath = join(temporaryDirectory, "legacy.sqlite");
     const legacy = new DatabaseSync(databasePath);
     legacy.exec(`

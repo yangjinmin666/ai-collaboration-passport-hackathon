@@ -15,7 +15,7 @@ if (databasePath !== ":memory:") {
 
 const api = createApi({ databasePath, demoAccessKey, allowInsecureDemoAuth });
 const address = await api.start(port, host);
-console.log(`Collaboration Passport API listening on http://${host}:${address.port}`);
+console.log(`RALLY API listening on http://${host}:${address.port}`);
 console.log(`SQLite database: ${databasePath}`);
 if (!demoAccessKey) {
   console.warn("Demo session login is disabled because DEMO_ACCESS_KEY is not set.");

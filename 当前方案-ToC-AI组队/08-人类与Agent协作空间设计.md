@@ -4,7 +4,7 @@ version: "0.6"
 created: 2026-08-28
 updated: 2026-08-28
 status: concept-with-mvp-boundary
-product: AI组队与协作产品（工作名）
+product: RALLY｜集结
 scope: 碰卡建联后的协作启动与长期演进
 ---
 

@@ -1,6 +1,6 @@
 openapi: 3.1.0
 info:
-  title: Collaboration Passport API
+  title: RALLY API
   version: 0.2.0
   description: NFC/QR profile, protected demo sessions, request inbox, and mutually confirmed connections.
 servers:

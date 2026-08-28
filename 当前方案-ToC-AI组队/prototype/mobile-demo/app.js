@@ -294,7 +294,7 @@ function render() {
   document.body.dataset.flow = state.onboarding ? "onboarding" : "product";
   const phone = `
     <main class="prototype-stage">
-      <section class="phone-shell" aria-label="即碰即协作手机端原型">
+      <section class="phone-shell" aria-label="RALLY 集结手机端原型">
         <div class="phone-status"><span>09:41</span><span class="phone-island"></span><span>5G&nbsp;&nbsp;●</span></div>
         <div class="screen">
           ${state.onboarding ? renderOnboarding() : renderCurrentView()}
@@ -302,7 +302,7 @@ function render() {
         ${state.onboarding ? "" : renderAppNav()}
       </section>
       <aside class="prototype-notes">
-        <p class="eyebrow">${state.onboarding ? "PASSPORT ASSEMBLY / 01" : `MOBILE PROTOTYPE / ${state.variant}`}</p>
+        <p class="eyebrow">${state.onboarding ? "RALLY / PASSPORT ASSEMBLY" : `RALLY / MOBILE / ${state.variant}`}</p>
         <h1>${state.onboarding ? "协作护照引导" : variantNames[state.variant]}</h1>
         <p>${state.onboarding ? "借鉴 Bonjour 的低负担资料搭建方式，但把流程重心改成当下协作意图、能力证据和用户授权。" : variantDescription()}</p>
         ${renderStateLedger()}
@@ -452,7 +452,7 @@ function renderCurrentView() {
 function commonHeader(title = "发现") {
   return `
     <header class="app-header">
-      <h2>${title}</h2>
+      <div class="app-brand"><strong>RALLY</strong><span>集结 · ${title}</span></div>
       <span class="event-context"><i></i>当前活动 · 2026</span>
     </header>
   `;

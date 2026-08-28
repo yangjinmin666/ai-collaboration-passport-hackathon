@@ -23,7 +23,7 @@ describe("NFC card public profile", () => {
     assert.equal(response.status, 200);
     assert.deepEqual(await response.json(), {
       status: "ok",
-      service: "collaboration-passport-api",
+      service: "rally-api",
     });
   });
 
