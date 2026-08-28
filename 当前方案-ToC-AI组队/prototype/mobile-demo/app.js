@@ -235,7 +235,9 @@ const variantNames = {
   C: "发现 · 名册",
 };
 
-const startsInOnboarding = new URLSearchParams(location.search).get("onboarding") === "1";
+const initialParams = new URLSearchParams(location.search);
+const startsInOnboarding = initialParams.get("onboarding") === "1";
+const startsInWorkspace = initialParams.get("workspace") === "1" && !startsInOnboarding;
 
 const state = {
   variant: readVariant(),
@@ -246,14 +248,18 @@ const state = {
   previewMode: "mobile",
   draftVersion: 0,
   recommendationIndex: 0,
-  tab: "discover",
+  workspaceSection: "overview",
+  workspaceStarted: false,
+  workspaceSos: false,
+  assignmentOverrides: {},
+  tab: startsInWorkspace ? "collaboration" : "discover",
   selectedId: "lin",
   visible: !startsInOnboarding,
   stage: "browse",
-  greeted: [],
-  connected: [],
-  invited: [],
-  joined: [],
+  greeted: startsInWorkspace ? ["lin"] : [],
+  connected: startsInWorkspace ? ["lin"] : [],
+  invited: startsInWorkspace ? ["lin"] : [],
+  joined: startsInWorkspace ? ["lin"] : [],
   acceptedTasks: [],
   toast: "",
   overlay: null,
@@ -292,6 +298,7 @@ function signalBars(level) {
 function render() {
   document.body.dataset.variant = state.variant;
   document.body.dataset.flow = state.onboarding ? "onboarding" : "product";
+  document.body.dataset.tab = state.tab;
   const phone = `
     <main class="prototype-stage">
       <section class="phone-shell" aria-label="RALLY 集结手机端原型">
@@ -442,7 +449,7 @@ function renderOnboardingFooter(primaryLabel, secondaryLabel = "稍后设置") {
 
 function renderCurrentView() {
   if (state.tab === "connections") return renderConnections();
-  if (state.tab === "projects") return renderProjects();
+  if (state.tab === "collaboration") return renderCollaboration();
   if (state.tab === "profile") return renderProfile();
   if (state.variant === "B") return renderVariantB();
   if (state.variant === "C") return renderVariantC();
@@ -625,7 +632,7 @@ function renderConnections() {
       ${commonHeader("连接")}
       <section class="connection-hero">
         <div class="connection-summary"><strong>${connectedPeople.length}</strong><span>位已建联</span>${pendingPeople.length ? `<em>${pendingPeople.length} 个待回应</em>` : ""}</div>
-        <p>${connectedPeople.length ? "认识原因、碰卡来源和后续项目都会保存在这里。" : "线上表达想认识，或在见面后直接碰卡建联。"}</p>
+        <p>${connectedPeople.length ? "碰卡来源、认识原因和共同项目都会保存在这里。" : "线上先表达想认识，见面后通过碰卡建立真实连接。"}</p>
       </section>
       <div class="filter-row"><button class="active">全部</button><button>待回应</button><button>已建联</button></div>
       <section class="connection-list">
@@ -633,7 +640,7 @@ function renderConnections() {
           <article class="connection-card">
             <div class="connection-card-head">${glyph(person, "md")}<div><h4>${person.name}</h4><p>${person.role}</p></div><span class="source-chip">碰卡建联</span></div>
             <div class="connection-context"><span>认识于</span><strong>AI Hardware Hackathon</strong><small>刚刚 · ${person.pairLabel}</small></div>
-            <button class="primary-button full" data-tab="projects">查看共同项目</button>
+            <button class="primary-button full" data-tab="collaboration">查看共同项目</button>
           </article>
         `).join("") : `
           <div class="empty-state"><span class="empty-symbol">◎</span><h4>还没有正式连接</h4><p>你可以先在线表达“想认识”，也可以在现实交流后直接碰卡建联。</p><button class="primary-button" data-tab="discover">去发现</button></div>
@@ -644,42 +651,196 @@ function renderConnections() {
   `;
 }
 
-function renderProjects() {
+function renderCollaboration() {
   const joinedPeople = people.filter((person) => state.joined.includes(person.id));
-  const joined = joinedPeople.length > 0;
-  const latestMember = joinedPeople.at(-1);
-  const taskAccepted = state.acceptedTasks.includes("hardware-choice");
+  if (!joinedPeople.length) return renderCollaborationLobby();
+  return renderWorkspace(joinedPeople);
+}
+
+function renderCollaborationLobby() {
+  const connectedPeople = people.filter((person) => state.connected.includes(person.id));
+  const pendingPeople = people.filter((person) => state.greeted.includes(person.id) && !state.connected.includes(person.id));
   return `
-    <div class="view utility-view">
-      ${commonHeader("项目")}
-      <section class="project-card">
-        <div class="project-kicker"><span>PROJECT 01</span><em>${2 + joinedPeople.length} 人协作</em></div>
-        <h3>离线会议洞察终端</h3>
-        <p>让线下讨论自动沉淀为可检索的决策、分歧与行动项。</p>
-        <div class="team-line">
-          <span class="team-avatar">${currentUser.monogram}</span><span class="team-avatar">YK</span>${joined ? joinedPeople.map((person) => `<span class="team-avatar new" title="${person.name} · ${person.teamRole}">${person.monogram}</span>`).join("") : `<span class="team-gap">＋ 待补位</span>`}
-        </div>
+    <div class="view utility-view collaboration-lobby">
+      ${commonHeader("协作")}
+      <section class="collaboration-empty">
+        <span class="collaboration-empty-mark">＋</span>
+        <p class="micro-label">RALLY ROOM</p>
+        <h3>还没有进行中的项目启动舱</h3>
+        <p>完成建联并确认入队后，RALLY 会创建临时启动舱；成员确认 Agent 建议后，再把执行同步到常用工具。</p>
+        <button class="primary-button" data-tab="discover">去发现队友</button>
       </section>
-      ${joined ? `
-        <section class="launch-pack">
-          <div class="section-heading"><div><p class="micro-label">AI LAUNCH PACK</p><h3>把关系变成第一步</h3></div><span class="ai-badge">AI 建议</span></div>
-          <div class="role-coverage"><span>角色覆盖</span><div><b>AI / 后端</b><b>产品</b>${joinedPeople.map((person) => `<b class="new-role">${person.teamRole}</b>`).join("")}<i>按项目缺口继续补位</i></div></div>
-          <article class="risk-note"><strong>需要先确认</strong><p>${latestMember.name}：${latestMember.caution}。</p></article>
-          <div class="task-list">
-            ${renderTask("hardware-choice", `确认${latestMember.teamRole}交付边界`, latestMember.name, taskAccepted)}
-            ${renderTask("data-link", "定义端侧数据上报接口", "周闻", state.acceptedTasks.includes("data-link"))}
-            ${renderTask("demo-check", "冻结 90 秒演示验收脚本", "全员", state.acceptedTasks.includes("demo-check"))}
-          </div>
-        </section>
-      ` : `
-        <section class="project-empty"><p class="micro-label">OPEN ROLE</p><h3>还缺一名硬件构建者</h3><p>完成一次线下建联后，可以从连接中邀请对方加入。</p><button class="primary-button full" data-tab="discover">寻找附近的人</button></section>
-      `}
+      ${(connectedPeople.length || pendingPeople.length) ? `<section class="collaboration-inbox"><div><p class="micro-label">COLLABORATION INBOX</p><h3>协作收件箱</h3></div>${connectedPeople.map((person) => `<article>${glyph(person, "sm")}<span><strong>${person.name}</strong><small>已碰卡建联 · 待加入明确项目</small></span><em>已建联</em></article>`).join("")}${pendingPeople.map((person) => `<article>${glyph(person, "sm")}<span><strong>${person.name}</strong><small>已表达想认识 · 等待回应</small></span><em>待回应</em></article>`).join("")}</section>` : ""}
     </div>
   `;
 }
 
-function renderTask(id, title, owner, accepted) {
-  return `<button class="task-item ${accepted ? "accepted" : ""}" data-task="${id}"><span>${accepted ? "✓" : "○"}</span><div><strong>${title}</strong><small>建议负责人：${owner}</small></div><em>${accepted ? "已接受" : "接受"}</em></button>`;
+function workspaceTasks(latestMember) {
+  return [
+    { id: "hardware-choice", title: `确认${latestMember.teamRole}交付边界`, owner: latestMember.name, type: "关键路径", mode: "独立", reason: "先冻结硬件承诺，避免后续返工", risk: latestMember.caution, done: "输出一页可演示边界清单" },
+    { id: "data-link", title: "定义端侧数据上报接口", owner: currentUser.name, type: "并行任务", mode: "Agent 辅助", reason: "当前用户已有 API 与 Agent 经验", risk: "需要先确认离线失败时的降级路径", done: "接口字段与失败回退通过联调" },
+    { id: "demo-check", title: "冻结 90 秒演示验收脚本", owner: "全员", type: "共同确认", mode: "结对", reason: "跨职能结果需要所有成员理解", risk: "脚本冻结过晚会压缩联调时间", done: "全员完成一次无提示彩排" },
+  ];
+}
+
+function taskOwner(task) {
+  return state.assignmentOverrides[task.id] || task.owner;
+}
+
+function renderAssignmentItems(tasks) {
+  return tasks.map((task, index) => `<article><b>${String(index + 1).padStart(2, "0")}</b><span><strong>${task.title}</strong><small>${task.type} · ${task.mode} · 当前负责人：${taskOwner(task)}</small><small class="assignment-reason">${task.reason}</small><small class="assignment-risk">先确认：${task.risk}</small></span>${taskOwner(task) === currentUser.name ? `<em>我负责</em>` : `<button data-action="reassign-task" data-task-id="${task.id}">我来负责</button>`}</article>`).join("");
+}
+
+function renderWorkspaceTimeline(latestMember) {
+  return `<div class="workspace-timeline">
+    <article><i></i><span><strong>项目方向由周闻发起</strong><small>从 0 到 1 · 今天 09:10</small></span></article>
+    <article><i></i><span><strong>${latestMember.name} 确认加入项目</strong><small>线下碰卡来源 · 今天 09:41</small></span></article>
+    <article><i></i><span><strong>Agent 生成启动方案 V1</strong><small>${state.workspaceStarted ? "团队已确认" : "等待团队确认"}</small></span></article>
+    ${state.workspaceStarted ? `<article class="is-current"><i></i><span><strong>团队进入执行</strong><small>当前有效版本 · 全员可见</small></span></article>` : ""}
+  </div>`;
+}
+
+function renderWorkspace(joinedPeople) {
+  const latestMember = joinedPeople.at(-1);
+  const tasks = workspaceTasks(latestMember);
+  const memberCount = 2 + joinedPeople.length;
+  return `
+    <div class="view utility-view workspace-view">
+      ${commonHeader("协作")}
+      <section class="workspace-project-head">
+        <div class="workspace-live"><i></i>${state.workspaceStarted ? "执行中" : "等待团队确认"}</div>
+        <span class="workspace-room-label">RALLY ROOM · 项目启动舱</span>
+        <h3>离线会议洞察终端</h3>
+        <p>让线下讨论自动沉淀为可检索的决策、分歧与行动项。</p>
+        <div class="workspace-project-meta">
+          <div class="workspace-avatar-stack" aria-label="${memberCount} 位项目成员"><span>ZW</span><span>YK</span>${joinedPeople.map((person) => `<span>${person.monogram}</span>`).join("")}</div>
+          <strong>${memberCount} 位成员</strong><span>${state.workspaceStarted ? "方案已确认" : "还差首次分工"}</span><b>剩余 68h</b>
+        </div>
+        <div class="workspace-launch-track" aria-label="项目启动进度">
+          <article class="is-done"><i>✓</i><span><b>成员已到齐</b><small>${memberCount} 人已入队</small></span></article>
+          <article class="${state.workspaceStarted ? "is-done" : "is-current"}"><i>${state.workspaceStarted ? "✓" : "2"}</i><span><b>分工确认</b><small>${state.workspaceStarted ? "团队已确认" : "等待人来决定"}</small></span></article>
+          <article class="${state.workspaceStarted ? "is-current" : ""}"><i>3</i><span><b>进入执行</b><small>${state.workspaceStarted ? "可同步工具" : "确认后开始"}</small></span></article>
+        </div>
+      </section>
+      <nav class="workspace-tabs" aria-label="协作空间内容">
+        ${[["overview", "启动"], ["tasks", "分工"], ["records", "动态"]].map(([id, label]) => `<button class="${state.workspaceSection === id ? "active" : ""}" data-action="workspace-section" data-section="${id}">${label}</button>`).join("")}
+      </nav>
+      <div class="workspace-mobile-content">${state.workspaceSection === "tasks" ? renderWorkspaceTasks(tasks) : state.workspaceSection === "records" ? renderWorkspaceRecords(latestMember) : renderWorkspaceOverview(joinedPeople, tasks, latestMember)}</div>
+      ${renderDesktopWorkspace(joinedPeople, tasks, latestMember)}
+    </div>
+  `;
+}
+
+function renderDesktopWorkspace(joinedPeople, tasks, latestMember) {
+  return `
+    <section class="workspace-desktop-grid" aria-label="桌面协作工作台">
+      <aside class="desktop-workspace-panel desktop-members-panel">
+        <header><p class="micro-label">TEAM</p><h3>成员与权限</h3><span>谁能调度 Agent</span></header>
+        <div class="workspace-members">
+          <article>${glyph(currentUser, "sm")}<span><strong>${currentUser.name}</strong><small>项目发起人 · AI / 后端</small></span><em>Coordinator</em></article>
+          <article><span class="member-monogram">YK</span><span><strong>一可</strong><small>共同创建者 · 产品验证</small></span><em>可编辑</em></article>
+          ${joinedPeople.map((person) => `<article class="workspace-member-new">${glyph(person, "sm")}<span><strong>${person.name}</strong><small>协作成员 · ${person.teamRole}</small></span><em>可编辑</em></article>`).join("")}
+        </div>
+        <aside class="workspace-governance"><span>权限边界</span><p>只有 Coordinator 能发起 Agent 重排；成员可认领和调整自己的任务。</p></aside>
+        ${renderToolHandoff()}
+      </aside>
+
+      <main class="desktop-workspace-panel desktop-agent-panel">
+        <header><p class="micro-label">AGENT ROUTING</p><h3>分工与执行</h3><span>建议不会自动生效</span></header>
+        <section class="agent-proposal ${state.workspaceStarted ? "is-confirmed" : ""}">
+          <header><div><p class="micro-label">PROPOSAL · V1</p><h3>${state.workspaceStarted ? "团队已确认启动方案" : "等待人类确认的分工提案"}</h3></div><span>${state.workspaceStarted ? "执行中" : "待确认"}</span></header>
+          <p>Agent 根据项目目标和成员证据生成建议；任何人都可以主动认领感兴趣的工作。</p>
+          <div class="assignment-list">${renderAssignmentItems(tasks)}</div>
+          ${state.workspaceStarted ? `<div class="proposal-confirmed"><b>✓</b><span>方案已由人确认，Agent 正在按此版本提供协作建议。</span></div>` : `<button class="primary-button full" data-action="confirm-workspace-plan">模拟团队确认并开始协作</button>`}
+        </section>
+        <section class="desktop-task-board">
+          <header><h4>当前任务</h4><span>${state.acceptedTasks.length} / ${tasks.length} 已接受</span></header>
+          <div class="task-list">${tasks.map((task) => renderTask(task, state.acceptedTasks.includes(task.id))).join("")}</div>
+        </section>
+      </main>
+
+      <aside class="desktop-workspace-panel desktop-records-panel">
+        <header><p class="micro-label">PROJECT MEMORY</p><h3>记录与决策</h3><span>受保护的协作基线</span></header>
+        ${renderWorkspaceTimeline(latestMember)}
+        <aside class="record-policy"><b>重大变更：2 / 3</b><p>删除存档、重写超过 30% 任务或重新分配多数成员工作，必须由多位成员确认。</p></aside>
+        <article class="workspace-risk"><span>待确认</span><p>${latestMember.name}：${latestMember.caution}。</p></article>
+      </aside>
+    </section>
+  `;
+}
+
+function renderWorkspaceOverview(joinedPeople, tasks, latestMember) {
+  const memberCount = 2 + joinedPeople.length;
+  return `
+    <section class="workspace-section workspace-overview">
+      ${state.workspaceStarted ? `
+        <section class="workspace-started-card">
+          <span class="workspace-started-mark">✓</span>
+          <p class="micro-label">PROJECT STARTED</p>
+          <h3>项目已经正式启动</h3>
+          <p>${memberCount} 位成员完成首次分工。RALLY 只保留关键确认与贡献记录，日常执行继续使用团队已有工具。</p>
+          <div><button class="secondary-button" data-action="open-workspace-tasks">查看我的任务</button><button class="secondary-button" data-action="trigger-project-sos">发起项目 SOS</button></div>
+        </section>
+      ` : `
+        <section class="workspace-next-action">
+          <header><div><p class="micro-label">NEXT STEP</p><h3>确认 Agent 分工建议</h3></div><span>约 1 分钟</span></header>
+          <p>Agent 已根据成员能力和项目目标生成 V1 草案。成员可以主动认领，最终方案必须由人确认。</p>
+          <div class="workspace-assignment-preview">
+            ${tasks.slice(0, 2).map((task) => `<article><i></i><span><strong>${task.title}</strong><small>建议负责人：${taskOwner(task)}</small></span></article>`).join("")}
+            <small>另有 ${Math.max(tasks.length - 2, 0)} 项启动任务</small>
+          </div>
+          <button class="primary-button full" data-action="open-workspace-tasks">查看并确认分工</button>
+        </section>
+      `}
+
+      ${state.workspaceSos ? `<article class="workspace-sos-live"><span>SOS 已发布</span><strong>需要一位熟悉端侧数据同步的开发者</strong><small>已向当前活动中明确开放协作的成员展示</small></article>` : ""}
+
+      <section class="workspace-activity-preview">
+        <header><div><p class="micro-label">RECENT ACTIVITY</p><h3>最近动态</h3></div><button data-action="workspace-section" data-section="records">查看全部</button></header>
+        <article><i></i><span><strong>${latestMember.name} 已确认加入团队</strong><small>线下碰卡 · 刚刚</small></span></article>
+        <article><i></i><span><strong>Agent 生成分工建议 V1</strong><small>${state.workspaceStarted ? "已由团队确认" : "等待成员确认"}</small></span></article>
+        ${state.workspaceStarted ? `<article><i></i><span><strong>项目进入执行阶段</strong><small>当前有效版本 · 刚刚</small></span></article>` : ""}
+      </section>
+    </section>
+  `;
+}
+
+function renderWorkspaceTasks(tasks) {
+  return `
+    <section class="workspace-section workspace-tasks">
+      <section class="agent-proposal ${state.workspaceStarted ? "is-confirmed" : ""}">
+        <header><div><p class="micro-label">AGENT PROPOSAL · V1</p><h3>${state.workspaceStarted ? "团队已确认启动方案" : "Agent 已生成分工建议"}</h3></div><span>${state.workspaceStarted ? "已确认" : "待确认"}</span></header>
+        <p>Agent 只能提出建议。每位成员都可以认领真正想做的部分，最终选择权交给人。</p>
+        <div class="assignment-list">${renderAssignmentItems(tasks)}</div>
+        ${state.workspaceStarted ? `<div class="proposal-confirmed"><b>✓</b><span>方案已由人确认；后续调整不会覆盖历史版本。</span></div>` : `<button class="primary-button full" data-action="confirm-workspace-plan">模拟团队确认并开始协作</button>`}
+      </section>
+
+      ${state.workspaceStarted ? `<section class="workspace-owned-tasks"><header class="workspace-section-title"><div><p class="micro-label">HUMAN-OWNED TASKS</p><h3>启动任务</h3></div><span>${state.acceptedTasks.length} / ${tasks.length}</span></header><p class="workspace-section-copy">任务需要由成员本人接受。Agent 不能替任何人承诺时间或自动开始工作。</p><div class="task-list">${tasks.map((task) => renderTask(task, state.acceptedTasks.includes(task.id))).join("")}</div></section>` : ""}
+    </section>
+  `;
+}
+
+function renderWorkspaceRecords(latestMember) {
+  return `
+    <section class="workspace-section workspace-records">
+      <header class="workspace-section-title"><div><p class="micro-label">PROTECTED HISTORY</p><h3>协作记录</h3></div><span>不可静默覆盖</span></header>
+      ${renderWorkspaceTimeline(latestMember)}
+      <aside class="record-policy"><b>重大变更需要 2 / 3 确认</b><p>删除存档、重写超过 30% 任务或重新分配多数成员工作，都要保留旧版本并由多位成员确认。</p></aside>
+      <button class="workspace-sos-button" data-action="trigger-project-sos">＋ 发起项目 SOS</button>
+    </section>
+  `;
+}
+
+function renderToolHandoff() {
+  return `<section class="workspace-handoff"><div><span>继续执行</span><p>启动舱确认后，把任务与成员同步到团队已有工具。</p></div><div><button data-action="export-workspace" data-target="飞书">飞书</button><button data-action="export-workspace" data-target="GitHub">GitHub</button></div></section>`;
+}
+
+function renderTask(task, accepted) {
+  const owner = taskOwner(task);
+  const canAccept = owner === currentUser.name || owner === "全员";
+  const content = `<span>${accepted ? "✓" : "○"}</span><div><strong>${task.title}</strong><small>负责人：${owner}</small><small class="task-done">完成：${task.done}</small></div><em>${accepted ? "已接受" : canAccept ? "由我接受" : "待对方接受"}</em>`;
+  if (!canAccept && !accepted) return `<article class="task-item is-readonly">${content}</article>`;
+  return `<button class="task-item ${accepted ? "accepted" : ""}" data-task="${task.id}">${content}</button>`;
 }
 
 function renderProfile() {
@@ -713,11 +874,13 @@ function renderProfile() {
 function renderAppNav() {
   const items = [
     ["discover", "⌁", "发现"],
-    ["connections", "◎", "连接"],
-    ["projects", "▱", "项目"],
+    ["connections", "↔", "连接"],
+    ["collaboration", "◎", "协作"],
     ["profile", "◉", "我的"],
   ];
-  return `<nav class="app-nav">${items.map(([id, icon, label]) => `<button class="${state.tab === id ? "active" : ""}" data-tab="${id}"><span>${icon}</span><small>${label}</small>${id === "connections" && state.connected.length ? `<i>${state.connected.length}</i>` : ""}</button>`).join("")}</nav>`;
+  const connectionCount = state.connected.length || state.greeted.length;
+  const collaborationCount = state.joined.length;
+  return `<nav class="app-nav">${items.map(([id, icon, label]) => `<button class="${state.tab === id ? "active" : ""}" data-tab="${id}"><span>${icon}</span><small>${label}</small>${id === "connections" && connectionCount ? `<i>${connectionCount}</i>` : id === "collaboration" && collaborationCount ? `<i>${collaborationCount}</i>` : ""}</button>`).join("")}</nav>`;
 }
 
 function renderOverlay() {
@@ -764,7 +927,7 @@ function renderOverlay() {
     return `<div class="overlay success-overlay"><section class="success-card team-success">
       <div class="success-mark">＋</div><p class="micro-label">TEAM UPDATED</p><h3>${person.name} 已加入项目</h3>
       <p>AI 已根据三位成员的能力，生成角色覆盖、一个风险提示和三个启动任务。</p>
-      <button class="primary-button full" data-action="view-project">查看 AI 启动包</button>
+      <button class="primary-button full" data-action="view-project">进入项目启动舱</button>
     </section></div>`;
   }
   return "";
@@ -801,7 +964,7 @@ function bindEvents() {
       render();
     });
   });
-  document.querySelectorAll("[data-tab]").forEach((element) => element.addEventListener("click", () => {
+  document.querySelectorAll("button[data-tab]").forEach((element) => element.addEventListener("click", () => {
     state.tab = element.dataset.tab;
     state.overlay = null;
     render();
@@ -978,13 +1141,30 @@ function handleAction(action, element) {
     if (!state.joined.includes(id)) state.joined.push(id);
     state.overlay = "joined";
   }
+  if (action === "workspace-section") state.workspaceSection = element.dataset.section;
+  if (action === "open-workspace-tasks") state.workspaceSection = "tasks";
+  if (action === "trigger-project-sos") {
+    state.workspaceSos = true;
+    state.workspaceSection = "overview";
+    showToast("项目 SOS 已发布到当前活动协作区");
+  }
+  if (action === "reassign-task") {
+    state.assignmentOverrides[element.dataset.taskId] = currentUser.name;
+    showToast("已在分工草案中改为由你负责；最终需团队确认");
+  }
+  if (action === "confirm-workspace-plan") {
+    state.workspaceStarted = true;
+    showToast("Demo：已模拟全员确认，项目进入执行状态");
+  }
+  if (action === "export-workspace") showToast(`已生成 ${element.dataset.target} 同步包（Demo）`);
   if (action === "view-connection") {
     state.overlay = null;
     state.tab = "connections";
   }
   if (action === "view-project") {
     state.overlay = null;
-    state.tab = "projects";
+    state.tab = "collaboration";
+    state.workspaceSection = "overview";
   }
   if (action === "toggle-visible") {
     state.visible = !state.visible;

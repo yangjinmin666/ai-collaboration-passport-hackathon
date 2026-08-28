@@ -94,6 +94,7 @@ def main():
                 "body_scroll_width": page.evaluate("document.body.scrollWidth"),
                 "viewport_width": page.evaluate("window.innerWidth"),
             }
+            assert report["variants"][variant]["nav_buttons"] == 4
             assert report["variants"][variant]["discovery_tabs"] == 3
             assert report["variants"][variant]["prototype_switcher_removed"]
             if variant == "A":
@@ -266,15 +267,57 @@ def main():
         assert report["flow"]["team_invite_requires_recipient_confirmation"]
         page.get_by_role("button", name="模拟对方确认加入").click()
         page.screenshot(path=str(OUTPUT_DIR / "step-4-team-joined.png"), full_page=True)
-        page.get_by_role("button", name="查看 AI 启动包").click()
-        page.locator("[data-task='hardware-choice']").click()
+        page.get_by_role("button", name="进入项目启动舱").click()
+        report["flow"]["launch_room_created"] = page.locator(".workspace-view").is_visible()
+        report["flow"]["mobile_launch_progress_visible"] = page.locator(
+            ".workspace-launch-track"
+        ).is_visible()
+        report["flow"]["mobile_starts_with_one_clear_action"] = page.get_by_role(
+            "button", name="查看并确认分工"
+        ).is_visible()
+        report["flow"]["mobile_avoids_permission_dashboard"] = not page.locator(
+            ".workspace-mobile-content .workspace-members"
+        ).is_visible()
+        assert report["flow"]["launch_room_created"]
+        assert report["flow"]["mobile_launch_progress_visible"]
+        assert report["flow"]["mobile_starts_with_one_clear_action"]
+        assert report["flow"]["mobile_avoids_permission_dashboard"]
+        page.get_by_role("button", name="查看并确认分工").click()
+        report["flow"]["human_confirmation_required"] = page.get_by_text(
+            "Agent 只能提出建议。每位成员都可以认领真正想做的部分，最终选择权交给人。",
+            exact=True,
+        ).is_visible()
+        assert report["flow"]["human_confirmation_required"]
+        page.locator(".workspace-mobile-content [data-action='reassign-task']").first.click()
+        report["flow"]["human_can_override_agent"] = page.get_by_text(
+            "关键路径 · 独立 · 当前负责人：周闻", exact=True
+        ).first.is_visible()
+        assert report["flow"]["human_can_override_agent"]
+        page.locator(".workspace-mobile-content [data-action='confirm-workspace-plan']").click()
+        report["flow"]["team_confirmed_plan"] = page.get_by_text("团队已确认启动方案", exact=True).first.is_visible()
+        assert report["flow"]["team_confirmed_plan"]
+        page.locator(".workspace-tabs [data-section='tasks']").click()
+        page.locator(".workspace-mobile-content [data-task='hardware-choice']").click()
+        task_accepted = "accepted" in (
+            page.locator(".workspace-mobile-content [data-task='hardware-choice']").get_attribute("class") or ""
+        )
+        page.wait_for_timeout(260)
         page.screenshot(path=str(OUTPUT_DIR / "flow-complete.png"), full_page=True)
+        page.locator(".workspace-tabs [data-section='overview']").click()
+        report["flow"]["launched_mobile_state_visible"] = page.get_by_text(
+            "项目已经正式启动", exact=True
+        ).is_visible()
+        assert report["flow"]["launched_mobile_state_visible"]
+        page.get_by_role("button", name="发起项目 SOS").click()
+        report["flow"]["project_sos_visible"] = page.get_by_text("SOS 已发布", exact=True).is_visible()
+        assert report["flow"]["project_sos_visible"]
+        page.wait_for_timeout(260)
+        page.screenshot(path=str(OUTPUT_DIR / "workspace-mobile.png"), full_page=True)
 
         report["flow"] = {
             **report["flow"],
             "project_title_visible": page.get_by_text("离线会议洞察终端", exact=True).is_visible(),
-            "hardware_member_visible": page.locator(".team-avatar.new").is_visible(),
-            "task_accepted": "accepted" in (page.locator("[data-task='hardware-choice']").get_attribute("class") or ""),
+            "task_accepted": task_accepted,
             "state_label": page.locator(".state-ledger strong").text_content() if page.locator(".state-ledger strong").count() else "hidden-on-mobile",
         }
 
@@ -291,6 +334,23 @@ def main():
         desktop.screenshot(path=str(OUTPUT_DIR / "desktop-presentation.png"), full_page=True)
         report["flow"]["desktop_fits_width"] = desktop.evaluate("document.body.scrollWidth <= window.innerWidth")
         desktop.close()
+
+        workspace_desktop = browser.new_page(viewport={"width": 1440, "height": 900})
+        workspace_desktop.on("console", lambda msg: report["errors"].append(f"workspace-console:{msg.type}:{msg.text}") if msg.type == "error" else None)
+        workspace_desktop.on("pageerror", lambda error: report["errors"].append(f"workspace-page:{error}"))
+        workspace_desktop.goto(f"{BASE_URL}/?variant=A&workspace=1")
+        workspace_desktop.wait_for_load_state("networkidle")
+        report["flow"]["desktop_workspace_is_primary"] = workspace_desktop.locator(".workspace-desktop-grid").is_visible()
+        report["flow"]["desktop_workspace_has_three_zones"] = workspace_desktop.locator(".desktop-workspace-panel").count() == 3
+        report["flow"]["desktop_workspace_hands_off_to_tools"] = (
+            workspace_desktop.locator(".workspace-desktop-grid").get_by_role("button", name="飞书").is_visible()
+            and workspace_desktop.locator(".workspace-desktop-grid").get_by_role("button", name="GitHub").is_visible()
+        )
+        assert report["flow"]["desktop_workspace_is_primary"]
+        assert report["flow"]["desktop_workspace_has_three_zones"]
+        assert report["flow"]["desktop_workspace_hands_off_to_tools"]
+        workspace_desktop.screenshot(path=str(OUTPUT_DIR / "workspace-desktop.png"), full_page=True)
+        workspace_desktop.close()
 
         browser.close()
 

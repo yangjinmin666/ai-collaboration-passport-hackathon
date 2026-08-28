@@ -296,7 +296,7 @@ GitHub 的原则是按职能授予满足工作所需的最小权限。Organizati
 | `actor` | 做出动作的人或 Agent |
 | `contribution_role` | 发起者、主要执行者、共同贡献者、Reviewer、协调者、支持者 |
 | `subject` | 对应的 Direction、WorkItem、Artifact、Decision 或 ChangeRequest |
-| `evidence_ref` | Git Commit／PR、Figma、文档版本、照片、测试记录、演示视频或现场确认 |
+| `evidence_ref` | Git Commit／PR、文档或设计文件版本、照片、测试记录、演示视频或现场确认 |
 | `version_or_hash` | 贡献所对应的具体版本，避免内容改变后仍沿用旧确认 |
 | `confirmed_by` | 谁确认这条归属或验收结果；自报能力不自动成为已确认贡献 |
 | `occurred_at` | 发生时间 |
