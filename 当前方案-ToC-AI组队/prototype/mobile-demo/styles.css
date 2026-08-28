@@ -520,6 +520,20 @@ body[data-flow="onboarding"] .onboarding-shell { background: #fff; background-im
 .eink-need { padding: 10px 0; border-top: 1px solid; border-bottom: 1px solid; }.eink-need span, .eink-need b { display: block; }.eink-need span { font-size: 7px; }.eink-need b { margin-top: 4px; font-size: 12px; }
 .fake-qr { width: 72px; height: 72px; display: grid; grid-template-columns: repeat(6, 1fr); gap: 1px; margin: 13px auto 5px; padding: 4px; background: #f4f4ea; border: 1px solid; }.fake-qr i { background: transparent; }.fake-qr i.black { background: #171a18; }.eink-card > p { margin: 0; text-align: center; font-family: monospace; font-size: 7px; }
 .device-preview > .secondary-button { margin-top: 12px; }
+.platform-links-panel { display: grid; gap: 12px; margin-top: 12px; padding: 16px; border: 1px solid var(--line); border-radius: 22px; background: var(--white); }
+.platform-links-panel > header { display: flex; align-items: start; justify-content: space-between; gap: 12px; }
+.platform-links-panel > header h3 { margin: 4px 0 0; }
+.platform-links-panel > header > span { color: var(--guide-blue-deep); font-size: 9px; font-weight: 750; }
+.platform-links-panel > p { margin: 0; color: var(--muted); font-size: 9px; line-height: 1.5; }
+.linked-platform-list { display: grid; gap: 7px; }
+.linked-platform-list article { min-height: 46px; display: flex; align-items: center; gap: 8px; padding: 7px 8px 7px 11px; border: 1px solid #e1e6ec; border-radius: 13px; background: #f8f9fb; }
+.linked-platform-list a { min-width: 0; flex: 1; display: grid; gap: 2px; color: inherit; text-decoration: none; }
+.linked-platform-list a strong { font-size: 10px; }.linked-platform-list a small { overflow: hidden; color: var(--muted); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.linked-platform-list a .platform-bio { color: #4f5d6b; }
+.linked-platform-list button { width: 34px; height: 34px; flex: 0 0 auto; border: 0; border-radius: 50%; background: #fff; color: var(--muted); cursor: pointer; }
+.platform-empty { padding: 11px; border: 1px dashed var(--line); border-radius: 13px; color: var(--muted); font-size: 9px; text-align: center; }
+.platform-connect-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 7px; }
+.platform-connect-grid button { min-height: 38px; border: 1px solid var(--line); border-radius: 12px; background: #fff; color: #3f4c5b; font-size: 9px; font-weight: 700; cursor: pointer; }
 .profile-fields { display: grid; gap: 8px; margin-top: 12px; }.profile-fields button { display: flex; justify-content: space-between; padding: 14px; border: 1px solid var(--line); border-radius: 15px; background: var(--white); font-size: 10px; }.profile-fields b { color: var(--muted); }
 
 .primary-button, .secondary-button { min-height: 42px; padding: 0 14px; border-radius: 13px; font-size: 10px; font-weight: 720; cursor: pointer; }
@@ -714,6 +728,14 @@ body[data-flow="onboarding"] .onboarding-shell { background: #fff; background-im
   .visibility-panel p:last-child { font-size: 13px; line-height: var(--leading-body); }
   .toggle { min-width: 52px; min-height: var(--touch-target); }
   .profile-fields button { min-height: var(--touch-target); font-size: var(--type-body); }
+  .platform-links-panel > header h3 { font-size: var(--type-section-title); }
+  .platform-links-panel > header > span, .platform-links-panel > p, .platform-empty { font-size: var(--type-label); }
+  .linked-platform-list article { min-height: 56px; }
+  .linked-platform-list a strong { font-size: var(--type-body); }
+  .linked-platform-list a small { font-size: var(--type-micro); }
+  .linked-platform-list button, .platform-connect-grid button { min-height: var(--touch-target); }
+  .linked-platform-list button { min-width: var(--touch-target); }
+  .platform-connect-grid button { font-size: var(--type-label); }
   .person-sheet-head p { font-size: 13px; }
   .large-fit { font-size: 11px; }.large-fit small { font-size: var(--type-micro); }
   .skill-line span { font-size: var(--type-label); }

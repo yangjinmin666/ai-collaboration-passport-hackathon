@@ -238,6 +238,38 @@ const variantNames = {
 const initialParams = new URLSearchParams(location.search);
 const startsInOnboarding = initialParams.get("onboarding") === "1";
 const startsInWorkspace = initialParams.get("workspace") === "1" && !startsInOnboarding;
+const storedAccessToken = localStorage.getItem("rally_access_token");
+
+function resolveApiBase() {
+  const explicitlyTrustedBase = localStorage.getItem("rally_api_base");
+  const candidate = storedAccessToken
+    ? (explicitlyTrustedBase || location.origin)
+    : (initialParams.get("apiBase") || "http://127.0.0.1:8787");
+  try {
+    const url = new URL(candidate, location.href);
+    if (!["http:", "https:"].includes(url.protocol)) return location.origin;
+    return url.href.replace(/\/$/, "");
+  } catch {
+    return location.origin;
+  }
+}
+
+const liveConfig = {
+  enabled: initialParams.get("live") === "1",
+  apiBase: resolveApiBase(),
+  eventId: initialParams.get("event") || "hackathon-2026",
+  demoUserId: initialParams.get("demoUser") || "user-zhou",
+  accessToken: storedAccessToken,
+};
+const platformCatalog = {
+  github: { label: "GitHub", hint: "https://github.com/用户名" },
+  jike: { label: "即刻", hint: "https://web.okjike.com/u/..." },
+  xiaohongshu: { label: "小红书", hint: "https://www.xiaohongshu.com/user/profile/..." },
+  douyin: { label: "抖音", hint: "https://www.douyin.com/user/..." },
+  linkedin: { label: "LinkedIn", hint: "https://www.linkedin.com/in/..." },
+  website: { label: "作品链接", hint: "https://你的作品地址" },
+  other: { label: "其他链接", hint: "https://你的公开资料地址" },
+};
 
 const state = {
   variant: readVariant(),
@@ -254,13 +286,26 @@ const state = {
   assignmentOverrides: {},
   tab: startsInWorkspace ? "collaboration" : "discover",
   selectedId: "lin",
-  visible: !startsInOnboarding,
+  visible: liveConfig.enabled ? false : !startsInOnboarding,
   stage: "browse",
   greeted: startsInWorkspace ? ["lin"] : [],
   connected: startsInWorkspace ? ["lin"] : [],
   invited: startsInWorkspace ? ["lin"] : [],
   joined: startsInWorkspace ? ["lin"] : [],
   acceptedTasks: [],
+  live: {
+    enabled: liveConfig.enabled,
+    started: false,
+    watcherId: null,
+    requestInFlight: false,
+    status: liveConfig.enabled ? "idle" : "demo",
+    nearby: [],
+    platformLinks: [],
+    meLoaded: false,
+    meLoading: false,
+    error: "",
+    lastUpdatedAt: null,
+  },
   toast: "",
   overlay: null,
 };
@@ -281,7 +326,72 @@ function setVariant(key) {
 }
 
 function selectedPerson() {
-  return people.find((person) => person.id === state.selectedId) || people[0];
+  return people.find((person) => person.id === state.selectedId)
+    || state.live?.nearby.find((person) => person.id === state.selectedId)
+    || people[0];
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function safeLiveText(value, fallback, maximumLength = 160) {
+  if (typeof value !== "string" || !value.trim()) return fallback;
+  return escapeHtml(value.trim().slice(0, maximumLength));
+}
+
+function activeRadarPeople() {
+  if (!state.live.enabled) return radarPeople;
+  if (state.live.status === "connected" || state.live.status === "requesting") {
+    return state.live.nearby;
+  }
+  return radarPeople;
+}
+
+function livePerson(person) {
+  const localId = String(person.user_id || "")
+    .replace(/^user-/, "")
+    .replace(/[^a-zA-Z0-9_-]/g, "")
+    .slice(0, 64) || "nearby-user";
+  const preset = people.find((item) => item.id === localId);
+  const displayName = safeLiveText(person.display_name, "现场协作者", 40);
+  const role = safeLiveText(person.role, "已授权活动成员", 80);
+  const status = safeLiveText(person.status, "活动中", 40);
+  const avatar = typeof person.avatar === "string" && /^memoji-\d+$/.test(person.avatar)
+    ? person.avatar
+    : undefined;
+  const skills = Array.isArray(person.skills)
+    ? person.skills.slice(0, 12).map((skill) => safeLiveText(skill, "", 40)).filter(Boolean)
+    : [];
+  const signal = person.distance?.band === "under_50m"
+    ? 3
+    : person.distance?.band === "under_200m"
+      ? 2
+      : 1;
+  return {
+    id: preset?.id || localId,
+    name: displayName,
+    monogram: displayName.slice(0, 2).toUpperCase(),
+    glyph: preset?.glyph || "glyph-orbit",
+    avatar,
+    role,
+    status,
+    skills,
+    proximity: safeLiveText(person.distance?.label, "活动现场", 40),
+    evidence: "活动内授权公开资料",
+    reason: "对方正在同一活动现场，可以直接当面确认协作意图。",
+    caution: "具体投入时间和分工仍需当面确认",
+    fit: "同场协作",
+    fitDetail: "真实定位",
+    pairLabel: "RALLY × LIVE",
+    teamRole: role,
+    signal,
+  };
 }
 
 function glyph(person, size = "md") {
@@ -319,6 +429,7 @@ function render() {
 
   app.innerHTML = `${phone}${renderOverlay()}${renderToast()}`;
   bindEvents();
+  syncLivePresenceLifecycle();
 }
 
 function collaborationStatusLabel() {
@@ -557,28 +668,38 @@ function radarPosition(index, total) {
 }
 
 function renderVariantB() {
-  const person = selectedPerson();
+  const nearbyPeople = activeRadarPeople();
+  const person = nearbyPeople.find((item) => item.id === state.selectedId)
+    || nearbyPeople[0]
+    || selectedPerson();
+  const liveStatus = state.live.status === "connected"
+    ? ["● 真实定位已连接", `最近更新 ${state.live.lastUpdatedAt || "刚刚"}`]
+    : state.live.status === "requesting"
+      ? ["○ 正在请求定位", "请允许浏览器使用当前位置"]
+      : state.live.status === "error"
+        ? ["○ 已使用演示数据", state.live.error || "真实定位暂不可用"]
+        : ["● 手机前台发现", "仅在打开本页时更新，离开后停止"];
   return `
     <div class="view view-b">
       ${commonHeader("发现")}
       ${renderDiscoveryTabs()}
-      <div class="mobile-discovery-note"><span>● 手机前台发现</span><small>仅在打开本页时更新，离开后停止</small></div>
+      <div class="mobile-discovery-note" aria-live="polite"><span>${liveStatus[0]}</span><small>${liveStatus[1]}</small></div>
       <section class="radar-copy">
         <span class="status-pill ${state.visible ? "status-open" : "status-paused"}"><i></i>${state.visible ? "附近可见" : "已暂停展示"}</span>
-        <h3>附近有 ${radarPeople.length} 位协作者</h3>
+        <h3>附近有 ${nearbyPeople.length} 位协作者</h3>
         <p>已根据你正在补齐的能力排序。点击头像，看看为什么值得聊。</p>
       </section>
       <section class="radar-field" aria-label="附近人员扫描区">
         <div class="radar-sweep"></div>
         <button class="radar-self" data-tab="profile" aria-label="打开我的身份">${glyph(currentUser, "sm")}</button>
-        ${radarPeople.map((item, index) => `
-          <button class="radar-person ${state.selectedId === item.id ? "active" : ""}" style="${radarPosition(index, radarPeople.length)}" data-person="${item.id}" aria-label="选择 ${item.name}">
+        ${nearbyPeople.map((item, index) => `
+          <button class="radar-person ${state.selectedId === item.id ? "active" : ""}" style="${radarPosition(index, nearbyPeople.length)}" data-person="${item.id}" aria-label="选择 ${item.name}">
             ${glyph(item, "sm")}
             <span class="radar-person-name">${item.name}</span>
           </button>
         `).join("")}
       </section>
-      <section class="radar-ticket">
+      ${nearbyPeople.length ? `<section class="radar-ticket">
         <div class="ticket-head">
           ${glyph(person, "sm")}
           <div><p>${person.name}</p><span>${person.role} · ${person.proximity}</span></div>
@@ -589,7 +710,7 @@ function renderVariantB() {
           <button class="secondary-button" data-action="next-person">换一个</button>
           <button class="primary-button" data-action="open-person" data-person="${person.id}">查看为什么</button>
         </div>
-      </section>
+      </section>` : `<section class="radar-ticket"><p class="ticket-reason">暂未发现仍在活动内公开位置的协作者。定位只在本页前台开启，并会在离开后立即停止。</p></section>`}
     </div>
   `;
 }
@@ -844,6 +965,7 @@ function renderTask(task, accepted) {
 }
 
 function renderProfile() {
+  const linkedPlatforms = state.live.platformLinks;
   return `
     <div class="view utility-view profile-view">
       ${commonHeader("我的")}
@@ -865,6 +987,21 @@ function renderProfile() {
           <p>碰我建联 · P0087</p>
         </div>
         <button class="secondary-button full" data-action="sync-card">编辑卡片公开内容</button>
+      </section>
+      <section class="platform-links-panel">
+        <header><div><p class="micro-label">AUTHORIZED EVIDENCE</p><h3>外部平台与作品</h3></div><span>${linkedPlatforms.length ? `${linkedPlatforms.length} 项` : "自主授权"}</span></header>
+        <p>只读取公开资料。GitHub 可同步公开摘要，其他平台只保存你主动提交的链接。</p>
+        ${linkedPlatforms.length ? `<div class="linked-platform-list">${linkedPlatforms.map((link) => {
+          const label = platformCatalog[link.platform]?.label || link.platform;
+          const host = new URL(link.url).hostname.replace(/^www\./, "");
+          const metadata = link.metadata || {};
+          const title = metadata.name ? `${label} · ${metadata.name}` : label;
+          const facts = metadata.username
+            ? [`@${metadata.username}`, Number.isInteger(metadata.public_repos) ? `${metadata.public_repos} 个公开仓库` : "", Number.isInteger(metadata.followers) ? `${metadata.followers} 关注者` : ""].filter(Boolean).join(" · ")
+            : `${host} · 用户提交`;
+          return `<article><a href="${escapeHtml(link.url)}" target="_blank" rel="noopener noreferrer"><strong>${escapeHtml(title)}</strong><small>${escapeHtml(facts)}</small>${metadata.bio ? `<small class="platform-bio">${escapeHtml(metadata.bio)}</small>` : ""}</a><button data-action="remove-platform" data-platform="${escapeHtml(link.platform)}" aria-label="移除 ${escapeHtml(label)}">×</button></article>`;
+        }).join("")}</div>` : `<div class="platform-empty">尚未绑定真实链接</div>`}
+        <div class="platform-connect-grid">${Object.entries(platformCatalog).map(([platform, item]) => `<button data-action="bind-platform" data-platform="${platform}">＋ ${item.label}</button>`).join("")}</div>
       </section>
       <section class="profile-fields"><button data-action="restart-onboarding"><span>重新组装协作护照</span><b>4 步 ›</b></button><button><span>能力与项目证据</span><b>5 项 ›</b></button><button><span>设备与隐私</span><b>已连接 ›</b></button></section>
     </div>
@@ -1107,11 +1244,12 @@ function handleAction(action, element) {
   if (action === "dismiss-recommendation") dismissRecommendation();
   if (action === "like-recommendation") expressRecommendationInterest(element.dataset.person);
   if (action === "next-person") {
-    const pool = state.variant === "B" ? radarPeople : people;
+    const pool = state.variant === "B" ? activeRadarPeople() : people;
+    if (!pool.length) return;
     const index = pool.findIndex((person) => person.id === state.selectedId);
     state.selectedId = pool[(Math.max(index, 0) + 1) % pool.length].id;
   }
-  if (action === "refresh") showToast(`已读取附近 ${people.length} 个协作信号`);
+  if (action === "refresh") showToast(`已读取附近 ${activeRadarPeople().length} 个协作信号`);
   if (action === "greet") {
     const id = element.dataset.person;
     if (!state.greeted.includes(id)) {
@@ -1167,10 +1305,16 @@ function handleAction(action, element) {
     state.workspaceSection = "overview";
   }
   if (action === "toggle-visible") {
+    if (state.live.enabled) {
+      updateLiveVisibility(!state.visible);
+      return;
+    }
     state.visible = !state.visible;
     showToast(state.visible ? "已恢复活动内可见" : "已暂停附近展示");
   }
   if (action === "sync-card") showToast("原型：公开字段编辑器将在下一轮接入");
+  if (action === "bind-platform") connectPlatform(element.dataset.platform);
+  if (action === "remove-platform") disconnectPlatform(element.dataset.platform);
   render();
 }
 
@@ -1218,3 +1362,200 @@ window.addEventListener("keydown", (event) => {
 });
 
 render();
+
+async function loadLiveMe() {
+  if (!state.live.enabled || state.live.meLoaded || state.live.meLoading) return;
+  state.live.meLoading = true;
+  try {
+    const response = await fetch(`${liveConfig.apiBase}/api/me`, { headers: liveHeaders() });
+    if (!response.ok) return;
+    const payload = await response.json();
+    const eventProfile = (payload.profiles || []).find((profile) => profile.event_id === liveConfig.eventId);
+    state.live.platformLinks = payload.platform_links || [];
+    state.visible = eventProfile?.visibility?.state === "VISIBLE";
+    state.live.meLoaded = true;
+    render();
+  } catch {
+    // The static prototype remains usable while a local API is offline.
+  } finally {
+    state.live.meLoading = false;
+  }
+}
+
+async function updateLiveVisibility(nextVisible) {
+  try {
+    const response = await fetch(
+      `${liveConfig.apiBase}/api/events/${encodeURIComponent(liveConfig.eventId)}/visibility`,
+      {
+        method: "PATCH",
+        headers: liveHeaders(),
+        body: JSON.stringify({ state: nextVisible ? "VISIBLE" : "PAUSED" }),
+      },
+    );
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error?.message || "公开状态更新失败");
+    state.visible = payload.visibility?.state === "VISIBLE";
+    showToast(state.visible ? "已恢复活动内可见" : "已暂停附近展示");
+  } catch (error) {
+    showToast(error.message);
+  }
+  render();
+}
+
+async function connectPlatform(platform) {
+  if (!state.live.enabled) {
+    showToast("开启 live=1 并连接后端后，可绑定真实平台链接");
+    return;
+  }
+  const item = platformCatalog[platform];
+  if (!item) return;
+  const url = window.prompt(`粘贴${item.label}公开链接`, item.hint);
+  if (!url || url === item.hint) return;
+  try {
+    const response = await fetch(`${liveConfig.apiBase}/api/me/platform-links/${platform}`, {
+      method: "PUT",
+      headers: liveHeaders(),
+      body: JSON.stringify({ url }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error?.message || "链接绑定失败");
+    state.live.platformLinks = [
+      ...state.live.platformLinks.filter((link) => link.platform !== platform),
+      payload.platform_link,
+    ];
+    showToast(
+      payload.platform_link.verification_state === "PUBLIC_API_SYNCED"
+        ? `${item.label}公开资料已同步`
+        : `${item.label}链接已保存，未标记为平台验证`,
+    );
+  } catch (error) {
+    showToast(error.message);
+  }
+  render();
+}
+
+async function disconnectPlatform(platform) {
+  const item = platformCatalog[platform];
+  if (!item || !state.live.enabled) return;
+  if (!window.confirm(`移除${item.label}链接？这不会删除平台上的任何内容。`)) return;
+  try {
+    const response = await fetch(`${liveConfig.apiBase}/api/me/platform-links/${platform}`, {
+      method: "DELETE",
+      headers: liveHeaders(),
+    });
+    if (!response.ok) throw new Error("链接移除失败");
+    state.live.platformLinks = state.live.platformLinks.filter((link) => link.platform !== platform);
+    showToast(`${item.label}链接已移除`);
+  } catch (error) {
+    showToast(error.message);
+  }
+  render();
+}
+
+function liveHeaders() {
+  const headers = { "content-type": "application/json" };
+  if (liveConfig.accessToken) headers.authorization = `Bearer ${liveConfig.accessToken}`;
+  else headers["x-demo-user-id"] = liveConfig.demoUserId;
+  return headers;
+}
+
+async function publishLivePosition(position) {
+  if (state.live.requestInFlight) return;
+  state.live.requestInFlight = true;
+  try {
+    const presence = await fetch(
+      `${liveConfig.apiBase}/api/events/${encodeURIComponent(liveConfig.eventId)}/presence`,
+      {
+        method: "PUT",
+        headers: liveHeaders(),
+        body: JSON.stringify({
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          accuracy_m: position.coords.accuracy,
+        }),
+      },
+    );
+    if (!presence.ok) {
+      const payload = await presence.json().catch(() => ({}));
+      throw new Error(payload.error?.message || `定位上报失败（${presence.status}）`);
+    }
+    const nearby = await fetch(
+      `${liveConfig.apiBase}/api/events/${encodeURIComponent(liveConfig.eventId)}/nearby`,
+      { headers: liveHeaders() },
+    );
+    if (!nearby.ok) throw new Error(`附近列表读取失败（${nearby.status}）`);
+    const payload = await nearby.json();
+    state.live.nearby = (payload.nearby || []).map(livePerson);
+    if (state.live.nearby.length && !state.live.nearby.some((item) => item.id === state.selectedId)) {
+      state.selectedId = state.live.nearby[0].id;
+    }
+    state.live.status = "connected";
+    state.live.error = "";
+    state.live.lastUpdatedAt = new Date().toLocaleTimeString("zh-CN", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+  } catch (error) {
+    state.live.status = "error";
+    state.live.error = safeLiveText(error.message, "真实定位暂不可用", 160);
+    state.live.nearby = [];
+  } finally {
+    state.live.requestInFlight = false;
+    render();
+  }
+}
+
+function startLivePresence() {
+  if (state.live.started) return;
+  state.live.started = true;
+  state.live.status = "requesting";
+  if (!navigator.geolocation) {
+    state.live.status = "error";
+    state.live.error = "当前浏览器不支持定位";
+    render();
+    return;
+  }
+  state.live.watcherId = navigator.geolocation.watchPosition(
+    publishLivePosition,
+    (positionError) => {
+      state.live.status = "error";
+      state.live.error = positionError.code === positionError.PERMISSION_DENIED
+        ? "定位权限未开启"
+        : "暂时无法获取当前位置";
+      state.live.nearby = [];
+      render();
+    },
+    { enableHighAccuracy: true, maximumAge: 15000, timeout: 10000 },
+  );
+  render();
+}
+
+function stopLivePresence() {
+  if (!state.live.started) return;
+  if (state.live.watcherId !== null) navigator.geolocation?.clearWatch(state.live.watcherId);
+  state.live.started = false;
+  state.live.watcherId = null;
+  state.live.status = "idle";
+  state.live.nearby = [];
+  fetch(`${liveConfig.apiBase}/api/events/${encodeURIComponent(liveConfig.eventId)}/presence`, {
+    method: "DELETE",
+    headers: liveHeaders(),
+    keepalive: true,
+  }).catch(() => {});
+}
+
+function syncLivePresenceLifecycle() {
+  if (!state.live.enabled) return;
+  const shouldRun = !state.onboarding
+    && state.live.meLoaded
+    && state.tab === "discover"
+    && state.variant === "B"
+    && state.visible;
+  if (shouldRun) startLivePresence();
+  else stopLivePresence();
+}
+
+window.addEventListener("pagehide", stopLivePresence);
+
+loadLiveMe();

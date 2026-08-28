@@ -122,6 +122,7 @@ describe("legacy demo database migration", () => {
     const existingPairBody = await existingPair.json();
     assert.equal(existingPair.status, 200);
     assert.equal(existingPairBody.connection.id, "con_oldest");
+    assert.equal(existingPairBody.connection.consent_mode, "recipient_confirmed");
   });
 
   test("legacy pending requests retain the 24-hour expiry ceiling", async () => {
@@ -161,4 +162,47 @@ describe("legacy demo database migration", () => {
     );
     assert.equal(reciprocal.connection_id, "con_oldest");
   });
+});
+
+test("minimum-profile migration never expands an existing visibility grant", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "rally-privacy-"));
+  const databasePath = join(directory, "existing.sqlite");
+  let api = createApi({
+    databasePath,
+    allowInsecureDemoAuth: true,
+    clock: () => new Date("2026-08-29T05:00:00.000Z"),
+  });
+  await api.start(0);
+  await api.stop();
+
+  const existing = new DatabaseSync(databasePath);
+  existing.prepare(`
+    UPDATE visibility_grants SET public_fields_json = '["display_name"]'
+    WHERE user_id = 'user-lin' AND event_id = 'hackathon-2026'
+  `).run();
+  existing.prepare(`
+    DELETE FROM schema_migrations
+    WHERE migration_id = '20260829_minimum_collaboration_profiles'
+  `).run();
+  existing.close();
+
+  try {
+    api = createApi({
+      databasePath,
+      allowInsecureDemoAuth: true,
+      clock: () => new Date("2026-08-29T05:00:00.000Z"),
+    });
+    const address = await api.start(0);
+    const response = await fetch(
+      `http://127.0.0.1:${address.port}/c/cp_B3kP8sT6yH2nV9qL?event=hackathon-2026&src=nfc`,
+    );
+    assert.equal(response.status, 200);
+    assert.deepEqual((await response.json()).profile, {
+      user_id: "user-lin",
+      display_name: "林澈",
+    });
+  } finally {
+    await api.stop();
+    rmSync(directory, { recursive: true, force: true });
+  }
 });

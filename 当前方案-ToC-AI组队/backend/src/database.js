@@ -7,8 +7,12 @@ const ALL_PUBLIC_PROFILE_FIELDS = [
   "role",
   "status",
   "skills",
+  "interests",
+  "availability",
+  "collaboration_preferences",
   "collaboration_need",
   "evidence",
+  "platform_links",
 ];
 const DEMO_CARD_TOKENS = {
   "card-zhou": "cp_7mJ4Qv9N2xK8Rt5W",
@@ -16,7 +20,7 @@ const DEMO_CARD_TOKENS = {
   "card-su": "cp_F6wR1cZ8mN4jX2pD",
 };
 const ZHOU_PUBLIC_PROFILE_FIELDS = ALL_PUBLIC_PROFILE_FIELDS.filter(
-  (field) => !["collaboration_need", "evidence"].includes(field),
+  (field) => !["collaboration_need", "evidence", "platform_links"].includes(field),
 );
 
 export function openDatabase(databasePath) {
@@ -57,6 +61,9 @@ export function openDatabase(databasePath) {
       role TEXT NOT NULL,
       status TEXT NOT NULL,
       skills_json TEXT NOT NULL,
+      interests_json TEXT NOT NULL DEFAULT '[]',
+      availability TEXT NOT NULL DEFAULT '',
+      collaboration_preferences_json TEXT NOT NULL DEFAULT '[]',
       collaboration_need TEXT NOT NULL,
       evidence_json TEXT NOT NULL,
       PRIMARY KEY (user_id, event_id),
@@ -116,6 +123,8 @@ export function openDatabase(databasePath) {
       user_a_id TEXT NOT NULL,
       user_b_id TEXT NOT NULL,
       source TEXT NOT NULL CHECK (source IN ('nfc', 'qr', 'link')),
+      consent_mode TEXT NOT NULL DEFAULT 'recipient_confirmed'
+        CHECK (consent_mode IN ('recipient_confirmed', 'physical_mutual')),
       status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'BLOCKED')),
       blocked_at TEXT,
       blocked_by TEXT,
@@ -243,10 +252,29 @@ export function openDatabase(databasePath) {
       ADD COLUMN blocked_by TEXT REFERENCES users(user_id)
     `);
   }
+  if (!connectionColumns.some((column) => column.name === "consent_mode")) {
+    database.exec(`
+      ALTER TABLE connections
+      ADD COLUMN consent_mode TEXT NOT NULL DEFAULT 'recipient_confirmed'
+      CHECK (consent_mode IN ('recipient_confirmed', 'physical_mutual'))
+    `);
+  }
+  const profileColumns = new Set(
+    database.prepare("PRAGMA table_info(profiles)").all().map((column) => column.name),
+  );
+  const profileMigrations = [
+    ["interests_json", "TEXT NOT NULL DEFAULT '[]'"],
+    ["availability", "TEXT NOT NULL DEFAULT ''"],
+    ["collaboration_preferences_json", "TEXT NOT NULL DEFAULT '[]'"],
+  ];
+  for (const [name, definition] of profileMigrations) {
+    if (!profileColumns.has(name)) database.exec(`ALTER TABLE profiles ADD COLUMN ${name} ${definition}`);
+  }
   enforceUniqueConnectionPairs(database);
   backfillConnectionRequestConnections(database);
   seedDatabase(database);
   migrateDemoFixtures(database);
+  migrateMinimumProfiles(database);
   return database;
 }
 
@@ -392,6 +420,49 @@ function migrateDemoFixtures(database) {
   }
 }
 
+function migrateMinimumProfiles(database) {
+  const migrationId = "20260829_minimum_collaboration_profiles";
+  if (database.prepare("SELECT 1 FROM schema_migrations WHERE migration_id = ?").get(migrationId)) {
+    return;
+  }
+  database.exec("BEGIN IMMEDIATE");
+  try {
+    database.prepare("UPDATE profiles SET status = '未组队' WHERE status = '正在找队伍'").run();
+    database.prepare("UPDATE profiles SET status = '已组队但可交流' WHERE status = '可交流'").run();
+    const updateDemo = database.prepare(`
+      UPDATE profiles
+      SET interests_json = ?, availability = ?, collaboration_preferences_json = ?
+      WHERE user_id = ? AND event_id = 'hackathon-2026'
+        AND interests_json = '[]' AND availability = ''
+    `);
+    updateDemo.run(
+      JSON.stringify(["端侧 AI", "现场协作"]),
+      "今天 18:00–24:00，可持续投入 6 小时",
+      JSON.stringify(["快速原型", "结对协作"]),
+      "user-zhou",
+    );
+    updateDemo.run(
+      JSON.stringify(["端侧 AI", "智能硬件"]),
+      "今天全天，可持续投入 8 小时",
+      JSON.stringify(["快速原型", "现场联调"]),
+      "user-lin",
+    );
+    updateDemo.run(
+      JSON.stringify(["公共议题", "AI 硬件"]),
+      "今天 14:00–22:00，可投入 5 小时",
+      JSON.stringify(["用户测试", "结对协作"]),
+      "user-su",
+    );
+    database.prepare(`
+      INSERT INTO schema_migrations (migration_id, applied_at) VALUES (?, ?)
+    `).run(migrationId, new Date().toISOString());
+    database.exec("COMMIT");
+  } catch (error) {
+    database.exec("ROLLBACK");
+    throw error;
+  }
+}
+
 export function seedDatabase(database) {
   const insertEvent = database.prepare(`
     INSERT OR IGNORE INTO events (event_id, name, starts_at, ends_at)
@@ -411,11 +482,13 @@ export function seedDatabase(database) {
   insertUser.run("user-zhou", "周闻", "memoji-5", "zhou@example.test", "13800000001");
   insertUser.run("user-lin", "林澈", "memoji-4", "lin@example.test", "13800000002");
   insertUser.run("user-su", "苏晴", "memoji-1", "su@example.test", "13800000003");
+  insertUser.run("user-mia", "米娅", "memoji-6", "mia@example.test", "13800000004");
 
   const insertProfile = database.prepare(`
     INSERT OR IGNORE INTO profiles (
-      user_id, event_id, role, status, skills_json, collaboration_need, evidence_json
-    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      user_id, event_id, role, status, skills_json, interests_json, availability,
+      collaboration_preferences_json, collaboration_need, evidence_json
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   insertProfile.run(
     "user-zhou",
@@ -423,6 +496,9 @@ export function seedDatabase(database) {
     "AI / 后端构建者",
     "团队缺人",
     JSON.stringify(["Agent", "API", "端侧 AI"]),
+    JSON.stringify(["端侧 AI", "现场协作"]),
+    "今天 18:00–24:00，可持续投入 6 小时",
+    JSON.stringify(["快速原型", "结对协作"]),
     "寻找硬件构建者",
     JSON.stringify(["GitHub · 本周 7 次提交"]),
   );
@@ -432,6 +508,9 @@ export function seedDatabase(database) {
     "硬件构建者",
     "未组队",
     JSON.stringify(["嵌入式", "IoT", "结构打样"]),
+    JSON.stringify(["端侧 AI", "智能硬件"]),
+    "今天全天，可持续投入 8 小时",
+    JSON.stringify(["快速原型", "现场联调"]),
     "寻找 AI / 后端搭档",
     JSON.stringify(["做过 3 个 ESP32 端侧项目"]),
   );
@@ -439,8 +518,11 @@ export function seedDatabase(database) {
     "user-su",
     "hackathon-2026",
     "交互设计师",
-    "可交流",
+    "已组队但可交流",
     JSON.stringify(["交互", "视觉", "路演"]),
+    JSON.stringify(["公共议题", "AI 硬件"]),
+    "今天 14:00–22:00，可投入 5 小时",
+    JSON.stringify(["用户测试", "结对协作"]),
     "寻找有社会议题的项目",
     JSON.stringify(["两次黑客松最佳设计奖"]),
   );
@@ -495,6 +577,9 @@ export function findPublicCardProfile(database, { opaqueToken, eventId, now }) {
       p.role,
       p.status,
       p.skills_json,
+      p.interests_json,
+      p.availability,
+      p.collaboration_preferences_json,
       p.collaboration_need,
       p.evidence_json,
       v.public_fields_json,
@@ -522,13 +607,32 @@ export function findPublicCardProfile(database, { opaqueToken, eventId, now }) {
     role: row.role,
     status: row.status,
     skills: JSON.parse(row.skills_json),
+    interests: JSON.parse(row.interests_json),
+    availability: row.availability,
+    collaboration_preferences: JSON.parse(row.collaboration_preferences_json),
     collaboration_need: row.collaboration_need,
     evidence: JSON.parse(row.evidence_json),
+    platform_links: database.prepare(`
+      SELECT platform, url, verification_state, metadata_json
+      FROM platform_links
+      WHERE user_id = ?
+      ORDER BY platform ASC
+    `).all(row.user_id).map((link) => ({
+      platform: link.platform,
+      url: link.url,
+      verification_state: link.verification_state,
+      metadata: link.metadata_json ? JSON.parse(link.metadata_json) : null,
+    })),
   };
   const authorizedFields = new Set(JSON.parse(row.public_fields_json));
   const publicProfile = { user_id: row.user_id };
   for (const field of ALL_PUBLIC_PROFILE_FIELDS) {
-    if (authorizedFields.has(field)) publicProfile[field] = availableProfile[field];
+    if (
+      authorizedFields.has(field)
+      && (field !== "platform_links" || availableProfile.platform_links.length > 0)
+    ) {
+      publicProfile[field] = availableProfile[field];
+    }
   }
 
   return {
@@ -892,6 +996,7 @@ function mapConnection(row) {
     event_id: row.event_id,
     members: [row.user_a_id, row.user_b_id],
     source: row.source,
+    consent_mode: row.consent_mode,
     status: row.status,
     blocked_at: row.blocked_at ?? null,
     created_at: row.created_at,
@@ -945,7 +1050,10 @@ function appendConnectionAcceptedLog(
   });
 }
 
-export function acceptConnectionRequest(database, { requestId, actorId, now }) {
+export function acceptConnectionRequest(
+  database,
+  { requestId, actorId, now, consentMode = "recipient_confirmed" },
+) {
   database.exec("BEGIN IMMEDIATE");
   try {
     const current = findConnectionRequestById(database, requestId);
@@ -1020,8 +1128,9 @@ export function acceptConnectionRequest(database, { requestId, actorId, now }) {
     const connectionId = `con_${randomUUID()}`;
     database.prepare(`
       INSERT INTO connections (
-        connection_id, request_id, event_id, user_a_id, user_b_id, source, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        connection_id, request_id, event_id, user_a_id, user_b_id, source,
+        consent_mode, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       connectionId,
       requestId,
@@ -1029,6 +1138,7 @@ export function acceptConnectionRequest(database, { requestId, actorId, now }) {
       members[0],
       members[1],
       current.source,
+      consentMode,
       now,
     );
     linkConnectionRequest(database, {

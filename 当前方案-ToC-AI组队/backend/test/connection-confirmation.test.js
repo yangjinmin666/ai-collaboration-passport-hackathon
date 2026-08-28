@@ -8,7 +8,11 @@ describe("connection confirmation", () => {
   let baseUrl;
 
   beforeEach(async () => {
-    api = createApi({ databasePath: ":memory:", allowInsecureDemoAuth: true });
+    api = createApi({
+      databasePath: ":memory:",
+      allowInsecureDemoAuth: true,
+      touchDeviceAccessKey: "touch-secret",
+    });
     const address = await api.start(0);
     baseUrl = `http://127.0.0.1:${address.port}`;
   });
@@ -68,6 +72,7 @@ describe("connection confirmation", () => {
     assert.deepEqual(acceptedBody.connection.members, ["user-lin", "user-zhou"]);
     assert.equal(acceptedBody.connection.event_id, "hackathon-2026");
     assert.equal(acceptedBody.connection.source, "nfc");
+    assert.equal(acceptedBody.connection.consent_mode, "recipient_confirmed");
     assert.equal(acceptedBody.idempotent_replay, false);
 
     const repeated = await fetch(
@@ -100,6 +105,43 @@ describe("connection confirmation", () => {
     );
     assert.equal(hiddenFromOutsider.status, 403);
     assert.equal((await hiddenFromOutsider.json()).error.code, "CONNECTION_FORBIDDEN");
+  });
+
+  test("a trusted two-card touch creates one physical-mutual connection", async () => {
+    const touch = async () => {
+      const response = await fetch(`${baseUrl}/api/connections/physical-mutual`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-touch-device-key": "touch-secret",
+        },
+        body: JSON.stringify({
+          event_id: "hackathon-2026",
+          card_a_token: "cp_7mJ4Qv9N2xK8Rt5W",
+          card_b_token: "cp_B3kP8sT6yH2nV9qL",
+        }),
+      });
+      return { response, body: await response.json() };
+    };
+
+    const first = await touch();
+    assert.equal(first.response.status, 201);
+    assert.deepEqual(first.body.connection.members, ["user-lin", "user-zhou"]);
+    assert.equal(first.body.attribution.source, "physical_mutual");
+    assert.equal(first.body.connection.consent_mode, "physical_mutual");
+    assert.equal(first.body.request.status, "ACCEPTED");
+
+    const replay = await touch();
+    assert.equal(replay.response.status, 200);
+    assert.equal(replay.body.connection.id, first.body.connection.id);
+    assert.equal(replay.body.idempotent_replay, true);
+
+    const untrusted = await fetch(`${baseUrl}/api/connections/physical-mutual`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    });
+    assert.equal(untrusted.status, 403);
   });
 
   test("repeating a request in either direction returns the pair's existing connection", async () => {

@@ -1,5 +1,7 @@
 import { createServer } from "node:http";
 
+import { createProductModule } from "./product-module.js";
+
 import {
   acceptConnectionRequest,
   appendEventLog,
@@ -75,8 +77,8 @@ function matchCardRoute(url) {
 
 function sendJson(response, status, body, extraHeaders = {}) {
   response.writeHead(status, {
-    "access-control-allow-headers": "authorization, content-type, x-demo-access-key, x-demo-user-id",
-    "access-control-allow-methods": "DELETE, GET, POST, PATCH, OPTIONS",
+    "access-control-allow-headers": "authorization, content-type, x-demo-access-key, x-demo-user-id, x-touch-device-key",
+    "access-control-allow-methods": "DELETE, GET, POST, PUT, PATCH, OPTIONS",
     "access-control-allow-origin": "*",
     "cache-control": "no-store",
     "content-type": "application/json; charset=utf-8",
@@ -153,11 +155,22 @@ export function createApi({
   databasePath,
   clock = () => new Date(),
   demoAccessKey = null,
+  touchDeviceAccessKey = null,
   allowInsecureDemoAuth = false,
   sessionTtlMs = 12 * 60 * 60 * 1000,
   requestTtlMs = 24 * 60 * 60 * 1000,
+  presenceTtlMs = 2 * 60 * 1000,
+  platformMetadataFetcher,
+  eventPolicyOverrides,
 }) {
   const database = openDatabase(databasePath);
+  const productModule = createProductModule(database, {
+    clock,
+    presenceTtlMs,
+    platformMetadataFetcher,
+    demoAccessKey,
+    eventPolicyOverrides,
+  });
   const handleRequest = async (request, response) => {
     if (request.method === "OPTIONS") {
       sendJson(response, 204, null);
@@ -275,6 +288,128 @@ export function createApi({
         source,
         event: profile.event,
         profile: profile.profile,
+      });
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/connections/physical-mutual") {
+      const suppliedAccessKey = request.headers["x-touch-device-key"];
+      if (
+        typeof touchDeviceAccessKey !== "string"
+        || typeof suppliedAccessKey !== "string"
+        || suppliedAccessKey !== touchDeviceAccessKey
+      ) {
+        sendError(
+          response,
+          403,
+          "TOUCH_DEVICE_FORBIDDEN",
+          "A trusted touch-device access key is required.",
+        );
+        return;
+      }
+      const parsedBody = await readJsonBody(request, response);
+      if (!parsedBody.ok) return;
+      const payload = parsedBody.value;
+      if (
+        payload === null
+        || typeof payload !== "object"
+        || Array.isArray(payload)
+        || typeof payload.event_id !== "string"
+        || typeof payload.card_a_token !== "string"
+        || typeof payload.card_b_token !== "string"
+        || payload.card_a_token === payload.card_b_token
+      ) {
+        sendError(
+          response,
+          400,
+          "INVALID_TOUCH",
+          "event_id and two different active card tokens are required.",
+        );
+        return;
+      }
+      const now = clock().toISOString();
+      const firstCard = findPublicCardProfile(database, {
+        opaqueToken: payload.card_a_token,
+        eventId: payload.event_id,
+        now,
+      });
+      const secondCard = findPublicCardProfile(database, {
+        opaqueToken: payload.card_b_token,
+        eventId: payload.event_id,
+        now,
+      });
+      if (!firstCard || !secondCard || firstCard.ownerId === secondCard.ownerId) {
+        sendError(
+          response,
+          409,
+          "TOUCH_CARDS_NOT_AVAILABLE",
+          "Both cards must be active, visible, bound to different users, and in the same event.",
+        );
+        return;
+      }
+      if (isConnectionBlocked(database, {
+        firstUserId: firstCard.ownerId,
+        secondUserId: secondCard.ownerId,
+        eventId: payload.event_id,
+      })) {
+        sendError(response, 409, "CONNECTION_BLOCKED", "This participant pair cannot connect.");
+        return;
+      }
+      const existingConnection = findConnectionBetween(database, {
+        firstUserId: firstCard.ownerId,
+        secondUserId: secondCard.ownerId,
+        eventId: payload.event_id,
+      });
+      if (existingConnection) {
+        appendEventLog(database, {
+          eventId: payload.event_id,
+          type: "physical_mutual_touch_attributed",
+          objectType: "connection",
+          objectId: existingConnection.id,
+          source: "physical_mutual",
+          payload: { card_ids: [firstCard.cardId, secondCard.cardId] },
+          createdAt: now,
+        });
+        sendJson(response, 200, {
+          connection: existingConnection,
+          attribution: { source: "physical_mutual", card_ids: [firstCard.cardId, secondCard.cardId] },
+          idempotent_replay: true,
+        });
+        return;
+      }
+      const expiresAt = findEventEndsAt(database, payload.event_id);
+      const connectionRequest = createConnectionRequest(database, {
+        requesterId: firstCard.ownerId,
+        recipientId: secondCard.ownerId,
+        eventId: payload.event_id,
+        source: "nfc",
+        message: "Trusted device confirmed a physical mutual touch.",
+        expiresAt,
+        now,
+      });
+      const accepted = acceptConnectionRequest(database, {
+        requestId: connectionRequest.id,
+        actorId: secondCard.ownerId,
+        now,
+        consentMode: "physical_mutual",
+      });
+      appendEventLog(database, {
+        eventId: payload.event_id,
+        type: "physical_mutual_connection_created",
+        objectType: "connection",
+        objectId: accepted.connection.id,
+        source: "physical_mutual",
+        payload: {
+          request_id: connectionRequest.id,
+          card_ids: [firstCard.cardId, secondCard.cardId],
+        },
+        createdAt: now,
+      });
+      sendJson(response, 201, {
+        request: accepted.request,
+        connection: accepted.connection,
+        attribution: { source: "physical_mutual", card_ids: [firstCard.cardId, secondCard.cardId] },
+        idempotent_replay: false,
       });
       return;
     }
@@ -685,6 +820,21 @@ export function createApi({
         return;
       }
       sendJson(response, 200, { connection });
+      return;
+    }
+
+    const productResult = await productModule.handle({
+      request,
+      url,
+      actorId: resolveActorId(
+        database,
+        request,
+        clock().toISOString(),
+        allowInsecureDemoAuth,
+      ),
+    });
+    if (productResult) {
+      sendJson(response, productResult.status, productResult.body, productResult.headers);
       return;
     }
 

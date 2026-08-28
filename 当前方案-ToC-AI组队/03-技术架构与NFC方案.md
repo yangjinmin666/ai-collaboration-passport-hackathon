@@ -1,9 +1,9 @@
 ---
 artifact: technical-architecture-and-nfc-design
-version: "0.1"
+version: "0.2"
 created: 2026-08-28
-updated: 2026-08-28
-status: draft
+updated: 2026-08-29
+status: implemented-mvp
 product: RALLY｜集结
 release: 96小时黑客松MVP
 team_size: 3
@@ -35,7 +35,7 @@ flowchart LR
     J["宽屏 RALLY Room"] --> B
     C["NFC NDEF URL / QR"] --> D["卡片落地页"]
     D --> A
-    B --> E["PostgreSQL / Realtime"]
+    B --> E["SQLite（当前）/ PostgreSQL（生产）"]
     B --> F["确定性匹配与状态服务"]
     F --> G["LLM：解释与启动包"]
     E --> H["Event Log / 漏斗指标"]
@@ -47,13 +47,15 @@ flowchart LR
 | 层 | 96h 选型 | 决策规则 |
 |---|---|---|
 | 前端 | 一套响应式 Web／PWA，覆盖两台手机与投屏 | 不做原生双端（导航 D-05） |
-| 后端 | Supabase／Firebase 或等价托管，直接用现成 Auth、DB、Realtime | H12 Gate：选型仍有争论立即锁定一个托管方案，禁止重搭基础设施 |
-| 数据 | PostgreSQL 或等价结构化存储 | 关键状态全部服务端校验，前端不得自行发明状态 |
-| AI | 一个结构化输出接口 | 只做匹配解释与启动包；超时／失败必须模板降级 |
+| 后端 | **当前已锁定：Node.js 内置 HTTP 服务＋HTTP/JSON API**；生产化再接托管 Auth／DB | 先保证所有状态链可测试、可复位；不在 96h 内重搭微服务 |
+| 数据 | **当前已锁定：SQLite 单机数据库**；生产迁移 PostgreSQL／Supabase | 关键状态全部服务端校验，前端不得自行发明状态 |
+| AI | 当前以确定性理由和 `TEMPLATE_FALLBACK` 三任务启动包跑通接口 | 真实模型只做增强；不可用时完整主链仍成立 |
 | 卡片 | 普通 NTAG 类被动标签写 HTTPS NDEF URL，同卡印 QR | 不做手机对手机 NFC、不做主动电子胸牌 |
 | 部署 | 一个公网 HTTPS 域名 | 现场备手机热点与同版本 90 秒离线录屏 |
 
 同一套响应式前端在手机宽度呈现“项目登机牌、分工确认、关键动态和 SOS”，在宽屏呈现成员权限、Agent 分工、启动任务与受保护记录。两者共享同一项目状态，不形成需要用户重复维护的两套任务系统。
+
+> **当前实现状态（2026-08-29）：** 后端已完成活动加入、资料与逐字段授权、外部平台链接、真实手机定位心跳、附近距离分桶、NFC／QR 请求建联、受独立设备密钥保护的双卡 `physical_mutual` 握手服务、项目邀请与确认入队、RALLY Room、任务认领与全员确认、项目 SOS、Event Log 和受保护 Demo Reset。手机 Live 模式已接入真实定位、可见性和外部平台资料。双卡服务已由握手模拟器契约测试跑通，但不等于有源卡硬件已经完成；正式短信登录、托管数据库、跨工具写入和真实 LLM 执行仍不在本轮范围。
 
 ### 1.3 架构红线
 
@@ -77,20 +79,22 @@ flowchart LR
 | events | event_id PK、名称、起止时间、邀请码 | 种子事件有效期须覆盖主演示时间（排期 §1.4） |
 | profiles | user_id FK、当前状态、能力标签（3–5）、兴趣、投入时间、协作偏好 | 当前状态枚举：未组队／有 Idea 找人／团队缺人／已组队但可交流 |
 | visibility_grants | user_id FK、event_id FK、范围、公开字段、开始／到期时间、状态 | 状态：Hidden／Visible／Paused／Expired；默认 Hidden |
-| evidences | evidence_id PK、user_id FK、类型、URL、标题、验证状态 | 无证据的能力标签必须标记"自我声明"；删除证据后旧匹配理由不得继续引用 |
+| platform_links | link_id PK、user_id FK、平台、HTTPS URL、验证状态、公开元数据 | GitHub 可同步公开摘要；其他平台只保存用户链接；只有字段授权后才公开 |
+| event_presence | user_id＋event_id、坐标、精度、更新时间、到期时间 | 2 分钟短时心跳；精确坐标永不返回给其他用户 |
 | projects | project_id PK、created_by FK、event_id FK、一句目标、主题、阶段 | created_by 只记录创建动作，不等于项目发起归属、永久 Owner 或 Leader |
 | project_origins | project_id FK、originator_id FK、类型、确认状态、created_at | 支持共同发起；确认后只追加更正，不原地覆盖 |
 | project_directions | direction_id PK、project_id FK、parent／supersedes、目标用户、问题、结果、状态 | 用 Pivot／Fork 保存 A→B 演进；完全独立方向不得覆盖旧方向 |
 | direction_origins | direction_id FK、originator_id FK、类型、确认状态 | 每个方向独立记录 0→1 发起者，不从项目发起人自动继承 |
 | leadership_terms | term_id PK、project_id、direction_id、leader_id、开始／结束、产生方式 | Leader 绑定方向／阶段任期，可交接，不改变发起归属 |
-| role_needs | role_need_id PK、project_id FK、角色、说明、数量、状态 | 每项目最多 3 个缺口；MVP 每缺口 1 人（PRD §15 开放问题 5） |
+| project_role_needs | role_need_id PK、project_id FK、角色、技能、容量、状态 | 邀请接受时用事务校验剩余容量，防止并发超卖 |
 | match_candidates | candidate_id PK、source、规则分、理由、风险、生成时间 | 理由只引用已有输入字段；重新生成需使旧理由失效 |
 | nfc_assets | card_id PK、opaque_token 唯一、owner FK、启用状态 | token 为不可读随机标识，不含姓名／手机号／长期密钥 |
 | connection_requests | request_id PK、requester、recipient、event_id、source、状态 | 状态：Requested／Accepted／Rejected／Cancelled／Expired／Blocked；**唯一约束：(requester, recipient, event_id) 上仅允许一个有效请求** |
 | connections | connection_id PK、两个 user_id、event_id、source、created_at | 只能由 Requested → Accepted 迁移创建 |
 | team_invitations | invitation_id PK、project_id、invitee、inviter、状态 | 状态：Pending／Joined／Declined／Cancelled；邀请前服务端校验 Connection 存在 |
-| team_memberships | membership_id PK、project_id、user_id、team_role、governance_role、状态 | 团队职能与治理权限分开；创建前校验缺口与容量 |
-| collaboration_packs | pack_id PK、project_id、role_map、gap、risk、tasks（3 个）、version、fallback_used | 输出可编辑；模板降级时 fallback_used=true |
+| project_memberships | project_id＋user_id、role_need_id、membership_role、joined_at | `ORIGINATOR／LEADER／MEMBER`；受邀者本人接受后才创建 |
+| starter_packs／starter_tasks | pack_id、project_id、版本、状态、生成来源；任务含建议／确认负责人和状态 | Agent 建议不直接写 confirmed owner；全员确认后 Pack 才生效 |
+| project_sos／project_sos_responses | 问题、上下文、尝试、技能、时限、解决标准、悬赏意向、响应状态 | 每项目仅一个 Active SOS；支援者不会自动成为团队成员 |
 | event_logs | event_id PK、actor、event_type、object、source、前后状态、timestamp | 只增不改；重复操作不重复入账（幂等） |
 
 ### 2.2 状态迁移的服务端校验点
@@ -101,7 +105,7 @@ flowchart LR
 | Visible → Expired | 到期或活动结束自动触发；过期后发起请求服务端再次拒绝 |
 | Requested → Accepted | 仅接收方可操作；接受时创建唯一 Connection |
 | 任意 → Blocked | 任一方可拉黑；拉黑后双方在推荐与请求中被互相排除 |
-| Pending → Joined | 仅受邀者可确认；确认时校验缺口仍有效且有容量 |
+| Pending → Accepted | 仅受邀者可确认；确认时校验缺口仍有效且有容量，再创建 Membership |
 | Joined → Left | 成员主动退出；不删除历史事件 |
 
 ---
@@ -112,18 +116,22 @@ flowchart LR
 
 | Endpoint | Method | 说明 | 服务端校验 |
 |---|---|---|---|
-| /events/join | POST | 邀请码加入活动 | 活动有效且未结束 |
-| /profiles | GET／PUT | 读取／编辑最小资料 | 仅本人可写 |
-| /visibility | POST | 授权／暂停／撤回可见状态 | 迁移合法；记录触发来源 user／time／event_end |
-| /match/candidates | GET | 候选列表（硬筛选＋规则分＋理由） | 排除不可见、过期、已拉黑、缺口已满对象 |
+| /api/events、/api/events/{id}/join | GET／POST | 活动列表与加入活动 | 活动有效；重复加入幂等；初始可见状态为 Hidden |
+| /api/me、/api/events/{id}/profile | GET／PATCH | 私有资料汇总与编辑活动资料 | 仅本人可读写；输入长度与数组数量受限 |
+| /api/events/{id}/visibility、/discover | PATCH／GET | 逐字段授权与发现列表 | 过期、Paused、Hidden 不公开；公开字段白名单 |
+| /api/me/platform-links/{platform} | PUT／DELETE | 外部平台与作品链接 | HTTPS 域名校验；GitHub 只读公开 API，其他平台不抓取 |
+| /api/events/{id}/presence、/nearby | PUT／DELETE／GET | 手机前台位置心跳与附近发现 | 仅 Visible 活动成员；短 TTL；只返回距离分桶 |
 | /c/{opaque_token} | GET | 卡片落地页（免登录有限资料） | 卡片启用＋卡主 Visible 未到期＋活动有效；只记 `card_landing_opened` |
-| /connections/requests | POST | 发起连接请求 | 登录态；幂等键 (requester, recipient, event_id)；限频；落地页状态二次校验 |
-| /connections/requests/{id} | PATCH | 接受／拒绝／撤回／拉黑 | 仅对应角色可操作；Accepted 才写 connections |
-| /projects、/role-needs | POST／GET | 项目卡与缺口 | 仅 owner 可写；缺口 ≤3 |
-| /teams/invitations | POST／PATCH | 发起／确认／拒绝／撤回邀请 | 双方必须已连接；受邀者本人确认；容量校验 |
-| /collaboration-packs | POST／GET／PATCH | 生成／读取／编辑启动包 | 输入仅用已确认资料；AI 失败写模板包 |
-| /tasks/{id}/accept | POST | 接受任务 | 仅项目成员；写入有效协作连接判定 |
-| /demo/reset | POST | 演示数据一键重置 | 受保护入口；只恢复种子数据，不动配置与卡片映射 |
+| /api/connections/physical-mutual | POST | 可信双卡设备／握手模拟器直连 | 独立设备密钥；两张卡均启用、Visible、同活动且未拉黑；Connection 唯一并记录 `physical_mutual` 归因 |
+| /api/connections/requests | GET／POST | 请求箱与发起连接请求 | 登录态；幂等、限频、落地页状态二次校验 |
+| /api/connections/requests/{id} | PATCH | 接受／拒绝／撤回／拉黑 | 仅对应角色可操作；Accepted 才写 connections |
+| /api/projects、/api/projects/{id} | POST／GET | 项目、首个缺口、成员视图 | 发起人自动成为 Originator；项目成员可读 |
+| /api/projects/{id}/invitations、/api/team-invitations/{id} | POST／PATCH | 发起／确认／拒绝邀请 | 必须已有 Active Connection；受邀者本人确认；事务容量校验 |
+| /api/projects/{id}/starter-pack、/plan-confirmations、/room | POST／GET | 启动包、全员确认与 Room 聚合视图 | 模板降级；只有项目成员可操作；确认记录幂等 |
+| /api/tasks/{id} | PATCH | claim／start／complete／block | Agent 不可替人认领；任务状态机服务端校验 |
+| /api/projects/{id}/sos、/api/events/{id}/sos | POST／GET | 发布与浏览项目 SOS | 同项目最多一条 Active；仅本活动参与者可见与响应 |
+| /api/sos/{id}/responses、/api/sos-responses/{id}、/api/sos/{id} | POST／PATCH | 支援响应、选择支援者、解决并存档 | 接受支援不自动入队；悬赏只记录 `NOT_PROCESSED` |
+| /api/me/activity、/api/demo/reset | GET／POST | 审计记录与一键复位 | 记录限定本人／项目；Reset 需要独立访问密钥 |
 
 ---
 
@@ -212,8 +220,8 @@ QR 使用同一路径，src=qr
 
 | 方案 | 使用时机 |
 |---|---|
-| 托管 Realtime（Supabase／Firebase 自带） | 默认方案，用于请求箱与状态同步 |
-| 2–3 秒短轮询 | Realtime 不稳定时立即切换（排期 H36 Gate），不现场修复杂推送 |
+| 当前 2.5 秒请求箱短轮询／15 秒附近刷新建议 | 已实现的确定性 Demo 方案，避免现场修复杂推送 |
+| 托管 Realtime（Supabase／Firebase 自带） | 生产迁移时可替换轮询，但不改变 HTTP 状态契约 |
 | 显式刷新按钮 | 最终兜底，任何情况下可用 |
 
 验收口径：一端发起、一端确认，两台设备状态一致（排期 §8.2）。
@@ -274,8 +282,8 @@ QR 使用同一路径，src=qr
 
 | Question | Owner | Deadline | 决策规则 |
 |---|---|---:|---|
-| 最小登录用邮箱、手机号还是邀请码＋演示账号？ | 前后端 | H4 | 选实现最稳且不泄露隐私的方案；现场保留预登录态 |
-| 托管方案选型（Supabase／Firebase／等价） | 后端负责人 | H12 | H12 Gate 到期立即锁定，禁止重搭 |
+| 生产登录用国内短信、邮箱还是第三方 OAuth？ | 前后端 | 赛后 | 当前使用预登录可撤销演示会话；选型后替换 Auth，不改业务接口 |
+| SQLite 迁移 Supabase／PostgreSQL 的时间点？ | 后端负责人 | 赛后 | 单机路演继续 SQLite；需要公网多人并发前完成迁移 |
 | NFC 在至少两类测试机上是否可用 | 集成负责人 | H48 | 不可用则主演示改 QR，NFC 作可选能力单独展示 |
 
 ---

@@ -1,20 +1,243 @@
 openapi: 3.1.0
 info:
   title: RALLY API
-  version: 0.2.0
-  description: NFC/QR profile, protected demo sessions, request inbox, and mutually confirmed connections.
+  version: 0.6.0
+  description: >-
+    HTTP/JSON contract for activity-scoped identity, authorized external
+    evidence, short-lived nearby presence, NFC/QR connections, confirmed team
+    formation, the human-controlled RALLY Room, project SOS, audit activity,
+    and protected demo reset.
 servers:
   - url: http://127.0.0.1:8787
+tags:
+  - name: System
+  - name: Identity
+  - name: Presence
+  - name: Connections
+  - name: Projects
+  - name: Room
+  - name: SOS
 paths:
   /health:
     get:
+      tags: [System]
       summary: Check service readiness
       responses:
-        "200":
-          description: Service is ready
+        "200": { description: Service is ready }
+  /api/auth/demo-sessions:
+    post:
+      tags: [System]
+      summary: Issue a revocable session for a seeded demo account
+      security: [{ DemoAccessKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_id]
+              properties:
+                user_id: { type: string }
+      responses:
+        "201": { description: Bearer session issued }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
+  /api/auth/session:
+    delete:
+      tags: [System]
+      summary: Revoke the current Bearer session
+      security: [{ BearerAuth: [] }]
+      responses:
+        "204": { description: Session revoked }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/events:
+    get:
+      tags: [Identity]
+      summary: List events and whether the current user has joined
+      security: [{ BearerAuth: [] }, { DemoHeader: [] }]
+      responses:
+        "200": { description: Event list }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/me:
+    get:
+      tags: [Identity]
+      summary: Read the current user, event profiles, and linked platforms
+      security: [{ BearerAuth: [] }, { DemoHeader: [] }]
+      responses:
+        "200": { description: Private current-user view }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/me/activity:
+    get:
+      tags: [Identity]
+      summary: Read audit activity caused by the current user
+      security: [{ BearerAuth: [] }, { DemoHeader: [] }]
+      parameters:
+        - in: query
+          name: event_id
+          required: false
+          schema: { type: string }
+      responses:
+        "200": { description: Personal activity records }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/events/{eventId}/join:
+    post:
+      tags: [Identity]
+      summary: Join an active event with a minimum collaboration profile
+      security: [{ BearerAuth: [] }, { DemoHeader: [] }]
+      parameters:
+        - $ref: "#/components/parameters/EventId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProfileInput" }
+      responses:
+        "201": { description: Joined with visibility initially hidden }
+        "200": { description: Idempotent replay of an existing membership }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
+  /api/events/{eventId}/profile:
+    patch:
+      tags: [Identity]
+      summary: Update the current user's event profile
+      security: [{ BearerAuth: [] }, { DemoHeader: [] }]
+      parameters:
+        - $ref: "#/components/parameters/EventId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProfileInput" }
+      responses:
+        "200": { description: Updated profile }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
+  /api/events/{eventId}/visibility:
+    patch:
+      tags: [Identity]
+      summary: Publish, pause, or hide authorized event profile fields
+      security: [{ BearerAuth: [] }, { DemoHeader: [] }]
+      parameters:
+        - $ref: "#/components/parameters/EventId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [state]
+              properties:
+                state: { type: string, enum: [HIDDEN, VISIBLE, PAUSED] }
+                expires_at: { type: string, format: date-time }
+                public_fields:
+                  type: array
+                  uniqueItems: true
+                  items:
+                    type: string
+                    enum: [display_name, avatar, role, status, skills, interests, availability, collaboration_preferences, collaboration_need, evidence, platform_links]
+      responses:
+        "200": { description: Visibility grant updated }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
+  /api/events/{eventId}/discover:
+    get:
+      tags: [Identity]
+      summary: List authorized discoverable profiles for an event
+      security: [{ BearerAuth: [] }, { DemoHeader: [] }]
+      parameters:
+        - $ref: "#/components/parameters/EventId"
+        - in: query
+          name: project_id
+          required: false
+          description: Optional member-owned project whose open role needs should drive deterministic ranking.
+          schema: { type: string }
+      responses:
+        "200": { description: Profiles with deterministic explanation fields }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/me/platform-links/{platform}:
+    put:
+      tags: [Identity]
+      summary: Save one user-authorized external profile or portfolio link
+      description: >-
+        GitHub may synchronize public metadata. Other platforms retain only the
+        submitted HTTPS link and are never treated as platform-verified.
+      security: [{ BearerAuth: [] }, { DemoHeader: [] }]
+      parameters:
+        - $ref: "#/components/parameters/Platform"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [url]
+              properties:
+                url: { type: string, format: uri, pattern: "^https://" }
+      responses:
+        "200": { description: Link saved, with optional public metadata }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
+    delete:
+      tags: [Identity]
+      summary: Remove one linked platform from RALLY
+      security: [{ BearerAuth: [] }, { DemoHeader: [] }]
+      parameters:
+        - $ref: "#/components/parameters/Platform"
+      responses:
+        "204": { description: Link absent or removed }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/events/{eventId}/presence:
+    put:
+      tags: [Presence]
+      summary: Publish a short-lived foreground phone location heartbeat
+      security: [{ BearerAuth: [] }, { DemoHeader: [] }]
+      parameters:
+        - $ref: "#/components/parameters/EventId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PresenceInput" }
+      responses:
+        "200": { description: Heartbeat stored with a short expiry }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
+    delete:
+      tags: [Presence]
+      summary: Stop nearby discovery and remove the current heartbeat
+      security: [{ BearerAuth: [] }, { DemoHeader: [] }]
+      parameters:
+        - $ref: "#/components/parameters/EventId"
+      responses:
+        "204": { description: Presence absent or removed }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/events/{eventId}/nearby:
+    get:
+      tags: [Presence]
+      summary: List nearby authorized participants without exposing coordinates
+      security: [{ BearerAuth: [] }, { DemoHeader: [] }]
+      parameters:
+        - $ref: "#/components/parameters/EventId"
+      responses:
+        "200": { description: Distance bands, never peer latitude or longitude }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
   /c/{opaqueToken}:
     get:
-      summary: Resolve the URL encoded on an NFC card or its QR fallback
+      tags: [Connections]
+      summary: Resolve an NFC, QR, or shared-link public card
       parameters:
         - in: path
           name: opaqueToken
@@ -29,13 +252,14 @@ paths:
           required: false
           schema: { type: string, enum: [nfc, qr, link], default: link }
       responses:
-        "200": { description: Only fields included in the owner's active visibility grant }
-        "400": { description: Missing event, invalid source, or malformed token encoding }
-        "404": { description: Missing, inactive, paused, or expired card }
+        "200": { description: Only currently authorized fields }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /api/cards/{opaqueToken}/profile:
     get:
       deprecated: true
-      summary: Compatibility alias for reading the authorized public profile
+      tags: [Connections]
+      summary: Compatibility alias for the public card endpoint
       parameters:
         - in: path
           name: opaqueToken
@@ -50,43 +274,44 @@ paths:
           required: false
           schema: { type: string, enum: [nfc, qr, link], default: link }
       responses:
-        "200": { description: Authorized limited public profile }
-        "400": { description: Missing event, invalid source, or malformed token encoding }
-        "404": { description: Missing, inactive, paused, or expired card }
-  /api/auth/demo-sessions:
+        "200": { description: Authorized public profile }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/connections/physical-mutual:
     post:
-      summary: Issue a revocable session for a preloaded hackathon account
-      security:
-        - DemoAccessKey: []
+      tags: [Connections]
+      summary: Create one direct connection from a trusted two-card touch device
+      description: >-
+        The trusted hardware or handshake simulator submits two active opaque card
+        tokens in one physical event. The server creates at most one Connection and
+        persists consent_mode=physical_mutual while recording touch attribution; the
+        device key must never be embedded in the public mobile client. If the pair is
+        already connected, the original consent mode is preserved and a new touch
+        attribution event is appended.
+      security: [{ TouchDeviceKey: [] }]
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [user_id]
+              required: [event_id, card_a_token, card_b_token]
               properties:
-                user_id: { type: string }
+                event_id: { type: string }
+                card_a_token: { type: string }
+                card_b_token: { type: string }
       responses:
-        "201": { description: Bearer session issued }
-        "400": { description: Invalid JSON }
-        "403": { description: Demo access key missing or invalid }
-        "404": { description: Preloaded user not found }
-        "413": { description: Request payload exceeds 64 KiB }
-  /api/auth/session:
-    delete:
-      summary: Revoke the current Bearer session
-      security:
-        - BearerAuth: []
-      responses:
-        "204": { description: Session revoked }
-        "401": { description: Session missing, expired, invalid, or already revoked }
+        "201": { description: Physical-mutual Connection created }
+        "200": { description: Existing pair Connection returned idempotently with touch attribution }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
   /api/connections/requests:
     get:
-      summary: Poll incoming or outgoing connection requests and their latest states
-      security:
-        - BearerAuth: []
-        - DemoHeader: []
+      tags: [Connections]
+      summary: Poll incoming or outgoing connection requests
+      security: [{ BearerAuth: [] }, { DemoHeader: [] }]
       parameters:
         - in: query
           name: event_id
@@ -99,18 +324,15 @@ paths:
         - in: query
           name: status
           required: false
-          schema:
-            type: string
-            enum: [REQUESTED, ACCEPTED, REJECTED, CANCELLED, EXPIRED, BLOCKED]
+          schema: { type: string, enum: [REQUESTED, ACCEPTED, REJECTED, CANCELLED, EXPIRED, BLOCKED] }
       responses:
-        "200": { description: Request list plus server_time and poll_after_ms }
-        "400": { description: Missing event or invalid filter }
-        "401": { description: Authentication required }
+        "200": { description: Requests plus server time and polling hint }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
     post:
+      tags: [Connections]
       summary: Create an idempotent connection request
-      security:
-        - BearerAuth: []
-        - DemoHeader: []
+      security: [{ BearerAuth: [] }, { DemoHeader: [] }]
       requestBody:
         required: true
         content:
@@ -125,23 +347,19 @@ paths:
                 message: { type: string, maxLength: 240 }
       responses:
         "201": { description: Request created }
-        "200": { description: Existing pending request or existing pair connection returned }
-        "400": { description: Invalid JSON or request fields }
-        "401": { description: Authentication required }
-        "409": { description: Recipient unavailable, blocked, or self-connection }
-        "429": { description: Per-minute creation limit or five-minute post-rejection cooldown; inspect error code and Retry-After }
-        "413": { description: Request payload exceeds 64 KiB }
+        "200": { description: Existing request or connection returned idempotently }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
+        "429": { description: Rate limited or inside rejection cooldown }
   /api/connections/requests/{requestId}:
     patch:
+      tags: [Connections]
       summary: Accept, reject, cancel, or block a connection request
-      security:
-        - BearerAuth: []
-        - DemoHeader: []
+      security: [{ BearerAuth: [] }, { DemoHeader: [] }]
       parameters:
-        - in: path
-          name: requestId
-          required: true
-          schema: { type: string }
+        - $ref: "#/components/parameters/RequestId"
       requestBody:
         required: true
         content:
@@ -151,24 +369,19 @@ paths:
               required: [action]
               properties:
                 action: { type: string, enum: [accept, reject, cancel, block] }
-                reason_code:
-                  type: string
-                  maxLength: 64
-                  description: Optional machine-readable reason for a block action.
+                reason_code: { type: string, maxLength: 64 }
       responses:
-        "200": { description: State transition completed or replayed idempotently }
-        "400": { description: Invalid path encoding, JSON, action, or block reason code }
-        "401": { description: Authentication required }
-        "403": { description: Accept/reject require the recipient, cancel requires the requester, and block requires either participant }
-        "404": { description: Request not found }
-        "409": { description: Request is no longer pending }
-        "413": { description: Request payload exceeds 64 KiB }
+        "200": { description: Transition completed or replayed }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
   /api/connections/{connectionId}:
     get:
-      summary: Read a connection as one of its participants
-      security:
-        - BearerAuth: []
-        - DemoHeader: []
+      tags: [Connections]
+      summary: Read one connection as either participant
+      security: [{ BearerAuth: [] }, { DemoHeader: [] }]
       parameters:
         - in: path
           name: connectionId
@@ -176,10 +389,261 @@ paths:
           schema: { type: string }
       responses:
         "200": { description: Connection }
-        "400": { description: Malformed connection id encoding }
-        "401": { description: Authentication required }
-        "403": { description: Only participants may read it }
-        "404": { description: Connection not found }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/projects:
+    post:
+      tags: [Projects]
+      summary: Create a project, its originator membership, and first role need
+      security: [{ BearerAuth: [] }, { DemoHeader: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProjectInput" }
+      responses:
+        "201": { description: Project created }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /api/projects/{projectId}:
+    get:
+      tags: [Projects]
+      summary: Read project, open roles, and members
+      security: [{ BearerAuth: [] }, { DemoHeader: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200": { description: Project view }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/projects/{projectId}/invitations:
+    post:
+      tags: [Projects]
+      summary: Invite an active connection into an available project role
+      security: [{ BearerAuth: [] }, { DemoHeader: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [invitee_id, role_need_id]
+              properties:
+                invitee_id: { type: string }
+                role_need_id: { type: string }
+      responses:
+        "201": { description: Invitation pending recipient confirmation }
+        "200": { description: Existing invitation returned idempotently }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /api/team-invitations/{invitationId}:
+    patch:
+      tags: [Projects]
+      summary: Accept or decline as recipient, or cancel as inviter
+      security: [{ BearerAuth: [] }, { DemoHeader: [] }]
+      parameters:
+        - $ref: "#/components/parameters/InvitationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action: { type: string, enum: [accept, decline, cancel] }
+      responses:
+        "200": { description: Invitation resolved; acceptance creates membership }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /api/projects/{projectId}/starter-pack:
+    post:
+      tags: [Room]
+      summary: Generate a three-task starter pack without assigning owners
+      security: [{ BearerAuth: [] }, { DemoHeader: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "201": { description: Proposed starter pack and tasks }
+        "200": { description: Existing pack returned idempotently }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/projects/{projectId}/plan-confirmations:
+    post:
+      tags: [Room]
+      summary: Confirm the starter pack as one project member
+      security: [{ BearerAuth: [] }, { DemoHeader: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200": { description: Confirmation progress; all members are required }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /api/projects/{projectId}/room:
+    get:
+      tags: [Room]
+      summary: Read the project launch room and protected activity timeline
+      security: [{ BearerAuth: [] }, { DemoHeader: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200": { description: Project, members, needs, pack, tasks, SOS, and activity }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/tasks/{taskId}:
+    patch:
+      tags: [Room]
+      summary: Claim or move a human-owned task through its state machine
+      description: Agent suggestions never set the confirmed owner.
+      security: [{ BearerAuth: [] }, { DemoHeader: [] }]
+      parameters:
+        - $ref: "#/components/parameters/TaskId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action: { type: string, enum: [claim, start, complete, block] }
+      responses:
+        "200": { description: Task updated or replayed idempotently }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /api/projects/{projectId}/sos:
+    post:
+      tags: [SOS]
+      summary: Publish one structured active SOS for a project
+      description: A reward is an intent record only; RALLY does not process money.
+      security: [{ BearerAuth: [] }, { DemoHeader: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SosInput" }
+      responses:
+        "201": { description: SOS opened }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /api/events/{eventId}/sos:
+    get:
+      tags: [SOS]
+      summary: List active project SOS posts inside one joined event
+      security: [{ BearerAuth: [] }, { DemoHeader: [] }]
+      parameters:
+        - $ref: "#/components/parameters/EventId"
+      responses:
+        "200": { description: Active SOS feed }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/sos/{sosId}/responses:
+    post:
+      tags: [SOS]
+      summary: Offer help without automatically joining the project
+      security: [{ BearerAuth: [] }, { DemoHeader: [] }]
+      parameters:
+        - $ref: "#/components/parameters/SosId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [message, available_minutes]
+              properties:
+                message: { type: string, maxLength: 500 }
+                available_minutes: { type: integer, minimum: 5, maximum: 480 }
+      responses:
+        "201": { description: Help response created }
+        "200": { description: Existing response returned idempotently }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /api/sos-responses/{responseId}:
+    patch:
+      tags: [SOS]
+      summary: Accept a help response as originator/leader, or withdraw as the selected responder
+      security: [{ BearerAuth: [] }, { DemoHeader: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ResponseId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action: { type: string, enum: [accept, withdraw] }
+                reason:
+                  type: string
+                  maxLength: 500
+                  description: Required when the selected responder withdraws.
+      responses:
+        "200": { description: Response changed; project membership remains unchanged }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /api/sos/{sosId}:
+    patch:
+      tags: [SOS]
+      summary: Resolve, close, or reopen an SOS as its publisher
+      security: [{ BearerAuth: [] }, { DemoHeader: [] }]
+      parameters:
+        - $ref: "#/components/parameters/SosId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action: { type: string, enum: [resolve, close, reopen] }
+                resolution_note:
+                  type: string
+                  maxLength: 1000
+                  description: Required for resolve and close; omitted for reopen.
+      responses:
+        "200": { description: SOS resolved or replayed idempotently }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /api/demo/reset:
+    post:
+      tags: [System]
+      summary: Clear mutable demo data and restore deterministic fixtures
+      security: [{ DemoAccessKey: [] }]
+      responses:
+        "200": { description: Reset completed while auth sessions remain valid }
+        "403": { $ref: "#/components/responses/Forbidden" }
 components:
   securitySchemes:
     BearerAuth:
@@ -190,9 +654,186 @@ components:
       type: apiKey
       in: header
       name: x-demo-user-id
-      description: Deprecated hackathon-only identity; rejected unless ALLOW_INSECURE_DEMO_AUTH=1 is explicitly enabled.
+      description: Disabled unless ALLOW_INSECURE_DEMO_AUTH=1; local demo use only.
     DemoAccessKey:
       type: apiKey
       in: header
       name: x-demo-access-key
-      description: Out-of-band key used to issue random, revocable sessions for seeded demo users.
+    TouchDeviceKey:
+      type: apiKey
+      in: header
+      name: x-touch-device-key
+      description: Trusted hardware or handshake-simulator secret; never expose it to the public mobile client.
+  parameters:
+    EventId:
+      in: path
+      name: eventId
+      required: true
+      schema: { type: string }
+    ProjectId:
+      in: path
+      name: projectId
+      required: true
+      schema: { type: string }
+    RequestId:
+      in: path
+      name: requestId
+      required: true
+      schema: { type: string }
+    InvitationId:
+      in: path
+      name: invitationId
+      required: true
+      schema: { type: string }
+    TaskId:
+      in: path
+      name: taskId
+      required: true
+      schema: { type: string }
+    SosId:
+      in: path
+      name: sosId
+      required: true
+      schema: { type: string }
+    ResponseId:
+      in: path
+      name: responseId
+      required: true
+      schema: { type: string }
+    Platform:
+      in: path
+      name: platform
+      required: true
+      schema:
+        type: string
+        enum: [github, website, xiaohongshu, douyin, jike, linkedin, other]
+  schemas:
+    ProfileInput:
+      type: object
+      required: [role, status, skills, interests, availability, collaboration_preferences, collaboration_need, evidence]
+      properties:
+        role: { type: string, maxLength: 80 }
+        status:
+          type: string
+          enum: [未组队, 有 Idea 找人, 团队缺人, 已组队但可交流]
+        skills:
+          type: array
+          minItems: 3
+          maxItems: 5
+          items: { type: string, maxLength: 40 }
+        interests:
+          type: array
+          minItems: 1
+          maxItems: 5
+          items: { type: string, maxLength: 60 }
+        availability: { type: string, minLength: 1, maxLength: 120 }
+        collaboration_preferences:
+          type: array
+          minItems: 1
+          maxItems: 5
+          items: { type: string, maxLength: 60 }
+        collaboration_need: { type: string, maxLength: 160 }
+        evidence:
+          type: array
+          maxItems: 12
+          items: { type: string, maxLength: 160 }
+    PresenceInput:
+      type: object
+      required: [latitude, longitude, accuracy_m]
+      properties:
+        latitude: { type: number, minimum: -90, maximum: 90 }
+        longitude: { type: number, minimum: -180, maximum: 180 }
+        accuracy_m: { type: number, minimum: 0, maximum: 1000 }
+    ProjectInput:
+      type: object
+      required: [event_id, title, summary, role_need]
+      properties:
+        event_id: { type: string }
+        title: { type: string, maxLength: 100 }
+        summary: { type: string, maxLength: 500 }
+        role_need:
+          type: object
+          required: [title, skills, capacity]
+          properties:
+            title: { type: string, maxLength: 80 }
+            skills:
+              type: array
+              maxItems: 8
+              items: { type: string, maxLength: 40 }
+            capacity: { type: integer, minimum: 1, maximum: 10 }
+    SosInput:
+      type: object
+      required: [category, problem, context, attempts, required_skills, estimated_minutes, location_label, deadline, resolution_criteria]
+      properties:
+        category:
+          type: string
+          enum: [技术/硬件, 模型/数据, 部署/API, 设计/交互, 测试/演示, 路演/商业, 设备/资源]
+        problem: { type: string, maxLength: 500 }
+        context: { type: string, maxLength: 1000 }
+        attempts:
+          type: array
+          maxItems: 10
+          items: { type: string, maxLength: 200 }
+        required_skills:
+          type: array
+          maxItems: 10
+          items: { type: string, maxLength: 50 }
+        estimated_minutes: { type: integer, minimum: 5, maximum: 480 }
+        location_label: { type: string, maxLength: 100 }
+        deadline: { type: string, format: date-time }
+        resolution_criteria: { type: string, maxLength: 500 }
+        reward_intent:
+          type: object
+          nullable: true
+          required: [type]
+          description: >-
+            PAID_INTENT also requires amount, currency, delivery_standard, and
+            payment_note. RALLY records intent only and never processes payment.
+          properties:
+            type: { type: string, enum: [VOLUNTEER, GIFT, POINTS, PAID_INTENT] }
+            description: { type: string, maxLength: 500 }
+            currency: { type: string, pattern: "^[A-Z]{3}$" }
+            amount: { type: integer, minimum: 1, maximum: 100000 }
+            delivery_standard: { type: string, maxLength: 500 }
+            payment_note: { type: string, maxLength: 500 }
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string }
+            message: { type: string }
+  responses:
+    BadRequest:
+      description: Invalid path encoding, JSON, or request fields
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unauthorized:
+      description: A valid session is required
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: The current user lacks permission for this operation
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: Requested object was not found or is not visible
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Conflict:
+      description: The state transition conflicts with current state
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    PayloadTooLarge:
+      description: JSON payload exceeds 64 KiB
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }

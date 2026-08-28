@@ -46,6 +46,9 @@ describe("NFC card public profile", () => {
       role: "硬件构建者",
       status: "未组队",
       skills: ["嵌入式", "IoT", "结构打样"],
+      interests: ["端侧 AI", "智能硬件"],
+      availability: "今天全天，可持续投入 8 小时",
+      collaboration_preferences: ["快速原型", "现场联调"],
       collaboration_need: "寻找 AI / 后端搭档",
       evidence: ["做过 3 个 ESP32 端侧项目"],
     });
@@ -78,6 +81,9 @@ describe("NFC card public profile", () => {
       role: "AI / 后端构建者",
       status: "团队缺人",
       skills: ["Agent", "API", "端侧 AI"],
+      interests: ["端侧 AI", "现场协作"],
+      availability: "今天 18:00–24:00，可持续投入 6 小时",
+      collaboration_preferences: ["快速原型", "结对协作"],
     });
   });
 
