@@ -8,7 +8,7 @@ describe("connection request inbox", () => {
   let baseUrl;
 
   beforeEach(async () => {
-    api = createApi({ databasePath: ":memory:" });
+    api = createApi({ databasePath: ":memory:", allowInsecureDemoAuth: true });
     const address = await api.start(0);
     baseUrl = `http://127.0.0.1:${address.port}`;
   });

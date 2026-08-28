@@ -190,7 +190,7 @@ components:
       type: apiKey
       in: header
       name: x-demo-user-id
-      description: Deprecated hackathon-only pre-authenticated identity.
+      description: Deprecated hackathon-only identity; rejected unless ALLOW_INSECURE_DEMO_AUTH=1 is explicitly enabled.
     DemoAccessKey:
       type: apiKey
       in: header

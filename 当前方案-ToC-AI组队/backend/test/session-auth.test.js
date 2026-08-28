@@ -70,6 +70,24 @@ describe("preloaded demo sessions", () => {
     assert.equal((await response.json()).error.code, "DEMO_ACCESS_DENIED");
   });
 
+  test("the deprecated demo identity header is rejected unless explicitly enabled", async () => {
+    const response = await fetch(`${baseUrl}/api/connections/requests`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-demo-user-id": "user-lin",
+      },
+      body: JSON.stringify({
+        recipient_id: "user-zhou",
+        event_id: "hackathon-2026",
+        source: "link",
+      }),
+    });
+
+    assert.equal(response.status, 401);
+    assert.equal((await response.json()).error.code, "AUTH_REQUIRED");
+  });
+
   test("logging out revokes the Bearer session for subsequent API calls", async () => {
     const login = await fetch(`${baseUrl}/api/auth/demo-sessions`, {
       method: "POST",

@@ -200,6 +200,20 @@ def main():
             page.locator("body").get_attribute("data-flow") == "product"
             and page.locator("body").get_attribute("data-variant") == "C"
         )
+        page.locator(".app-nav [data-tab='profile']").click()
+        report["flow"]["published_passport_is_visible"] = "is-hidden" not in (
+            page.locator(".eink-card").get_attribute("class") or ""
+        )
+        assert report["flow"]["published_passport_is_visible"]
+
+        page.goto(f"{BASE_URL}/?variant=C&onboarding=1")
+        page.wait_for_load_state("networkidle")
+        page.get_by_role("button", name="稍后设置").click()
+        page.locator(".app-nav [data-tab='profile']").click()
+        report["flow"]["skipped_onboarding_stays_hidden"] = "is-hidden" in (
+            page.locator(".eink-card").get_attribute("class") or ""
+        )
+        assert report["flow"]["skipped_onboarding_stays_hidden"]
 
         page.goto(f"{BASE_URL}/?variant=A")
         page.wait_for_load_state("networkidle")
@@ -216,6 +230,12 @@ def main():
         page.get_by_role("button", name="模拟双方主动碰卡").click()
         page.screenshot(path=str(OUTPUT_DIR / "step-3-connected.png"), full_page=True)
         page.get_by_role("button", name="邀请加入「离线会议洞察终端」").click()
+        report["flow"]["team_invite_requires_recipient_confirmation"] = page.get_by_text(
+            "对方确认前不会被写入团队，也不会被分配任务。",
+            exact=True,
+        ).is_visible()
+        assert report["flow"]["team_invite_requires_recipient_confirmation"]
+        page.get_by_role("button", name="模拟对方确认加入").click()
         page.screenshot(path=str(OUTPUT_DIR / "step-4-team-joined.png"), full_page=True)
         page.get_by_role("button", name="查看 AI 启动包").click()
         page.locator("[data-task='hardware-choice']").click()

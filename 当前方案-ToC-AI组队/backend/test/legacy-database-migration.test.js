@@ -81,6 +81,7 @@ describe("legacy demo database migration", () => {
 
     api = createApi({
       databasePath,
+      allowInsecureDemoAuth: true,
       clock: () => new Date("2026-08-29T00:00:00.001Z"),
     });
     const address = await api.start(0);

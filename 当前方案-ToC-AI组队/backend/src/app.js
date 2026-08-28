@@ -136,11 +136,12 @@ function readBearerToken(request) {
   return authorization.match(/^Bearer ([A-Za-z0-9_-]+)$/)?.[1] ?? null;
 }
 
-function resolveActorId(database, request, now) {
+function resolveActorId(database, request, now, allowInsecureDemoAuth) {
   if (request.headers.authorization !== undefined) {
     const token = readBearerToken(request);
     return token ? findSessionUserId(database, { token, now }) : null;
   }
+  if (!allowInsecureDemoAuth) return null;
   const demoUserId = request.headers["x-demo-user-id"];
   if (typeof demoUserId !== "string" || !userExists(database, demoUserId)) {
     return null;
@@ -152,6 +153,7 @@ export function createApi({
   databasePath,
   clock = () => new Date(),
   demoAccessKey = null,
+  allowInsecureDemoAuth = false,
   sessionTtlMs = 12 * 60 * 60 * 1000,
   requestTtlMs = 24 * 60 * 60 * 1000,
 }) {
@@ -278,7 +280,12 @@ export function createApi({
     }
 
     if (request.method === "POST" && url.pathname === "/api/connections/requests") {
-      const requesterId = resolveActorId(database, request, clock().toISOString());
+      const requesterId = resolveActorId(
+        database,
+        request,
+        clock().toISOString(),
+        allowInsecureDemoAuth,
+      );
       if (!requesterId) {
         sendError(response, 401, "AUTH_REQUIRED", "A valid demo user is required.");
         return;
@@ -442,7 +449,7 @@ export function createApi({
 
     if (request.method === "GET" && url.pathname === "/api/connections/requests") {
       const now = clock().toISOString();
-      const actorId = resolveActorId(database, request, now);
+      const actorId = resolveActorId(database, request, now, allowInsecureDemoAuth);
       if (!actorId) {
         sendError(response, 401, "AUTH_REQUIRED", "A valid session is required.");
         return;
@@ -490,7 +497,12 @@ export function createApi({
       /^\/api\/connections\/requests\/([^/]+)$/,
     );
     if (request.method === "PATCH" && connectionRequestMatch) {
-      const actorId = resolveActorId(database, request, clock().toISOString());
+      const actorId = resolveActorId(
+        database,
+        request,
+        clock().toISOString(),
+        allowInsecureDemoAuth,
+      );
       if (!actorId) {
         sendError(response, 401, "AUTH_REQUIRED", "A valid demo user is required.");
         return;
@@ -646,7 +658,12 @@ export function createApi({
 
     const connectionMatch = url.pathname.match(/^\/api\/connections\/([^/]+)$/);
     if (request.method === "GET" && connectionMatch) {
-      const actorId = resolveActorId(database, request, clock().toISOString());
+      const actorId = resolveActorId(
+        database,
+        request,
+        clock().toISOString(),
+        allowInsecureDemoAuth,
+      );
       if (!actorId) {
         sendError(response, 401, "AUTH_REQUIRED", "A valid demo user is required.");
         return;

@@ -235,9 +235,11 @@ const variantNames = {
   C: "墨水名册",
 };
 
+const startsInOnboarding = new URLSearchParams(location.search).get("onboarding") === "1";
+
 const state = {
   variant: readVariant(),
-  onboarding: new URLSearchParams(location.search).get("onboarding") === "1",
+  onboarding: startsInOnboarding,
   onboardingStep: 0,
   collaborationStatus: "TEAM_RECRUITING",
   connectedSources: ["GitHub"],
@@ -245,10 +247,11 @@ const state = {
   draftVersion: 0,
   tab: "discover",
   selectedId: "lin",
-  visible: true,
+  visible: !startsInOnboarding,
   stage: "browse",
   greeted: [],
   connected: [],
+  invited: [],
   joined: [],
   acceptedTasks: [],
   toast: "",
@@ -747,6 +750,14 @@ function renderOverlay() {
       <button class="secondary-button full" data-action="view-connection">稍后处理</button>
     </section></div>`;
   }
+  if (state.overlay === "invite-sent") {
+    return `<div class="overlay success-overlay"><section class="success-card team-success">
+      <div class="success-mark">→</div><p class="micro-label">INVITATION SENT</p><h3>已邀请 ${person.name}<br>加入项目</h3>
+      <p>对方确认前不会被写入团队，也不会被分配任务。</p>
+      <button class="primary-button full" data-action="confirm-team-invite" data-person="${person.id}">模拟对方确认加入</button>
+      <button class="secondary-button full" data-action="view-connection">稍后处理</button>
+    </section></div>`;
+  }
   if (state.overlay === "joined") {
     return `<div class="overlay success-overlay"><section class="success-card team-success">
       <div class="success-mark">＋</div><p class="micro-label">TEAM UPDATED</p><h3>${person.name} 已加入项目</h3>
@@ -879,6 +890,11 @@ function handleAction(action, element) {
   }
   if (action === "invite-team") {
     const id = element.dataset.person;
+    if (!state.invited.includes(id)) state.invited.push(id);
+    state.overlay = "invite-sent";
+  }
+  if (action === "confirm-team-invite") {
+    const id = element.dataset.person;
     if (!state.joined.includes(id)) state.joined.push(id);
     state.overlay = "joined";
   }
@@ -901,6 +917,7 @@ function handleAction(action, element) {
 function finishOnboarding(published) {
   state.onboarding = false;
   state.onboardingStep = 0;
+  state.visible = published;
   state.tab = published ? "discover" : state.tab;
   state.variant = "C";
   const url = new URL(location.href);

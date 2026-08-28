@@ -12,6 +12,7 @@ describe("connection request lifecycle", () => {
     currentTime = new Date("2026-08-28T10:00:00.000Z");
     api = createApi({
       databasePath: ":memory:",
+      allowInsecureDemoAuth: true,
       clock: () => new Date(currentTime),
     });
     const address = await api.start(0);
@@ -96,6 +97,7 @@ describe("connection request lifecycle", () => {
     await api.stop();
     api = createApi({
       databasePath: ":memory:",
+      allowInsecureDemoAuth: true,
       clock: () => new Date(currentTime),
       requestTtlMs: 1000,
     });

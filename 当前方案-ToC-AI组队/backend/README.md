@@ -16,7 +16,7 @@
 - 重复触碰、发起和状态操作均保持幂等。
 - 启动时自动升级旧版 demo 数据；历史重复 Connection 会保留最早记录，其余完整归档到 `archived_duplicate_connections`。
 - 手机号和邮箱存在于演示种子数据中，但公开卡片接口永不返回。
-- `x-demo-user-id` 仅作旧 Demo 兼容；Bearer 演示会话同样不能代替生产 Auth／OTP。
+- `x-demo-user-id` 仅作旧 Demo 兼容，默认关闭；Bearer 演示会话同样不能代替生产 Auth／OTP。
 
 ## 运行
 
@@ -35,6 +35,10 @@ PORT=8788 HOST=127.0.0.1 DATABASE_PATH=:memory: \
 DEMO_ACCESS_KEY='replace-with-a-private-demo-key' npm start
 ```
 
+只有在可信的本地演示环境需要兼容旧调用时，才可显式设置
+`ALLOW_INSECURE_DEMO_AUTH=1`。该开关允许客户端通过 `x-demo-user-id` 模拟任意预置用户，
+不得用于公网或不可信局域网。
+
 健康检查：
 
 ```bash
@@ -43,7 +47,7 @@ curl http://127.0.0.1:8787/health
 
 ## 演示数据
 
-| 用户 | Demo 身份 Header | 卡片 Token | 可见状态 |
+| 用户 | 旧 Demo 身份值（需显式开启兼容） | 卡片 Token | 可见状态 |
 |---|---|---|---|
 | 周闻 | `user-zhou` | `cp_7mJ4Qv9N2xK8Rt5W` | Visible |
 | 林澈 | `user-lin` | `cp_B3kP8sT6yH2nV9qL` | Visible |
