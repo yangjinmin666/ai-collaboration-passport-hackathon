@@ -19,7 +19,7 @@
   -webkit-tap-highlight-color: transparent;
 }
 
-.rally-splash:focus-visible { outline: 3px solid rgba(52, 124, 248, .42); outline-offset: -7px; }
+.rally-splash:focus-visible { outline: 3px solid rgba(var(--brand-rgb), .42); outline-offset: -7px; }
 .rally-splash.is-exiting { opacity: 0; transform: scale(1.015); pointer-events: none; }
 
 .rally-splash-contact {
@@ -48,7 +48,7 @@
 
 .rally-splash-person-b {
   right: 0;
-  background: #347cf8;
+  background: var(--brand-action);
   animation: rally-person-b .66s cubic-bezier(.22, .9, .28, 1) .08s forwards;
 }
 
@@ -58,7 +58,7 @@
   left: 35px;
   width: 34px;
   height: 34px;
-  border: 1.5px solid rgba(52, 124, 248, .34);
+  border: 1.5px solid rgba(var(--brand-rgb), .38);
   border-radius: 50%;
   opacity: 0;
   animation: rally-contact-pulse .52s ease-out .57s forwards;
@@ -75,13 +75,13 @@
 .rally-splash-room svg { display: block; width: 100%; overflow: visible; }
 .rally-room-line {
   fill: none;
-  stroke: #347cf8;
+  stroke: var(--brand-action);
   stroke-width: 5;
   stroke-linecap: round;
   stroke-linejoin: round;
   stroke-dasharray: 420;
   stroke-dashoffset: 420;
-  filter: drop-shadow(0 5px 10px rgba(52, 124, 248, .08));
+  filter: drop-shadow(0 5px 10px rgba(var(--brand-rgb), .10));
   animation: rally-room-draw .84s cubic-bezier(.45, 0, .2, 1) .58s forwards;
 }
 
@@ -144,7 +144,7 @@
   width: 42px;
   height: 42px;
   border-radius: 11px;
-  box-shadow: 0 7px 18px rgba(52, 124, 248, .18);
+  box-shadow: 0 7px 18px rgba(var(--brand-rgb), .20);
 }
 
 .rally-splash-wordmark {
