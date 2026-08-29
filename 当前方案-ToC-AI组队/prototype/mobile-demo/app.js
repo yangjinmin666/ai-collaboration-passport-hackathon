@@ -342,6 +342,12 @@ const defaultDiscoveryFilters = () => ({
   distance: "event",
   evidenceRequired: false,
 });
+const emptyDirectionDraft = () => ({ audience: "", problem: "", outcome: "" });
+const confirmedProjectDirection = () => ({
+  audience: "线下黑客松参与者",
+  problem: "现场协作信息难以沉淀和继续",
+  outcome: "让一次真实交流进入可确认的协作启动流程",
+});
 
 const variantNames = {
   A: "发现 · 推荐",
@@ -389,7 +395,7 @@ const state = {
   variant: readVariant(),
   onboarding: startsInOnboarding,
   onboardingStep: 0,
-  collaborationStatus: "TEAM_RECRUITING",
+  collaborationStatus: "IDEA_RECRUITING",
   connectedSources: ["GitHub"],
   previewMode: "mobile",
   draftVersion: 0,
@@ -404,17 +410,9 @@ const state = {
   stage: "browse",
   greeted: startsInWorkspace ? ["lin"] : [],
   connected: startsInWorkspace ? ["lin"] : [],
-  directionPersonId: startsInWorkspace ? "lin" : null,
-  directionDraft: startsInWorkspace
-    ? {
-        audience: "线下黑客松参与者",
-        problem: "现场组队方向迟迟无法收敛",
-        outcome: "15 分钟内形成双方确认的项目方向",
-      }
-    : { audience: "", problem: "", outcome: "" },
-  directionDraftSubmitted: startsInWorkspace,
-  directionPartnerConfirmed: startsInWorkspace,
-  directionConfirmed: startsInWorkspace,
+  directionAlignments: startsInWorkspace
+    ? { lin: { status: "confirmed", draft: confirmedProjectDirection() } }
+    : {},
   invited: startsInWorkspace ? ["lin"] : [],
   joined: startsInWorkspace ? ["lin"] : [],
   connectionFilter: "all",
@@ -469,6 +467,22 @@ function selectedParticipantProfile(person = selectedPerson()) {
     collaboration: "协作偏好待确认",
     projects: [],
   };
+}
+
+function directionAlignmentFor(personId = state.selectedId) {
+  return state.directionAlignments[personId]
+    || { status: "not_started", draft: emptyDirectionDraft() };
+}
+
+function ensureDirectionAlignment(personId) {
+  if (!state.directionAlignments[personId]) {
+    const projectDirectionIsKnown = state.collaborationStatus === "TEAM_RECRUITING";
+    state.directionAlignments[personId] = {
+      status: projectDirectionIsKnown ? "confirmed" : "not_started",
+      draft: projectDirectionIsKnown ? confirmedProjectDirection() : emptyDirectionDraft(),
+    };
+  }
+  return state.directionAlignments[personId];
 }
 
 function escapeHtml(value) {
@@ -993,6 +1007,14 @@ function renderConnections() {
     : state.connectionFilter === "connected"
       ? ["还没有正式连接", "现实交流后通过碰卡完成双方确认，连接会保存在这里。"]
       : ["还没有连接记录", "你可以先在线表达“想认识”，也可以在现实交流后直接碰卡建联。"];
+  const connectedAction = (person) => {
+    if (state.joined.includes(person.id)) return `<button class="primary-button full" data-tab="collaboration">查看共同项目</button>`;
+    if (state.invited.includes(person.id)) return `<button class="primary-button full" data-action="resume-team-invite" data-person="${person.id}">查看项目邀请</button>`;
+    const alignment = directionAlignmentFor(person.id);
+    if (alignment.status === "confirmed") return `<button class="primary-button full" data-action="resume-project-creation" data-person="${person.id}">创建项目并邀请入队</button>`;
+    if (alignment.status === "pending_partner") return `<button class="primary-button full" data-action="resume-direction" data-person="${person.id}">查看方向确认进度</button>`;
+    return `<button class="primary-button full" data-action="resume-direction" data-person="${person.id}">继续意图澄清</button>`;
+  };
   return `
     <div class="view utility-view">
       ${commonHeader("连接")}
@@ -1008,7 +1030,7 @@ function renderConnections() {
           <article class="connection-card">
             <div class="connection-card-head">${glyph(person, "md")}<div><h4>${person.name}</h4><p>${person.role}</p></div><span class="source-chip">碰卡建联</span></div>
             <div class="connection-context"><span>认识于</span><strong>AI Hardware Hackathon</strong><small>刚刚 · ${person.pairLabel}</small></div>
-            <button class="primary-button full" data-tab="collaboration">查看共同项目</button>
+            ${connectedAction(person)}
           </article>
         `).join("")}
         ${visiblePendingPeople.map((person) => `<article class="pending-row">${glyph(person, "sm")}<div><strong>${person.name}</strong><span>招呼已发出 · 等待见面</span></div><em>待回应</em></article>`).join("")}
@@ -1386,11 +1408,17 @@ function renderProfileSettingsSheet() {
   </div>`;
 }
 
+function renderDirectionSummary() {
+  const { audience, problem, outcome } = directionAlignmentFor().draft;
+  return `<dl class="direction-summary"><div><dt>服务谁</dt><dd>${escapeHtml(audience)}</dd></div><div><dt>解决什么</dt><dd>${escapeHtml(problem)}</dd></div><div><dt>验证结果</dt><dd>${escapeHtml(outcome)}</dd></div></dl>`;
+}
+
 function renderOverlay() {
   if (!state.overlay) return "";
   if (state.overlay === "filters") return renderDiscoveryFilterSheet();
   if (state.overlay === "profile-settings") return renderProfileSettingsSheet();
   const person = selectedPerson();
+  const directionAlignment = directionAlignmentFor(person.id);
   if (state.overlay === "person") {
     const greeted = state.greeted.includes(person.id);
     const profile = selectedParticipantProfile(person);
@@ -1448,11 +1476,12 @@ function renderOverlay() {
     </section></div>`;
   }
   if (state.overlay === "success") {
+    const projectDirectionIsKnown = directionAlignment.status === "confirmed";
     return `<div class="overlay success-overlay"><section class="success-card">
       <div class="success-mark">✓</div><p class="micro-label">CONNECTION STAMP</p><h3>你和 ${person.name}<br>已经建立协作关系</h3>
       <div class="stamp"><span>CONNECTED</span><strong>${person.pairLabel}</strong><small>HACKATHON 01 · JUST NOW</small></div>
-      <p>碰卡只建立关系。项目方向还未确定，先由你们说清楚想服务谁、解决什么问题。</p>
-      <button class="primary-button full" data-action="enter-intent-clarification" data-person="${person.id}">进入意图澄清</button>
+      <p>${projectDirectionIsKnown ? "碰卡只建立关系。当前项目方向已经明确，可以向对方发出独立的入队邀请。" : "碰卡只建立关系。项目方向还未确定，先由你们说清楚想服务谁、解决什么问题。"}</p>
+      <button class="primary-button full" data-action="${projectDirectionIsKnown ? "invite-team" : "enter-intent-clarification"}" data-person="${person.id}">${projectDirectionIsKnown ? "邀请加入「离线会议洞察终端」" : "进入意图澄清"}</button>
       <button class="secondary-button full" data-action="view-connection">稍后处理</button>
     </section></div>`;
   }
@@ -1468,14 +1497,14 @@ function renderOverlay() {
       <button class="secondary-button full" data-action="view-connection">暂不形成项目</button>
     </section></div>`;
   }
-  if (state.overlay === "direction-review" && !state.directionDraftSubmitted) {
+  if (state.overlay === "direction-review" && directionAlignment.status !== "pending_partner") {
     return `<div class="overlay success-overlay"><section class="success-card intent-card direction-card">
       <p class="micro-label">DIRECTION DRAFT</p><h3>由人写下<br>共同想验证的方向</h3>
       <p>这不是 AI 生成的项目结论。三个字段都由你们讨论后填写，确认前不会创建项目或任务。</p>
       <form class="direction-form" data-direction-form>
-        <label><span>服务谁</span><input name="audience" required value="${escapeHtml(state.directionDraft.audience)}" placeholder="例如：线下黑客松参与者"></label>
-        <label><span>解决什么问题</span><input name="problem" required value="${escapeHtml(state.directionDraft.problem)}" placeholder="例如：现场组队方向难收敛"></label>
-        <label><span>验证什么结果</span><input name="outcome" required value="${escapeHtml(state.directionDraft.outcome)}" placeholder="例如：15 分钟内确认方向"></label>
+        <label><span>服务谁</span><input name="audience" required value="${escapeHtml(directionAlignment.draft.audience)}" placeholder="例如：线下黑客松参与者"></label>
+        <label><span>解决什么问题</span><input name="problem" required value="${escapeHtml(directionAlignment.draft.problem)}" placeholder="例如：现场组队方向难收敛"></label>
+        <label><span>验证什么结果</span><input name="outcome" required value="${escapeHtml(directionAlignment.draft.outcome)}" placeholder="例如：15 分钟内确认方向"></label>
         <button class="primary-button full" type="submit">确认我的方向草案</button>
       </form>
       <button class="text-action direction-back" data-action="enter-intent-clarification">返回查看双方意图</button>
@@ -1484,7 +1513,7 @@ function renderOverlay() {
   if (state.overlay === "direction-review") {
     return `<div class="overlay success-overlay"><section class="success-card intent-card direction-card">
       <p class="micro-label">WAITING FOR BOTH</p><h3>方向草案等待<br>${person.name} 确认</h3>
-      <dl class="direction-summary"><div><dt>服务谁</dt><dd>${escapeHtml(state.directionDraft.audience)}</dd></div><div><dt>解决什么</dt><dd>${escapeHtml(state.directionDraft.problem)}</dd></div><div><dt>验证结果</dt><dd>${escapeHtml(state.directionDraft.outcome)}</dd></div></dl>
+      ${renderDirectionSummary()}
       <div class="direction-confirmations"><span>周闻 · 已确认</span><span>${person.name} · 待确认</span></div>
       <p>此刻仍然只有协作关系，没有项目、团队成员或任务。</p>
       <button class="primary-button full" data-action="confirm-partner-direction" data-person="${person.id}">模拟${person.name}确认方向</button>
@@ -1494,7 +1523,7 @@ function renderOverlay() {
   if (state.overlay === "direction-confirmed") {
     return `<div class="overlay success-overlay"><section class="success-card intent-card direction-card">
       <div class="success-mark">✓</div><p class="micro-label">DIRECTION CONFIRMED</p><h3>方向已由双方确认</h3>
-      <dl class="direction-summary"><div><dt>服务谁</dt><dd>${escapeHtml(state.directionDraft.audience)}</dd></div><div><dt>解决什么</dt><dd>${escapeHtml(state.directionDraft.problem)}</dd></div><div><dt>验证结果</dt><dd>${escapeHtml(state.directionDraft.outcome)}</dd></div></dl>
+      ${renderDirectionSummary()}
       <p>现在才可以创建项目关系；任务和负责人仍要等成员入队后共同确认。</p>
       <button class="primary-button full" data-action="invite-team" data-person="${person.id}">创建项目并邀请入队</button>
       <button class="secondary-button full" data-action="view-connection">稍后创建</button>
@@ -1531,8 +1560,8 @@ function stageLabel() {
   if (state.acceptedTasks.length) return "已开始协作";
   if (state.joined.length) return "已加入项目";
   if (state.invited.length) return "项目邀请待确认";
-  if (state.directionConfirmed) return "项目方向已确认";
-  if (state.directionDraftSubmitted) return "方向草案待双方确认";
+  if (directionAlignmentFor().status === "confirmed") return "项目方向已确认";
+  if (directionAlignmentFor().status === "pending_partner") return "方向草案待双方确认";
   if (state.connected.length) return "已碰卡建联";
   if (state.greeted.length) return "已发送招呼";
   return `正在浏览${variantNames[state.variant]}`;
@@ -1576,12 +1605,22 @@ function bindEvents() {
       event.preventDefault();
       if (!form.reportValidity()) return;
       const formData = new FormData(form);
-      state.directionDraft = {
+      const draft = {
         audience: String(formData.get("audience") || "").trim(),
         problem: String(formData.get("problem") || "").trim(),
         outcome: String(formData.get("outcome") || "").trim(),
       };
-      state.directionDraftSubmitted = true;
+      const emptyField = Object.entries(draft).find(([, value]) => !value);
+      if (emptyField) {
+        const invalidInput = form.elements.namedItem(emptyField[0]);
+        invalidInput.setCustomValidity("请填写具体内容，不能只输入空格");
+        invalidInput.reportValidity();
+        invalidInput.addEventListener("input", () => invalidInput.setCustomValidity(""), { once: true });
+        return;
+      }
+      const alignment = ensureDirectionAlignment(state.selectedId);
+      alignment.draft = draft;
+      alignment.status = "pending_partner";
       state.overlay = "direction-review";
       render();
     });
@@ -1901,31 +1940,50 @@ function handleAction(action, element) {
     state.selectedId = element.dataset.person || state.selectedId;
     state.overlay = "tap";
   }
+  if (action === "resume-direction") {
+    state.selectedId = element.dataset.person || state.selectedId;
+    const status = directionAlignmentFor().status;
+    state.overlay = status === "pending_partner"
+      ? "direction-review"
+      : status === "confirmed"
+        ? "direction-confirmed"
+        : "intent-clarification";
+  }
+  if (action === "resume-project-creation") {
+    state.selectedId = element.dataset.person || state.selectedId;
+    state.overlay = "direction-confirmed";
+  }
+  if (action === "resume-team-invite") {
+    state.selectedId = element.dataset.person || state.selectedId;
+    state.overlay = "invite-sent";
+  }
   if (action === "confirm-connect") {
     const id = element.dataset.person;
     if (!state.connected.includes(id)) state.connected.push(id);
-    if (state.directionPersonId !== id) {
-      state.directionPersonId = id;
-      state.directionDraft = { audience: "", problem: "", outcome: "" };
-      state.directionDraftSubmitted = false;
-      state.directionPartnerConfirmed = false;
-      state.directionConfirmed = false;
-    }
+    ensureDirectionAlignment(id);
     state.overlay = "success";
   }
   if (action === "enter-intent-clarification") state.overlay = "intent-clarification";
-  if (action === "draft-direction") state.overlay = "direction-review";
+  if (action === "draft-direction") {
+    const alignment = ensureDirectionAlignment(state.selectedId);
+    if (alignment.status === "not_started") alignment.status = "drafting";
+    state.overlay = "direction-review";
+  }
   if (action === "confirm-partner-direction") {
-    state.directionPartnerConfirmed = true;
-    state.directionConfirmed = state.directionDraftSubmitted;
+    const alignment = ensureDirectionAlignment(state.selectedId);
+    if (alignment.status !== "pending_partner") {
+      showToast("请先确认你的方向草案");
+      return;
+    }
+    alignment.status = "confirmed";
     state.overlay = "direction-confirmed";
   }
   if (action === "invite-team") {
-    if (!state.directionConfirmed) {
+    const id = element.dataset.person;
+    if (directionAlignmentFor(id).status !== "confirmed") {
       showToast("先由双方确认项目方向");
       return;
     }
-    const id = element.dataset.person;
     if (!state.invited.includes(id)) state.invited.push(id);
     state.overlay = "invite-sent";
   }

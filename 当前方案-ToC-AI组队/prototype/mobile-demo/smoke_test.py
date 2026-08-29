@@ -499,6 +499,15 @@ def main():
             and not direction_form.evaluate("form => form.checkValidity()")
         )
         assert report["flow"]["direction_requires_three_human_inputs"]
+        page.get_by_label("服务谁").fill("   ")
+        page.get_by_label("解决什么问题").fill("   ")
+        page.get_by_label("验证什么结果").fill("   ")
+        page.get_by_role("button", name="确认我的方向草案").click()
+        report["flow"]["direction_rejects_whitespace_only"] = (
+            direction_form.is_visible()
+            and page.get_by_text("周闻 · 已确认", exact=True).count() == 0
+        )
+        assert report["flow"]["direction_rejects_whitespace_only"]
         page.get_by_label("服务谁").fill("线下黑客松参与者")
         page.get_by_label("解决什么问题").fill("现场组队方向迟迟无法收敛")
         page.get_by_label("验证什么结果").fill("15 分钟内形成双方确认的项目方向")
@@ -510,13 +519,26 @@ def main():
             and page.locator(".task-item").count() == 0
         )
         assert report["flow"]["first_confirmation_keeps_partner_pending"]
+        page.get_by_role("button", name="稍后继续").click()
+        report["flow"]["direction_progress_can_resume_from_connection"] = page.get_by_role(
+            "button", name="查看方向确认进度"
+        ).is_visible()
+        assert report["flow"]["direction_progress_can_resume_from_connection"]
+        page.get_by_role("button", name="查看方向确认进度").click()
+        assert page.get_by_text("林澈 · 待确认", exact=True).is_visible()
         page.get_by_role("button", name="模拟林澈确认方向").click()
         report["flow"]["project_gate_opens_only_after_both_confirm"] = (
             page.get_by_text("方向已由双方确认", exact=True).is_visible()
-            and page.get_by_role("button", name="创建项目并邀请入队").is_visible()
+            and page.locator("[data-action='invite-team']").is_visible()
         )
         assert report["flow"]["project_gate_opens_only_after_both_confirm"]
-        page.get_by_role("button", name="创建项目并邀请入队").click()
+        page.get_by_role("button", name="稍后创建").click()
+        report["flow"]["confirmed_direction_can_resume_project_creation"] = page.get_by_role(
+            "button", name="创建项目并邀请入队"
+        ).is_visible()
+        assert report["flow"]["confirmed_direction_can_resume_project_creation"]
+        page.locator("[data-action='resume-project-creation']").click()
+        page.locator("[data-action='invite-team']").click()
         report["flow"]["team_invite_requires_recipient_confirmation"] = page.get_by_text(
             "对方确认前不会被写入团队，也不会被分配任务。",
             exact=True,
@@ -656,6 +678,36 @@ def main():
         page.locator("[data-action='toggle-visible']").click()
         report["flow"]["visibility_paused"] = "is-hidden" in (page.locator(".eink-card").get_attribute("class") or "")
         page.screenshot(path=str(OUTPUT_DIR / "profile-eink.png"), full_page=True)
+
+        known_direction_page = browser.new_page(
+            viewport={"width": 390, "height": 844},
+            is_mobile=True,
+            has_touch=True,
+        )
+        known_direction_page.goto(f"{BASE_URL}/?variant=A&onboarding=1")
+        known_direction_page.wait_for_load_state("networkidle")
+        known_direction_page.locator(
+            "button[data-status='TEAM_RECRUITING']"
+        ).click()
+        known_direction_page.get_by_role("button", name="稍后设置").click()
+        known_direction_page.locator("[data-discovery-view='A']").click()
+        known_direction_page.locator(".recommendation-card-active").click()
+        known_direction_page.get_by_role(
+            "button", name="模拟碰卡直连"
+        ).click()
+        known_direction_page.get_by_role(
+            "button", name="模拟双方主动碰卡"
+        ).click()
+        report["flow"]["known_project_direction_can_skip_alignment"] = (
+            known_direction_page.get_by_role(
+                "button", name="邀请加入「离线会议洞察终端」"
+            ).is_visible()
+            and known_direction_page.get_by_role(
+                "button", name="进入意图澄清"
+            ).count() == 0
+        )
+        assert report["flow"]["known_project_direction_can_skip_alignment"]
+        known_direction_page.close()
 
         desktop = browser.new_page(viewport={"width": 1440, "height": 900})
         desktop.on("console", lambda msg: report["errors"].append(f"desktop-console:{msg.type}:{msg.text}") if msg.type == "error" else None)
