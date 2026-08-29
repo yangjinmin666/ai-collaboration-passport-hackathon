@@ -259,9 +259,9 @@ def main():
 
         page.goto(f"{BASE_URL}/?variant=A&build=hard-filters")
         page.wait_for_load_state("networkidle")
-        page.get_by_role("button", name="设置发现硬门槛").click()
+        page.get_by_role("button", name="设置筛选偏好").click()
         report["flow"]["discovery_filter_sheet_opens"] = page.get_by_text(
-            "发现硬门槛", exact=True
+            "筛选偏好", exact=True
         ).is_visible()
         assert report["flow"]["discovery_filter_sheet_opens"]
         page.get_by_role("button", name="正在找队伍", exact=True).click()
@@ -283,7 +283,7 @@ def main():
         report["flow"]["hard_filters_apply_to_directory"] = page.locator(".ledger-person").count() == 2
         assert report["flow"]["hard_filters_apply_to_directory"]
 
-        page.get_by_role("button", name="设置发现硬门槛，已启用 3 项").click()
+        page.get_by_role("button", name="设置筛选偏好，已启用 3 项").click()
         page.get_by_role("button", name="重置", exact=True).click()
         page.get_by_role("button", name="查看 11 人", exact=True).click()
         report["flow"]["hard_filters_can_reset"] = (
@@ -292,12 +292,12 @@ def main():
         )
         assert report["flow"]["hard_filters_can_reset"]
 
-        page.get_by_role("button", name="设置发现硬门槛").click()
+        page.get_by_role("button", name="设置筛选偏好").click()
         page.get_by_role("button", name="安全／隐私", exact=True).click()
         page.get_by_role("button", name="≥ 8h", exact=True).click()
         page.get_by_role("button", name="查看 0 人", exact=True).click()
         report["flow"]["hard_filters_never_silently_relax"] = page.get_by_text(
-            "RALLY 不会偷偷放宽你的门槛。调整状态、职能或投入时间后再查看。",
+            "RALLY 不会自动放宽你的筛选条件。调整状态、职能或投入时间后再查看。",
             exact=True,
         ).is_visible()
         assert report["flow"]["hard_filters_never_silently_relax"]

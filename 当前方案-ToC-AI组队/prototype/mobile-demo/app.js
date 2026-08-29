@@ -656,7 +656,7 @@ function renderCurrentView() {
 function commonHeader(title = "发现") {
   const filterCount = activeDiscoveryFilterCount();
   const filterButton = title === "发现"
-    ? `<button class="discovery-filter-trigger ${filterCount ? "is-filtered" : ""}" data-action="open-discovery-filters" aria-label="设置发现硬门槛${filterCount ? `，已启用 ${filterCount} 项` : ""}">
+    ? `<button class="discovery-filter-trigger ${filterCount ? "is-filtered" : ""}" data-action="open-discovery-filters" aria-label="设置筛选偏好${filterCount ? `，已启用 ${filterCount} 项` : ""}">
         <span aria-hidden="true"><i></i><i></i><i></i></span>${filterCount ? `<b>${filterCount}</b>` : ""}
       </button>`
     : "";
@@ -735,9 +735,9 @@ function renderDiscoveryEmpty(mode) {
     <section class="discovery-filter-empty">
       <span class="empty-symbol">⌁</span>
       <p class="micro-label">STRICT FILTERS / 0 RESULT</p>
-      <h3>当前硬门槛下暂无${mode}结果</h3>
-      <p>RALLY 不会偷偷放宽你的门槛。调整状态、职能或投入时间后再查看。</p>
-      <button class="primary-button" data-action="open-discovery-filters">调整硬门槛</button>
+      <h3>当前筛选下暂无${mode}结果</h3>
+      <p>RALLY 不会自动放宽你的筛选条件。调整状态、职能或投入时间后再查看。</p>
+      <button class="primary-button" data-action="open-discovery-filters">调整筛选</button>
     </section>
   </div>`;
 }
@@ -822,7 +822,7 @@ function renderVariantB() {
           <button class="secondary-button" data-action="next-person">换一个</button>
           <button class="primary-button" data-action="open-person" data-person="${person.id}">查看为什么</button>
         </div>
-      </section>` : `<section class="radar-ticket"><p class="ticket-reason">${activeDiscoveryFilterCount() ? "附近暂时没有同时满足当前硬门槛的人，RALLY 没有自动放宽条件。" : "暂未发现仍在活动内公开位置的协作者。定位只在本页前台开启，并会在离开后立即停止。"}</p>${activeDiscoveryFilterCount() ? `<button class="secondary-button full" data-action="open-discovery-filters">调整硬门槛</button>` : ""}</section>`}
+      </section>` : `<section class="radar-ticket"><p class="ticket-reason">${activeDiscoveryFilterCount() ? "附近暂时没有同时满足当前筛选条件的人，RALLY 没有自动放宽条件。" : "暂未发现仍在活动内公开位置的协作者。定位只在本页前台开启，并会在离开后立即停止。"}</p>${activeDiscoveryFilterCount() ? `<button class="secondary-button full" data-action="open-discovery-filters">调整筛选</button>` : ""}</section>`}
     </div>
   `;
 }
@@ -837,7 +837,7 @@ function renderVariantC() {
       <section class="directory-copy"><span class="status-pill status-open"><i></i>本场活动</span><h3>活动名册</h3><p>查看明确授权参加当前活动的成员，名册仍属于你手机上的发现页。</p></section>
       <section class="ledger-status">
         <div><span>可见成员</span><strong>${String(directoryPeople.length).padStart(2, "0")} 人</strong></div>
-        <div><span>当前筛选</span><strong>${activeDiscoveryFilterCount() ? `${activeDiscoveryFilterCount()} 项门槛` : "全部角色"}</strong></div>
+        <div><span>当前筛选</span><strong>${activeDiscoveryFilterCount() ? `${activeDiscoveryFilterCount()} 项条件` : "全部角色"}</strong></div>
         <div><span>排序方式</span><strong>项目缺口</strong></div>
       </section>
       <div class="ledger-rule"><span>按当前缺口优先</span><b>EVENT DIRECTORY</b></div>
@@ -1175,37 +1175,37 @@ function renderDiscoveryFilterSheet() {
   const distanceOptions = [["event", "整个会场"], ["nearby", "附近"], ["very_near", "很近"]];
   return `<div class="overlay discovery-filter-overlay">
     <button class="overlay-backdrop" data-action="close-discovery-filters" aria-label="关闭发现筛选"></button>
-    <section class="bottom-sheet discovery-filter-sheet" aria-label="发现硬门槛设置">
+    <section class="bottom-sheet discovery-filter-sheet" aria-label="筛选偏好设置">
       <header class="discovery-filter-head">
         <button class="filter-sheet-close" data-action="close-discovery-filters" aria-label="返回发现页">←</button>
-        <div><p class="micro-label">DISCOVERY GATES</p><h3>发现硬门槛</h3></div>
+        <div><p class="micro-label">DISCOVERY FILTERS</p><h3>筛选偏好</h3></div>
         <button class="filter-reset-link" data-action="reset-discovery-filters">重置</button>
       </header>
       <section class="filter-impact" aria-live="polite">
         <span>本场公开成员</span>
         <div><strong>${rankedPeople.length}</strong><i>→</i><strong>${previewCount}</strong><em>人符合</em></div>
-        <p>${activeCount ? `已启用 ${activeCount} 类门槛，所有条件同时满足才会出现。` : "尚未设置门槛，当前展示全部授权成员。"}</p>
+        <p>${activeCount ? `已启用 ${activeCount} 类筛选条件，需同时满足才会出现。` : "尚未设置筛选条件，当前展示全部授权成员。"}</p>
       </section>
       <section class="filter-setting-block">
-        <header><div><strong>协作状态</strong><small>至少满足一个所选状态</small></div><em>硬门槛</em></header>
+        <header><div><strong>协作状态</strong><small>至少满足一个所选状态</small></div><em>必须满足</em></header>
         <div class="discovery-filter-chips">${statusOptions.map(([value, label]) => renderDiscoveryFilterChip("statuses", value, label)).join("")}</div>
       </section>
       <section class="filter-setting-block">
-        <header><div><strong>需要的职能</strong><small>按能力与当前角色共同判断</small></div><em>硬门槛</em></header>
+        <header><div><strong>需要的职能</strong><small>按能力与当前角色共同判断</small></div><em>必须满足</em></header>
         <div class="discovery-filter-chips">${roleOptions.map(([value, label]) => renderDiscoveryFilterChip("roles", value, label)).join("")}</div>
       </section>
       <section class="filter-setting-block">
-        <header><div><strong>最低可投入时间</strong><small>未知投入时间的人不会通过该门槛</small></div><em>硬门槛</em></header>
+        <header><div><strong>最低可投入时间</strong><small>未标注投入时间的人不会纳入结果</small></div><em>必须满足</em></header>
         <div class="discovery-filter-segments">${hourOptions.map(([value, label]) => `<button class="${draft.minimumHours === value ? "selected" : ""}" data-action="set-discovery-filter" data-filter="minimumHours" data-value="${value}" aria-pressed="${draft.minimumHours === value}">${label}</button>`).join("")}</div>
       </section>
       <section class="filter-setting-block">
-        <header><div><strong>现场范围</strong><small>只改变发现结果，不公开精确位置</small></div><em>硬门槛</em></header>
+        <header><div><strong>现场范围</strong><small>只改变发现结果，不公开精确位置</small></div><em>必须满足</em></header>
         <div class="discovery-filter-segments">${distanceOptions.map(([value, label]) => `<button class="${draft.distance === value ? "selected" : ""}" data-action="set-discovery-filter" data-filter="distance" data-value="${value}" aria-pressed="${draft.distance === value}">${label}</button>`).join("")}</div>
       </section>
       <button class="filter-switch-row ${draft.evidenceRequired ? "selected" : ""}" data-action="toggle-discovery-evidence" aria-pressed="${draft.evidenceRequired}">
         <span><strong>必须有公开项目证据</strong><small>仅自述能力但没有可查看证据的人将被排除</small></span><i><b></b></i>
       </button>
-      <aside class="filter-boundary-note"><b>硬门槛只决定“是否出现”</b><span>AI 仍可解释推荐顺序，但不会替你修改条件，也不会给人生成匹配百分比。</span></aside>
+      <aside class="filter-boundary-note"><b>筛选条件只决定“是否出现”</b><span>AI 仍可解释推荐顺序，但不会替你修改条件，也不会给人生成匹配百分比。</span></aside>
       <footer class="discovery-filter-actions">
         <button class="secondary-button" data-action="close-discovery-filters">取消</button>
         <button class="primary-button" data-action="apply-discovery-filters">查看 ${previewCount} 人</button>
@@ -1455,7 +1455,7 @@ function handleAction(action, element) {
     const firstResult = filterDiscoveryPeople(rankedPeople)[0];
     if (firstResult) state.selectedId = firstResult.id;
     state.overlay = null;
-    showToast(activeDiscoveryFilterCount() ? `已应用硬门槛 · ${filterDiscoveryPeople(rankedPeople).length} 人符合` : "已显示本场全部成员");
+    showToast(activeDiscoveryFilterCount() ? `已应用筛选 · ${filterDiscoveryPeople(rankedPeople).length} 人符合` : "已显示本场全部成员");
   }
   if (action === "filter-connections") {
     state.connectionFilter = ["all", "pending", "connected"].includes(element.dataset.filter)

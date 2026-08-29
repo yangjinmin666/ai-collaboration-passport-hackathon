@@ -131,10 +131,12 @@ body::before {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   align-items: center;
-  border: 1px solid rgba(23, 33, 45, .10);
+  border: 1px solid rgba(23, 33, 45, .09);
   border-radius: 26px;
   background: rgba(248, 249, 251, .96);
-  box-shadow: 0 10px 35px rgba(31, 48, 70, .12);
+  box-shadow:
+    0 -10px 30px rgba(31, 48, 70, .10),
+    0 4px 14px rgba(31, 48, 70, .08);
   backdrop-filter: blur(18px);
 }
 
