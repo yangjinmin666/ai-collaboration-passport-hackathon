@@ -95,7 +95,7 @@ def mobile_sheet_metrics(locator):
                     )
             );
             const controls = [...root.querySelectorAll(
-                "button, a[href], input:not([type='checkbox']), textarea, select, "
+                "button, a[href], input:not([type='checkbox']), textarea, select, summary, "
                     + ".profile-block-public-confirm"
             )]
                 .filter(visible)
@@ -692,7 +692,7 @@ def main():
                     }),
                 ),
             )
-            expiry_page.get_by_text("选择登录方式", exact=True).wait_for(
+            expiry_page.get_by_text("手机号登录", exact=True).wait_for(
                 timeout=6000
             )
             assert expiry_page.locator(".overlay").count() == 0
@@ -793,15 +793,12 @@ def main():
                 f"&apiBase={urllib.parse.quote(backend_url, safe=':/')}",
             )
             wechat_button = android_auth_page.get_by_role(
-                "button", name="使用微信登录"
+                "button", name="微信登录"
             )
             google_button = android_auth_page.get_by_role(
-                "button", name="使用 Google 登录"
+                "button", name="Google 登录"
             )
-            assert wechat_button.is_disabled()
-            assert android_auth_page.get_by_text(
-                "请从微信打开网页版", exact=True
-            ).is_visible()
+            assert wechat_button.count() == 0
             assert google_button.is_enabled()
             google_button.click()
             android_auth_page.wait_for_timeout(300)
@@ -826,15 +823,13 @@ def main():
                 f"&apiBase={urllib.parse.quote(backend_url, safe=':/')}",
             )
             first_time_page.get_by_role(
-                "heading", name="选择登录方式"
+                "heading", name="手机号登录"
             ).wait_for(timeout=5000)
             assert first_time_page.get_by_label("怎么称呼你").count() == 0
-            assert first_time_page.get_by_role(
-                "button", name="使用微信登录"
+            assert first_time_page.get_by_text(
+                "合拍 · 人与人先相遇，人与 Agent 再共创。", exact=True
             ).is_visible()
-            assert first_time_page.get_by_role(
-                "button", name="使用 Google 登录"
-            ).is_visible()
+            assert first_time_page.locator(".live-oauth-button:disabled").count() == 0
             login_metrics = mobile_sheet_metrics(
                 first_time_page.locator(".live-login-card")
             )
@@ -856,17 +851,94 @@ def main():
             first_time_page.get_by_role(
                 "button", name="验证并进入 COSPAN"
             ).click()
-            first_time_profile = first_time_page.locator(
-                "[data-live-profile-form]"
+            first_time_page.get_by_role(
+                "heading", name="不用从头自我介绍。"
+            ).wait_for(timeout=8000)
+            assert first_time_page.locator("[data-live-profile-form]").count() == 0
+            onboarding_metrics = mobile_sheet_metrics(
+                first_time_page.locator("[data-onboarding-form]")
             )
-            first_time_profile.wait_for(timeout=8000)
-            assert first_time_profile.get_by_label(
-                "怎么称呼你"
-            ).input_value() == "COSPAN 新朋友"
-            first_time_profile.get_by_label("怎么称呼你").fill("小雨")
-            assert first_time_profile.locator(
-                'input[name="role"]'
-            ).input_value() == "待完善协作资料"
+            assert onboarding_metrics["minimumFontSize"] >= 10, onboarding_metrics
+            assert onboarding_metrics["undersizedControls"] == [], onboarding_metrics
+            assert not onboarding_metrics["horizontalOverflow"], onboarding_metrics
+            first_time_page.get_by_label("GitHub").fill(
+                "https://github.com/cospan-demo"
+            )
+            first_time_page.get_by_role("button", name="下一步").click()
+            first_time_page.get_by_label("作品或项目名称").fill(
+                "现场协作终端"
+            )
+            first_time_page.get_by_label("公开链接 选填").fill(
+                "https://example.com/cospan-demo"
+            )
+            first_time_page.get_by_label("我做了什么").fill(
+                "负责产品流程与真机演示"
+            )
+            first_time_page.get_by_label("今天可以投入多久").fill(
+                "今天可投入 6 小时"
+            )
+            first_time_page.get_by_role("button", name="有 Idea 找人").click()
+            first_time_page.get_by_role("button", name="下一步").click()
+            first_time_page.get_by_label("你怎么介绍自己的角色").fill(
+                "AI 产品与原型构建者"
+            )
+            first_time_page.get_by_label("你会什么 3–5 项，用逗号分隔").fill(
+                "产品，交互，AI coding"
+            )
+            first_time_page.get_by_label("你在关注什么").fill(
+                "Agent，现场协作"
+            )
+            first_time_page.get_by_label("我的 builder's vibe 是").fill(
+                "把模糊想法快速做成能被真实体验的产品。"
+            )
+            first_time_page.get_by_role("button", name="下一步").click()
+            first_time_page.get_by_role("button", name="选择头像 2").click()
+            first_time_page.get_by_label("怎么称呼你").fill("小雨")
+            first_time_page.get_by_label(
+                "我确认将以上资料公开到本场展会；可以随时修改、暂停或撤回"
+            ).check()
+            first_time_page.get_by_role(
+                "button", name="完成介绍 · 开始发现"
+            ).click()
+            first_time_page.locator(".app-nav").wait_for(timeout=8000)
+            first_time_page.reload()
+            first_time_page.locator(".app-nav").wait_for(timeout=8000)
+            first_time_page.get_by_role("button", name="我的").click()
+            assert first_time_page.get_by_text("小雨", exact=True).first.is_visible()
+            assert first_time_page.get_by_text(
+                "AI 产品与原型构建者", exact=True
+            ).first.is_visible()
+            saved_identity = first_time_page.evaluate(
+                """async () => {
+                    const response = await fetch(
+                        `${localStorage.getItem("rally_api_base")}/api/me`,
+                        {headers: {
+                            authorization: `Bearer ${localStorage.getItem("rally_access_token")}`,
+                        }},
+                    );
+                    return response.json();
+                }"""
+            )
+            saved_profile = next(
+                profile for profile in saved_identity["profiles"]
+                if profile["event_id"] == "hackathon-2026"
+            )
+            assert saved_profile["role"] == "AI 产品与原型构建者"
+            assert saved_profile["skills"] == ["产品", "交互", "AI coding"]
+            assert saved_profile["interests"] == ["Agent", "现场协作"]
+            assert saved_profile["availability"] == "今天可投入 6 小时"
+            assert saved_profile["collaboration_need"] == (
+                "把模糊想法快速做成能被真实体验的产品。"
+            )
+            assert saved_profile["visibility"]["state"] == "VISIBLE"
+            assert any(
+                "现场协作终端" in item for item in saved_profile["evidence"]
+            )
+            assert any(
+                link["platform"] == "github"
+                and link["url"] == "https://github.com/cospan-demo"
+                for link in saved_identity["platform_links"]
+            )
             first_time_context.close()
 
             def login_live(live_page, user_id):

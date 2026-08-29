@@ -453,25 +453,34 @@ def main():
 
         page.goto(f"{BASE_URL}/?variant=C&onboarding=1")
         page.wait_for_load_state("networkidle")
-        report["flow"]["onboarding_starts_at_status"] = page.get_by_text("你现在来现场，最需要什么？", exact=True).is_visible()
+        report["flow"]["onboarding_starts_with_public_trails"] = page.get_by_text("不用从头自我介绍。", exact=True).is_visible()
         report["flow"]["discovery_tabs_hidden_during_onboarding"] = page.locator(".discovery-tabs").count() == 0
-        assert_mobile_visual_baseline(page, report["visual_baseline"], "onboarding_status")
-        page.get_by_role("button", name="正在找队伍").click()
-        page.get_by_role("button", name="下一步 · 组装能力证据").click()
-        assert_mobile_visual_baseline(page, report["visual_baseline"], "onboarding_evidence")
-        page.get_by_role("button", name="即刻 构建动态 添加").click()
-        page.get_by_role("button", name="交给 AI 生成草稿").click()
-        page.get_by_role("button", name="AI 重组").click()
-        page.get_by_role("button", name="确认草稿 · 预览公开面").click()
-        page.get_by_role("button", name="工牌公开面").click()
-        report["flow"]["onboarding_surface_visible"] = page.locator(".onboarding-eink").is_visible()
+        assert_mobile_visual_baseline(page, report["visual_baseline"], "onboarding_public_trails")
+        page.get_by_label("GitHub").fill("https://github.com/cospan-demo")
+        page.get_by_role("button", name="下一步").click()
+        page.get_by_label("作品或项目名称").fill("现场协作终端")
+        page.get_by_label("公开链接 选填").fill("https://example.com/cospan")
+        page.get_by_label("我做了什么").fill("负责产品流程和演示")
+        page.get_by_label("今天可以投入多久").fill("今天可投入 6 小时")
+        page.get_by_role("button", name="团队缺人").click()
+        assert_mobile_visual_baseline(page, report["visual_baseline"], "onboarding_now_building")
+        page.get_by_role("button", name="下一步").click()
+        page.get_by_label("你怎么介绍自己的角色").fill("AI 产品与原型构建者")
+        page.get_by_label("你会什么 3–5 项，用逗号分隔").fill("产品，交互，AI coding")
+        page.get_by_label("你在关注什么").fill("Agent，现场协作")
+        page.get_by_label("我的 builder's vibe 是").fill("把模糊想法快速做成可以真实体验的产品。")
+        page.get_by_role("button", name="下一步").click()
+        page.get_by_role("button", name="选择头像 2").click()
+        page.get_by_label("怎么称呼你").fill("小雨")
+        page.get_by_label("我确认将以上资料公开到本场展会；可以随时修改、暂停或撤回").check()
+        report["flow"]["onboarding_card_preview_visible"] = page.locator("[data-onboarding-card-preview]").is_visible()
         assert_mobile_visual_baseline(page, report["visual_baseline"], "onboarding_preview")
         page.wait_for_timeout(350)
         page.screenshot(path=str(OUTPUT_DIR / "onboarding-eink-preview.png"), full_page=True)
-        page.get_by_role("button", name="公开协作护照 · 进入现场").click()
-        report["flow"]["onboarding_publishes_to_c"] = (
+        page.get_by_role("button", name="完成介绍 · 开始发现").click()
+        report["flow"]["onboarding_enters_recommendations"] = (
             page.locator("body").get_attribute("data-flow") == "product"
-            and page.locator("body").get_attribute("data-variant") == "C"
+            and page.locator("body").get_attribute("data-variant") == "A"
         )
         page.locator(".app-nav [data-tab='profile']").click()
         report["flow"]["published_passport_is_visible"] = "is-hidden" not in (
@@ -481,12 +490,15 @@ def main():
 
         page.goto(f"{BASE_URL}/?variant=C&onboarding=1")
         page.wait_for_load_state("networkidle")
-        page.get_by_role("button", name="稍后设置").click()
-        page.locator(".app-nav [data-tab='profile']").click()
-        report["flow"]["skipped_onboarding_stays_hidden"] = "is-hidden" in (
-            page.locator(".eink-card").get_attribute("class") or ""
+        page.get_by_role("button", name="暂且跳过").click()
+        page.get_by_role("button", name="之后再放").click()
+        page.get_by_role("button", name="暂且跳过").click()
+        report["flow"]["onboarding_cannot_skip_required_identity"] = (
+            page.get_by_role("heading", name="最后，让队友知道怎么称呼你。").is_visible()
+            and page.locator(".app-nav").count() == 0
+            and page.get_by_role("button", name="返回修改").is_visible()
         )
-        assert report["flow"]["skipped_onboarding_stays_hidden"]
+        assert report["flow"]["onboarding_cannot_skip_required_identity"]
 
         page.goto(f"{BASE_URL}/?variant=A")
         page.wait_for_load_state("networkidle")
@@ -995,10 +1007,21 @@ def main():
         )
         known_direction_page.goto(f"{BASE_URL}/?variant=A&onboarding=1")
         known_direction_page.wait_for_load_state("networkidle")
-        known_direction_page.locator(
-            "button[data-status='TEAM_RECRUITING']"
+        known_direction_page.get_by_role("button", name="暂且跳过").click()
+        known_direction_page.get_by_role("button", name="团队缺人").click()
+        known_direction_page.get_by_role("button", name="之后再放").click()
+        known_direction_page.get_by_label("你怎么介绍自己的角色").fill("产品构建者")
+        known_direction_page.get_by_label("你会什么 3–5 项，用逗号分隔").fill("产品，交互，原型")
+        known_direction_page.get_by_label("你在关注什么").fill("现场协作")
+        known_direction_page.get_by_label("我的 builder's vibe 是").fill("先跑通真实闭环。")
+        known_direction_page.get_by_role("button", name="下一步").click()
+        known_direction_page.get_by_label("怎么称呼你").fill("周闻")
+        known_direction_page.get_by_label(
+            "我确认将以上资料公开到本场展会；可以随时修改、暂停或撤回"
+        ).check()
+        known_direction_page.get_by_role(
+            "button", name="完成介绍 · 开始发现"
         ).click()
-        known_direction_page.get_by_role("button", name="稍后设置").click()
         known_direction_page.locator("[data-discovery-view='A']").click()
         known_direction_page.locator(".recommendation-card-active").click()
         known_direction_page.get_by_role(

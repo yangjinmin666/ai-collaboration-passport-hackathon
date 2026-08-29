@@ -640,6 +640,30 @@ const publicFieldCatalog = {
   platform_links: "外部平台链接",
 };
 
+function createOnboardingDraft() {
+  return {
+    platformLinks: {
+      xiaohongshu: "",
+      jike: "",
+      github: "",
+      linkedin: "",
+    },
+    projectUrl: "",
+    projectTitle: "",
+    projectSummary: "",
+    status: "未组队",
+    availability: "",
+    displayName: "",
+    role: "",
+    skills: "",
+    interests: "",
+    vibe: "",
+    preferences: ["快速原型"],
+    avatar: "memoji-5",
+    publicConfirmed: false,
+  };
+}
+
 let liveOtpCountdownTimer = null;
 
 const state = {
@@ -671,6 +695,7 @@ const state = {
   discoveryFilters: defaultDiscoveryFilters(),
   discoveryFilterDraft: defaultDiscoveryFilters(),
   platformDrafts: {},
+  onboardingDraft: createOnboardingDraft(),
   profileBlockDraft: null,
   acceptedTasks: [],
   live: {
@@ -1142,21 +1167,22 @@ function signalBars(level) {
 }
 
 function render() {
+  const showsOnboarding = state.onboarding && liveAppReady();
   document.body.dataset.variant = state.variant;
-  document.body.dataset.flow = state.onboarding ? "onboarding" : "product";
+  document.body.dataset.flow = showsOnboarding ? "onboarding" : "product";
   document.body.dataset.tab = state.tab;
   const phone = `
     <main class="prototype-stage">
-      <section class="phone-shell" aria-label="COSPAN 共域手机端原型">
+      <section class="phone-shell" aria-label="COSPAN 合拍手机端原型">
         <div class="screen">
-          ${state.onboarding ? renderOnboarding() : renderCurrentView()}
+          ${showsOnboarding ? renderOnboarding() : renderCurrentView()}
         </div>
-        ${state.onboarding || !liveAppReady() ? "" : renderAppNav()}
+        ${showsOnboarding || !liveAppReady() ? "" : renderAppNav()}
       </section>
       <aside class="prototype-notes">
-        <p class="eyebrow">${state.onboarding ? "COSPAN / PASSPORT ASSEMBLY" : `COSPAN / MOBILE / ${state.variant}`}</p>
-        <h1>${state.onboarding ? "协作护照引导" : variantNames[state.variant]}</h1>
-        <p>${state.onboarding ? "借鉴 Bonjour 的低负担资料搭建方式，但把流程重心改成当下协作意图、能力证据和用户授权。" : variantDescription()}</p>
+        <p class="eyebrow">${showsOnboarding ? "COSPAN / INTRO" : `COSPAN / MOBILE / ${state.variant}`}</p>
+        <h1>${showsOnboarding ? "四步完成自我介绍" : variantNames[state.variant]}</h1>
+        <p>${showsOnboarding ? "从公开主页和正在做的事开始，用最少输入组装一张可以被队友快速读懂的协作卡。" : variantDescription()}</p>
         ${renderStateLedger()}
       </aside>
     </main>
@@ -1188,109 +1214,104 @@ function collaborationNeedLabel() {
 }
 
 function renderOnboarding() {
-  const steps = [renderOnboardingStatus, renderOnboardingSources, renderOnboardingDraft, renderOnboardingPreview];
+  const steps = [renderOnboardingSources, renderOnboardingProject, renderOnboardingVibe, renderOnboardingIdentity];
   return `<div class="onboarding-shell view-c">
     <header class="onboarding-header">
       <button class="onboarding-back" data-action="onboarding-back" aria-label="返回">${state.onboardingStep ? "←" : "×"}</button>
       <div class="onboarding-progress" aria-label="第 ${state.onboardingStep + 1} 步，共 4 步"><span style="width:${(state.onboardingStep + 1) * 25}%"></span></div>
       <strong>${state.onboardingStep + 1} / 4</strong>
     </header>
+    ${state.live.error ? `<div class="onboarding-inline-error" role="alert">${escapeHtml(state.live.error)}</div>` : ""}
     ${steps[state.onboardingStep]()}
   </div>`;
 }
 
 function onboardingGuide(kicker, title, body) {
   return `<section class="passport-guide">
-    <span class="guide-mark">P·AI</span>
+    <span class="guide-mark" aria-hidden="true"><img src="./assets/cospan-icon.svg" alt=""></span>
     <div><p>${kicker}</p><h2>${title}</h2><span>${body}</span></div>
   </section>`;
 }
 
-function renderOnboardingStatus() {
-  const choices = [
-    ["SEEKING_TEAM", "正在找队伍", "我有能力，想加入一个值得做的项目"],
-    ["IDEA_RECRUITING", "有想法，正在组队", "方向还在成形，寻找共同发起者"],
-    ["TEAM_RECRUITING", "团队补位中", "项目已明确，正在补齐关键角色"],
-    ["TEAMED_OPEN", "已组队，可交流", "不招人，但愿意认识和支援别人"],
-  ];
-  return `<div class="onboarding-step">
-    ${onboardingGuide("LIVE INTENT", "你现在来现场，最需要什么？", "先表达此刻的协作状态。它会自动到期，不会变成永久职业标签。")}
-    <section class="status-choice-list">
-      ${choices.map(([id, title, desc], index) => `<button class="status-choice ${state.collaborationStatus === id ? "selected" : ""}" data-action="choose-status" data-status="${id}"><span>0${index + 1}</span><div><strong>${title}</strong><small>${desc}</small></div><i>${state.collaborationStatus === id ? "●" : "○"}</i></button>`).join("")}
-    </section>
-    <div class="visibility-receipt"><span>公开范围</span><strong>${currentExhibition ? "仅本场展会" : "仅附近发现"}</strong><em>${currentExhibition ? "展会结束自动隐藏" : "关闭发现后立即隐藏"}</em></div>
-    ${renderOnboardingFooter("下一步 · 组装能力证据")}
-  </div>`;
-}
-
 function renderOnboardingSources() {
   const sources = [
-    ["GitHub", "GH", "代码与项目"],
-    ["即刻", "JK", "构建动态"],
-    ["小红书", "RED", "内容与作品"],
-    ["作品链接", "URL", "Demo／案例"],
+    ["xiaohongshu", "小红书", "RED", "粘贴公开主页链接"],
+    ["jike", "即刻", "J", "粘贴公开主页链接"],
+    ["github", "GitHub", "GH", "https://github.com/…"],
+    ["linkedin", "LinkedIn", "in", "https://linkedin.com/in/…"],
   ];
-  return `<div class="onboarding-step">
-    ${onboardingGuide("EVIDENCE FIRST", "不用从头写简历。", "从你已经留下的数字痕迹开始，AI 只提取草稿，公开前仍由你逐项确认。")}
-    <section class="source-grid">
-      ${sources.map(([name, mark, desc]) => { const active = state.connectedSources.includes(name); return `<button class="source-card ${active ? "connected" : ""}" data-action="toggle-source" data-source="${name}"><span>${mark}</span><div><strong>${name}</strong><small>${desc}</small></div><em>${active ? "已连接" : "添加"}</em></button>`; }).join("")}
+  return `<form class="onboarding-step onboarding-form" data-onboarding-form data-onboarding-step="0">
+    ${onboardingGuide("01 / PUBLIC TRAILS", "不用从头自我介绍。", "先放上你愿意公开的主页。都可以留空，COSPAN 不读取私信或非公开内容。")}
+    <section class="onboarding-link-list" aria-label="公开主页">
+      ${sources.map(([platform, label, mark, hint]) => `<label class="onboarding-link-row">
+        <span class="onboarding-link-mark tone-${platform}" aria-hidden="true">${mark}</span>
+        <span><b>${label}</b><input name="platform-${platform}" data-onboarding-platform="${platform}" type="url" inputmode="url" autocomplete="url" placeholder="${hint}" value="${escapeHtml(state.onboardingDraft.platformLinks[platform])}"></span>
+      </label>`).join("")}
     </section>
-    <article class="now-building-card">
-      <div><p># NOW BUILDING</p><span>从 GitHub 草稿中找到</span></div>
-      <h3>离线会议洞察终端</h3>
-      <p>让线下讨论自动沉淀为可检索的决策、分歧与行动项。</p>
-      <div><span>TypeScript</span><span>Agent</span><span>7 commits this week</span></div>
+    ${renderOnboardingFooter("下一步", "暂且跳过")}
+  </form>`;
+}
+
+function renderOnboardingProject() {
+  const statuses = ["未组队", "有 Idea 找人", "团队缺人", "已组队但可交流"];
+  return `<form class="onboarding-step onboarding-form" data-onboarding-form data-onboarding-step="1">
+    ${onboardingGuide("02 / NOW BUILDING", "你现在在做什么？", "产品、Demo、实验或还没做完的想法都算。没有公开链接也可以直接写。")}
+    <section class="onboarding-fields">
+      <label><span>作品或项目名称</span><input name="projectTitle" data-onboarding-field="projectTitle" maxlength="40" placeholder="例如：会场协作终端" value="${escapeHtml(state.onboardingDraft.projectTitle)}"></label>
+      <label><span>公开链接 <em>选填</em></span><input name="projectUrl" data-onboarding-field="projectUrl" type="url" inputmode="url" placeholder="https://…" value="${escapeHtml(state.onboardingDraft.projectUrl)}"></label>
+      <label><span>我做了什么</span><textarea name="projectSummary" data-onboarding-field="projectSummary" maxlength="72" placeholder="一句话说清你的角色和结果">${escapeHtml(state.onboardingDraft.projectSummary)}</textarea></label>
+      <label><span>今天可以投入多久</span><input name="availability" data-onboarding-field="availability" maxlength="120" placeholder="例如：今天可投入 6 小时" value="${escapeHtml(state.onboardingDraft.availability)}"></label>
+    </section>
+    <section class="onboarding-status-pills" aria-label="当前协作状态">
+      <span>当前协作状态</span>
+      <div>${statuses.map((status) => `<button type="button" class="${state.onboardingDraft.status === status ? "selected" : ""}" data-action="choose-onboarding-status" data-status="${status}" aria-pressed="${state.onboardingDraft.status === status}">${status}</button>`).join("")}</div>
+    </section>
+    ${renderOnboardingFooter("下一步", "之后再放")}
+  </form>`;
+}
+
+function renderOnboardingVibe() {
+  const preferenceOptions = ["快速原型", "结对协作", "异步记录", "先聊清目标"];
+  return `<form class="onboarding-step onboarding-form" data-onboarding-form data-onboarding-step="2">
+    ${onboardingGuide("03 / YOUR VIBE", "让别人用一句话记住你。", "不用写简历。说清你是谁、会什么、对什么好奇，以及希望怎么一起做事。")}
+    <section class="onboarding-fields">
+      <label><span>你怎么介绍自己的角色</span><input name="role" data-onboarding-field="role" required maxlength="80" placeholder="例如：AI 产品设计师 / 独立开发者" value="${escapeHtml(state.onboardingDraft.role)}"></label>
+      <label><span>你会什么 <em>3–5 项，用逗号分隔</em></span><input name="skills" data-onboarding-field="skills" required placeholder="产品，交互，AI coding" value="${escapeHtml(state.onboardingDraft.skills)}"></label>
+      <label><span>你在关注什么</span><input name="interests" data-onboarding-field="interests" required placeholder="例如：Agent，硬件，创作者工具" value="${escapeHtml(state.onboardingDraft.interests)}"></label>
+      <label><span>我的 builder's vibe 是</span><textarea name="vibe" data-onboarding-field="vibe" required maxlength="160" placeholder="我是怎样的人，在做什么，想认识怎样的队友？">${escapeHtml(state.onboardingDraft.vibe)}</textarea></label>
+    </section>
+    <section class="onboarding-preferences" aria-label="协作偏好"><span>我喜欢这样协作</span><div>${preferenceOptions.map((preference) => `<button type="button" class="${state.onboardingDraft.preferences.includes(preference) ? "selected" : ""}" data-action="toggle-onboarding-preference" data-preference="${preference}" aria-pressed="${state.onboardingDraft.preferences.includes(preference)}">${preference}</button>`).join("")}</div></section>
+    ${renderOnboardingFooter("下一步", "暂且跳过")}
+  </form>`;
+}
+
+function renderOnboardingIdentity() {
+  const draft = state.onboardingDraft;
+  const saving = state.live.pendingOperations.has("onboarding:save");
+  const avatars = ["memoji-1", "memoji-2", "memoji-4", "memoji-5", "memoji-7", "memoji-9"];
+  const skills = parseProfileList(draft.skills);
+  return `<form class="onboarding-step onboarding-form onboarding-identity" data-onboarding-form data-onboarding-step="3">
+    ${onboardingGuide("04 / READY", "最后，让队友知道怎么称呼你。", "选择一个头像，确认公开预览。以后可以随时在“我的”里修改或暂停展示。")}
+    <section class="onboarding-avatar-picker" aria-label="选择头像">
+      <span class="memoji-avatar ${draft.avatar} onboarding-avatar-preview" aria-label="当前头像"></span>
+      <div>${avatars.map((avatar) => `<button type="button" class="${draft.avatar === avatar ? "selected" : ""}" data-action="choose-onboarding-avatar" data-avatar="${avatar}" aria-label="选择头像 ${avatar.replace("memoji-", "")}" aria-pressed="${draft.avatar === avatar}"><span class="memoji-avatar ${avatar}"></span></button>`).join("")}</div>
+    </section>
+    <section class="onboarding-fields">
+      <label><span>怎么称呼你</span><input name="displayName" data-onboarding-field="displayName" required autocomplete="name" maxlength="40" placeholder="输入你的名字或常用昵称" value="${escapeHtml(draft.displayName)}"></label>
+    </section>
+    <article class="onboarding-card-preview" data-onboarding-card-preview>
+      <header><span class="memoji-avatar ${draft.avatar}"></span><div><strong>${escapeHtml(draft.displayName || "你的名字")}</strong><small>${escapeHtml(draft.role || "你的角色")}</small></div><em>${escapeHtml(draft.status)}</em></header>
+      <p>${escapeHtml(draft.vibe || "你的一句话自我介绍会出现在这里。")}</p>
+      <div>${skills.length ? skills.map((skill) => `<span>${escapeHtml(skill)}</span>`).join("") : "<span>能力标签</span>"}</div>
+      ${draft.projectTitle ? `<footer><span>NOW BUILDING</span><strong>${escapeHtml(draft.projectTitle)}</strong></footer>` : ""}
     </article>
-    ${renderOnboardingFooter("交给 AI 生成草稿", "暂时跳过")}
-  </div>`;
+    <label class="onboarding-public-confirm"><input name="publicConfirmed" data-onboarding-confirm type="checkbox" required ${draft.publicConfirmed ? "checked" : ""}><span>我确认将以上资料公开到本场展会；可以随时修改、暂停或撤回</span></label>
+    ${renderOnboardingFooter(saving ? "正在保存…" : "完成介绍 · 开始发现", "返回修改", saving)}
+  </form>`;
 }
 
-function renderOnboardingDraft() {
-  const draft = state.draftVersion % 2 === 0
-    ? {
-        role: "AI / 后端构建者",
-        summary: "Agent 将现场对话转成可执行决策",
-        vibe: "先跑通真实闭环，再把系统做漂亮；喜欢和能快速落地的人一起工作。",
-      }
-    : {
-        role: "AI 产品 / Agent 构建者",
-        summary: "把离线讨论压缩成可检索、可追踪的团队行动",
-        vibe: "擅长把模糊问题做成能演示的产品；现在想认识愿意一起打磨硬件闭环的人。",
-      };
-  return `<div class="onboarding-step">
-    ${onboardingGuide("AI DRAFT / REVIEW", "这是草稿，不是 AI 对你的定义。", "我们把证据、Now Building 和当前需求拼成协作护照；你决定哪些内容对外出现。")}
-    <section class="draft-passport">
-      <div class="draft-head"><span class="memoji-avatar memoji-5 draft-avatar" aria-label="周闻的默认头像"></span><div><h3>周闻</h3><p>${draft.role}</p></div><button data-action="draft-refresh">AI 重组</button></div>
-      <div class="draft-section"><span>NOW BUILDING</span><strong>离线会议洞察终端</strong><small>${draft.summary}</small></div>
-      <div class="draft-section"><span>能力证据</span><div class="draft-tags"><b>Agent</b><b>API</b><b>端侧 AI</b><b>GitHub 已连接</b></div></div>
-      <div class="draft-section"><span>当前协作状态</span><strong>${collaborationStatusLabel()}</strong><small>当前意图：${collaborationNeedLabel()}</small></div>
-      <div class="draft-section vibe-section"><span>BUILDER'S VIBE</span><p>${draft.vibe}</p></div>
-    </section>
-    <p class="consent-note">✓ 所有字段将由你确认后公开 · 不读取私信和非公开内容</p>
-    ${renderOnboardingFooter("确认草稿 · 预览公开面")}
-  </div>`;
-}
-
-function renderOnboardingPreview() {
-  return `<div class="onboarding-step onboarding-preview-step">
-    ${onboardingGuide("ONE IDENTITY / THREE SURFACES", "发布前，看一眼别人会看到什么。", "同一份协作身份会适配发现卡、完整护照和墨水屏，不需要重复维护。")}
-    <div class="preview-tabs">
-      ${[["mobile","发现卡"],["passport","完整护照"],["eink","工牌公开面"]].map(([id,label]) => `<button class="${state.previewMode === id ? "active" : ""}" data-action="preview-mode" data-mode="${id}">${label}</button>`).join("")}
-    </div>
-    ${renderOnboardingSurface()}
-    <div class="publish-scope"><span>● 公开到今天 22:00</span><small>你可以随时暂停、修改或撤回</small></div>
-    ${renderOnboardingFooter("公开协作护照 · 进入现场", "返回修改")}
-  </div>`;
-}
-
-function renderOnboardingSurface() {
-  if (state.previewMode === "eink") return `<div class="onboarding-eink"><div><span>● ${collaborationStatusLabel()}</span><em>至 22:00</em></div><h3>周闻 / ZW</h3><p>AI · 后端 · Agent</p><section><span>当前协作意图</span><strong>${collaborationNeedLabel()}</strong></section><footer><b>碰卡直接建联</b><span>P·0087</span></footer></div>`;
-  if (state.previewMode === "passport") return `<article class="onboarding-full-passport"><header><span class="memoji-avatar memoji-5 draft-avatar" aria-label="周闻的默认头像"></span><div><h3>周闻</h3><p>AI / 后端构建者</p></div></header><p class="passport-vibe">“先跑通真实闭环，再把系统做漂亮。”</p><div><span>NOW BUILDING</span><strong>离线会议洞察终端</strong></div><div><span>项目证据</span><strong>GitHub · 7 commits this week</strong></div><div><span>${collaborationStatusLabel()}</span><strong>${collaborationNeedLabel()}</strong></div></article>`;
-  return `<article class="onboarding-discovery-card"><div class="discovery-card-meta"><span>${collaborationStatusLabel()}</span><em>同场</em></div><h3>周闻</h3><p>AI / 后端构建者</p><div class="draft-tags"><b>Agent</b><b>API</b><b>端侧 AI</b></div><section><span>当前协作意图</span><strong>${collaborationNeedLabel()}</strong><small>可先在线表达意愿，也可当面碰卡直连</small></section></article>`;
-}
-
-function renderOnboardingFooter(primaryLabel, secondaryLabel = "稍后设置") {
-  return `<footer class="onboarding-footer"><button class="text-action" data-action="skip-onboarding">${secondaryLabel}</button><button class="primary-button" data-action="${state.onboardingStep === 3 ? "publish-passport" : "onboarding-next"}">${primaryLabel}</button></footer>`;
+function renderOnboardingFooter(primaryLabel, secondaryLabel = "稍后设置", disabled = false) {
+  return `<footer class="onboarding-footer"><button class="text-action" type="button" data-action="skip-onboarding">${secondaryLabel}</button><button class="primary-button" type="submit" ${disabled ? "disabled" : ""}>${primaryLabel}</button></footer>`;
 }
 
 function renderCurrentView() {
@@ -1324,34 +1345,23 @@ function renderLiveGate() {
         && !unsupportedAndroidWechat
         && !unsupportedExternalWechat
         && !unsupportedEmbeddedGoogle;
-      const loading = !state.live.oauthProvidersLoaded;
-      const availability = unsupportedAndroidWechat
-        ? "请从微信打开网页版"
-        : unsupportedExternalWechat
-          ? "请在微信内打开"
-          : unsupportedEmbeddedGoogle
-            ? "请用系统浏览器打开"
-            : loading
-              ? "正在检测…"
-              : enabled
-                ? ""
-                : "服务器尚未配置";
-      return `<button class="live-oauth-button live-oauth-${provider}" type="button" data-action="start-oauth-login" data-provider="${provider}" ${enabled ? "" : "disabled"}>
-        <span aria-hidden="true">${mark}</span><b>${label}</b><small>${availability}</small>
+      if (!enabled) return "";
+      return `<button class="live-oauth-button live-oauth-${provider}" type="button" data-action="start-oauth-login" data-provider="${provider}">
+        <span aria-hidden="true">${mark}</span><b>${label}</b>
       </button>`;
     };
+    const oauthOptions = [
+      oauthButton("wechat", "微信登录", "微"),
+      oauthButton("google", "Google 登录", "G"),
+    ].filter(Boolean).join("");
     return `<div class="live-gate">
-      <div class="live-gate-brand"><strong>COSPAN</strong><span>共域 · 安全登录</span></div>
+      <div class="live-gate-brand"><strong>COSPAN</strong><span>合拍 · 人与人先相遇，人与 Agent 再共创。</span></div>
       <section class="live-login-card">
-        <p class="micro-label">${verifyingCode ? "SMS VERIFICATION" : "REAL MOBILE SESSION"}</p>
-        <h2>${verifyingCode ? "输入短信验证码" : "选择登录方式"}</h2>
+        <p class="micro-label">${verifyingCode ? "VERIFY" : "WELCOME"}</p>
+        <h2>${verifyingCode ? "输入验证码" : "手机号登录"}</h2>
         <p>${verifyingCode
           ? `验证码已发送至 ${escapeHtml(state.live.otpMaskedPhone)}，5 分钟内有效。`
-          : isAndroidApp
-            ? "体验包可使用手机号或 Google；微信登录请从微信内打开 COSPAN 网页版。昵称和协作资料在进入后再完善。"
-            : isWechatBrowser
-              ? "当前可使用手机号或微信登录；Google 登录请用系统浏览器打开本页。昵称和协作资料在进入后再完善。"
-              : "当前可使用手机号或 Google；微信登录请在微信内打开本页。昵称和协作资料在进入后再完善。"}</p>
+          : "验证手机号后，用 4 个轻量步骤完成自我介绍。手机号不会出现在公开卡片上。"}</p>
         ${verifyingCode ? `
           <form data-live-otp-verify>
             <label><span>6 位验证码</span><input name="code" required inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" placeholder="请输入短信验证码"></label>
@@ -1362,27 +1372,20 @@ function renderLiveGate() {
             <button type="button" data-action="resend-live-otp" ${retrySeconds > 0 || state.live.meLoading ? "disabled" : ""}>${retrySeconds > 0 ? `${retrySeconds} 秒后可重发` : "重新获取验证码"}</button>
           </div>
         ` : `
-          <div class="live-oauth-options" aria-label="第三方登录方式">
-            ${oauthButton("wechat", "使用微信登录", "微")}
-            ${oauthButton("google", "使用 Google 登录", "G")}
-          </div>
-          <div class="live-login-divider"><span>或使用手机号</span></div>
+          ${oauthOptions ? `<div class="live-oauth-options" aria-label="第三方登录方式">${oauthOptions}</div><div class="live-login-divider"><span>或</span></div>` : ""}
           <form data-live-otp-request>
             <label><span>手机号</span><input name="phone" type="tel" required inputmode="tel" autocomplete="tel" placeholder="请输入中国大陆手机号" value="${escapeHtml(state.live.otpPhone)}"></label>
             <button class="primary-button full" type="submit" ${state.live.meLoading ? "disabled" : ""}>${state.live.meLoading ? "正在发送…" : "获取短信验证码"}</button>
           </form>
-          <p class="live-login-consent">继续即表示你同意使用所选账号完成身份验证；手机号和邮箱不会自动出现在公开协作资料中。</p>
+          <p class="live-login-consent">登录即表示你同意使用所选账号完成身份验证。</p>
         `}
-        <aside class="live-analytics-privacy" data-analytics-privacy-notice>
-          <b>第一方体验数据说明</b>
-          <span>为改进登录、发现和组队体验，COSPAN 仅收集页面浏览与关键协作结果等白名单事件，不收集手机号、验证码、Token、姓名、自由文本或精确位置。原始事件保留 30 天，如需提前删除，请联系现场工作人员按当前账户处理。演示阶段不向第三方统计平台发送数据。</span>
-        </aside>
+        <details class="live-analytics-privacy" data-analytics-privacy-notice><summary>隐私与数据说明</summary><span>COSPAN 只记录改进登录、发现和组队所需的白名单事件，不收集验证码、Token、自由文本或精确位置；演示阶段不向第三方统计平台发送数据。</span></details>
         ${state.live.error ? `<div class="live-error" role="alert">${escapeHtml(state.live.error)}</div>` : ""}
       </section>
     </div>`;
   }
   return `<div class="live-gate">
-    <div class="live-gate-brand"><strong>COSPAN</strong><span>共域 · Live</span></div>
+    <div class="live-gate-brand"><strong>COSPAN</strong><span>合拍 · 人与人先相遇，人与 Agent 再共创。</span></div>
     <section class="live-login-card live-retry-card">
       <p class="micro-label">${state.live.meLoading ? "CONNECTING" : "CONNECTION ERROR"}</p>
       <h2>${state.live.meLoading ? "正在恢复现场状态" : "暂时无法连接"}</h2>
@@ -1409,7 +1412,7 @@ function commonHeader(title = "发现", utility = null) {
       : "";
   return `
     <header class="app-header">
-      <div class="app-header-start">${utilityButton}<div class="app-brand"><strong>COSPAN</strong><span>共域 · ${title}</span></div></div>
+      <div class="app-header-start">${utilityButton}<div class="app-brand"><strong>COSPAN</strong><span>合拍 · ${title}</span></div></div>
       ${exhibitionContext}
     </header>
   `;
@@ -2513,6 +2516,24 @@ function updateProfileBlockPreview(form) {
   }
 }
 
+function syncOnboardingForm(form) {
+  form.querySelectorAll("[data-onboarding-field]").forEach((input) => {
+    state.onboardingDraft[input.dataset.onboardingField] = input.value;
+  });
+  form.querySelectorAll("[data-onboarding-platform]").forEach((input) => {
+    state.onboardingDraft.platformLinks[input.dataset.onboardingPlatform] = input.value;
+  });
+  const publicConfirmation = form.querySelector("[data-onboarding-confirm]");
+  if (publicConfirmation) state.onboardingDraft.publicConfirmed = publicConfirmation.checked;
+}
+
+function updateOnboardingIdentityPreview(form) {
+  const preview = form.querySelector("[data-onboarding-card-preview]");
+  if (!preview) return;
+  const name = preview.querySelector("header strong");
+  if (name) name.textContent = state.onboardingDraft.displayName.trim() || "你的名字";
+}
+
 function bindEvents() {
   document.querySelector("[data-live-otp-request]")?.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -2525,6 +2546,27 @@ function bindEvents() {
   document.querySelector("[data-live-profile-form]")?.addEventListener("submit", (event) => {
     event.preventDefault();
     if (event.currentTarget.reportValidity()) updateLiveProfile(event.currentTarget);
+  });
+  const onboardingForm = document.querySelector("[data-onboarding-form]");
+  onboardingForm?.querySelectorAll("input, textarea, select").forEach((input) => {
+    input.addEventListener("input", () => {
+      syncOnboardingForm(onboardingForm);
+      updateOnboardingIdentityPreview(onboardingForm);
+    });
+    input.addEventListener("change", () => syncOnboardingForm(onboardingForm));
+  });
+  onboardingForm?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    syncOnboardingForm(onboardingForm);
+    if (!onboardingForm.reportValidity()) return;
+    if (state.onboardingStep === 3) {
+      saveLiveOnboarding();
+      return;
+    }
+    state.live.error = "";
+    state.onboardingStep = Math.min(3, state.onboardingStep + 1);
+    document.querySelector(".screen")?.scrollTo({ top: 0, behavior: "smooth" });
+    render();
   });
   const profileBlockForm = document.querySelector("[data-profile-block-form]");
   profileBlockForm?.addEventListener("submit", (event) => {
@@ -3036,6 +3078,24 @@ function handleAction(action, element) {
   if (action === "choose-status") {
     state.collaborationStatus = element.dataset.status;
   }
+  if (action === "choose-onboarding-status") {
+    state.onboardingDraft.status = element.dataset.status;
+    state.collaborationStatus = {
+      "未组队": "SEEKING_TEAM",
+      "有 Idea 找人": "IDEA_RECRUITING",
+      "团队缺人": "TEAM_RECRUITING",
+      "已组队但可交流": "TEAMED_OPEN",
+    }[element.dataset.status] || state.collaborationStatus;
+  }
+  if (action === "toggle-onboarding-preference") {
+    const preference = element.dataset.preference;
+    state.onboardingDraft.preferences = state.onboardingDraft.preferences.includes(preference)
+      ? state.onboardingDraft.preferences.filter((item) => item !== preference)
+      : [...state.onboardingDraft.preferences, preference].slice(0, 5);
+  }
+  if (action === "choose-onboarding-avatar") {
+    state.onboardingDraft.avatar = element.dataset.avatar;
+  }
   if (action === "toggle-source") {
     const source = element.dataset.source;
     state.connectedSources = state.connectedSources.includes(source)
@@ -3047,12 +3107,13 @@ function handleAction(action, element) {
     document.querySelector(".screen")?.scrollTo({ top: 0, behavior: "smooth" });
   }
   if (action === "onboarding-back") {
+    state.live.error = "";
     if (state.onboardingStep > 0) state.onboardingStep -= 1;
     else finishOnboarding(false);
   }
   if (action === "skip-onboarding") {
-    if (state.onboardingStep === 0) finishOnboarding(false);
-    else if (state.onboardingStep === 3) state.onboardingStep = 2;
+    state.live.error = "";
+    if (state.onboardingStep === 3) state.onboardingStep = 2;
     else state.onboardingStep += 1;
   }
   if (action === "preview-mode") state.previewMode = element.dataset.mode;
@@ -3144,10 +3205,11 @@ function handleAction(action, element) {
     showToast("AI 已根据项目证据重组表达");
   }
   if (action === "publish-passport") {
-    finishOnboarding(true);
-    showToast("协作护照已公开至今天 22:00");
+    saveLiveOnboarding();
+    return;
   }
   if (action === "restart-onboarding") {
+    hydrateOnboardingDraft();
     state.onboarding = true;
     state.onboardingStep = 0;
     state.overlay = null;
@@ -3313,12 +3375,175 @@ function handleAction(action, element) {
   render();
 }
 
+function liveProfileNeedsIntroduction(profile = state.live.currentProfile) {
+  return Boolean(profile) && (
+    profile.role === "待完善协作资料"
+    || !Array.isArray(profile.skills)
+    || profile.skills.length < 3
+    || !Array.isArray(profile.interests)
+    || profile.interests.length < 1
+    || !Array.isArray(profile.collaboration_preferences)
+    || profile.collaboration_preferences.length < 1
+  );
+}
+
+function hydrateOnboardingDraft() {
+  const profile = state.live.currentProfile;
+  if (!profile) return;
+  const platformLinks = Object.fromEntries(
+    Object.keys(state.onboardingDraft.platformLinks).map((platform) => [
+      platform,
+      state.live.platformLinks.find((link) => link.platform === platform)?.url || "",
+    ]),
+  );
+  const displayName = /^(?:COSPAN|RALLY) 新朋友$/.test(currentUser.name) ? "" : currentUser.name;
+  state.onboardingDraft = {
+    ...createOnboardingDraft(),
+    platformLinks,
+    status: profile.status || "未组队",
+    availability: profile.availability === "待补充" ? "" : profile.availability || "",
+    displayName,
+    role: profile.role === "待完善协作资料" ? "" : profile.role || "",
+    skills: Array.isArray(profile.skills) ? profile.skills.join("，") : "",
+    interests: Array.isArray(profile.interests) ? profile.interests.join("，") : "",
+    vibe: profile.collaboration_need || "",
+    preferences: Array.isArray(profile.collaboration_preferences)
+      && profile.collaboration_preferences.length
+      ? [...profile.collaboration_preferences]
+      : ["快速原型"],
+    avatar: /^memoji-(?:[1-9]|1[0-2])$/.test(currentUser.avatar)
+      ? currentUser.avatar
+      : "memoji-5",
+  };
+}
+
+async function saveLiveOnboarding() {
+  if (state.live.pendingOperations.has("onboarding:save")) return;
+  const draft = state.onboardingDraft;
+  const displayName = draft.displayName.trim();
+  const role = draft.role.trim();
+  const skills = parseProfileList(draft.skills);
+  const interests = parseProfileList(draft.interests);
+  const preferences = draft.preferences.filter(Boolean).slice(0, 5);
+  const vibe = draft.vibe.trim();
+  if (!displayName) {
+    state.onboardingStep = 3;
+    state.live.error = "请先填写希望队友怎么称呼你";
+    render();
+    return;
+  }
+  if (!role || skills.length < 3 || interests.length < 1 || !vibe || preferences.length < 1) {
+    state.onboardingStep = 2;
+    state.live.error = "请补充角色、至少 3 项能力、关注方向和一句自我介绍";
+    render();
+    return;
+  }
+  const publicUrls = {};
+  for (const [platform, rawUrl] of Object.entries(draft.platformLinks)) {
+    if (!rawUrl.trim()) continue;
+    const url = safePublicUrl(rawUrl);
+    if (!url) {
+      state.onboardingStep = 0;
+      state.live.error = `请检查${platformCatalog[platform]?.label || "公开主页"}链接，需使用 HTTPS`;
+      render();
+      return;
+    }
+    publicUrls[platform] = url;
+  }
+  const projectUrl = draft.projectUrl.trim() ? safePublicUrl(draft.projectUrl) : "";
+  if (draft.projectUrl.trim() && !projectUrl) {
+    state.onboardingStep = 1;
+    state.live.error = "项目链接需使用有效的 HTTPS 地址";
+    render();
+    return;
+  }
+  const projectTitle = cleanProfileBlockField(draft.projectTitle, 40);
+  const projectSummary = cleanProfileBlockField(draft.projectSummary, 72);
+  const evidence = [...(state.live.currentProfile?.evidence || [])];
+  if (projectTitle || projectSummary || projectUrl) {
+    const serialized = serializeProfileBlock(projectUrl ? "project_link" : "project_title", {
+      title: projectTitle || "正在做的项目",
+      detail: projectSummary || "欢迎当面交流这个项目",
+      url: projectUrl,
+    });
+    if (serialized && !evidence.includes(serialized)) evidence.push(serialized);
+  }
+  const profileInput = {
+    display_name: displayName,
+    role,
+    status: draft.status,
+    skills,
+    interests,
+    availability: draft.availability.trim() || "本场活动期间可沟通",
+    collaboration_preferences: preferences,
+    collaboration_need: vibe,
+    evidence: evidence.slice(0, 12),
+  };
+  if (!state.live.enabled) {
+    Object.assign(currentUser, { name: displayName, avatar: draft.avatar, role, skills });
+    finishOnboarding(true);
+    showToast("自我介绍已完成");
+    render();
+    return;
+  }
+  state.live.error = "";
+  try {
+    await runLiveMutation("onboarding:save", async () => {
+      await api.patch(
+        `/api/events/${encodeURIComponent(liveConfig.eventId)}/profile`,
+        profileInput,
+      );
+      for (const [platform, url] of Object.entries(publicUrls)) {
+        await api.put(`/api/me/platform-links/${encodeURIComponent(platform)}`, { url });
+      }
+      for (const link of state.live.platformLinks) {
+        if (
+          Object.prototype.hasOwnProperty.call(draft.platformLinks, link.platform)
+          && !draft.platformLinks[link.platform].trim()
+        ) {
+          await api.delete(`/api/me/platform-links/${encodeURIComponent(link.platform)}`);
+        }
+      }
+      const publicFields = [
+        "display_name",
+        "avatar",
+        "role",
+        "status",
+        "skills",
+        "interests",
+        "availability",
+        "collaboration_preferences",
+        "collaboration_need",
+        ...(evidence.length ? ["evidence"] : []),
+        ...(Object.keys(publicUrls).length ? ["platform_links"] : []),
+      ];
+      await api.patch(
+        `/api/events/${encodeURIComponent(liveConfig.eventId)}/visibility`,
+        { state: "VISIBLE", public_fields: publicFields },
+      );
+    });
+    if (state.live.currentUserId) {
+      localStorage.setItem(`cospan_profile_avatar_${state.live.currentUserId}`, draft.avatar);
+    }
+    state.visible = true;
+    finishOnboarding(true);
+    showToast("自我介绍已保存，开始发现队友");
+    await loadLiveMe({ force: true });
+    currentUser.avatar = draft.avatar;
+  } catch (error) {
+    handleLiveFailure(error, "自我介绍保存失败");
+    showToast(state.live.error);
+  }
+  render();
+}
+
 function finishOnboarding(published) {
   state.onboarding = false;
   state.onboardingStep = 0;
-  state.visible = published;
-  state.tab = published ? "discover" : state.tab;
-  state.variant = hasExhibitionDirectory() ? "C" : "A";
+  if (!state.live.enabled || published) state.visible = published;
+  state.live.error = "";
+  state.tab = "discover";
+  state.variant = "A";
   const url = new URL(location.href);
   url.searchParams.set("variant", state.variant);
   url.searchParams.delete("onboarding");
@@ -3499,11 +3724,14 @@ async function finishLiveAuthentication(payload, successMessage) {
   resetLiveOtpChallenge();
   clearLiveOtpIdentity();
   state.live.meLoading = false;
-  if (payload.is_new_user) state.tab = "profile";
+  state.tab = "discover";
   await loadLiveMe({ force: true });
   if (payload.is_new_user) {
-    state.overlay = "profile-editor";
-    showToast(`${successMessage}，再完善昵称和协作资料`);
+    hydrateOnboardingDraft();
+    state.onboarding = true;
+    state.onboardingStep = 0;
+    state.overlay = null;
+    showToast(`${successMessage}，用 4 步完成自我介绍`);
   }
 }
 
@@ -3914,14 +4142,28 @@ async function loadLiveMe({ force = false } = {}) {
     state.live.currentProfile = eventProfile || null;
     state.visible = eventProfile?.visibility?.state === "VISIBLE";
     state.live.currentUserId = payload.user?.id || null;
+    const localAvatar = state.live.currentUserId
+      ? localStorage.getItem(`cospan_profile_avatar_${state.live.currentUserId}`)
+      : null;
     Object.assign(currentUser, {
       id: String(payload.user?.id || currentUser.id).replace(/^user-/, ""),
       name: safeLiveText(payload.user?.display_name, currentUser.name, 40),
-      avatar: /^memoji-\d+$/.test(payload.user?.avatar || "") ? payload.user.avatar : currentUser.avatar,
+      avatar: /^memoji-(?:[1-9]|1[0-2])$/.test(localAvatar || "")
+        ? localAvatar
+        : /^memoji-\d+$/.test(payload.user?.avatar || "")
+          ? payload.user.avatar
+          : currentUser.avatar,
       role: safeLiveText(eventProfile?.role, currentUser.role, 80),
       skills: Array.isArray(eventProfile?.skills) ? eventProfile.skills : currentUser.skills,
     });
+    const needsIntroduction = liveProfileNeedsIntroduction(eventProfile);
     state.live.meLoaded = true;
+    if (needsIntroduction && !state.onboarding) {
+      hydrateOnboardingDraft();
+      state.onboarding = true;
+      state.onboardingStep = 0;
+      state.overlay = null;
+    }
     await refreshLiveState();
     startLivePolling();
   } catch (error) {
