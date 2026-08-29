@@ -342,12 +342,12 @@ function collaborationSequenceCounts(events, startSource = null) {
   return counts;
 }
 
-function funnelStepSummary(funnel, counts, byName) {
+function funnelStepSummary(funnel, counts, byName, attributedTotals = null) {
   return funnel.steps.map((eventName, index) => {
     const previous = index === 0 ? null : counts[index - 1];
     return {
       event_name: eventName,
-      total: byName.get(eventName)?.total ?? 0,
+      total: attributedTotals?.[index] ?? byName.get(eventName)?.total ?? 0,
       unique_actors: counts[index],
       conversion_from_previous: previous === null || previous === 0
         ? null
@@ -1075,10 +1075,13 @@ export function createAnalyticsService(database, {
       return {
         id: funnel.id,
         steps: funnelStepSummary(funnel, counts, byName),
-        by_source: startSources.map((source) => ({
-          source,
-          steps: funnelStepSummary(funnel, sequenceCounts(funnel, source), byName),
-        })),
+        by_source: startSources.map((source) => {
+          const sourceCounts = sequenceCounts(funnel, source);
+          return {
+            source,
+            steps: funnelStepSummary(funnel, sourceCounts, byName, sourceCounts),
+          };
+        }),
       };
     });
     const sources = database.prepare(`

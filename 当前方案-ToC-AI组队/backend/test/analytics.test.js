@@ -335,6 +335,29 @@ describe("first-party analytics", () => {
     });
     assert.equal(joined.status, 200);
 
+    const otherRequested = await fetch(`${baseUrl}/api/connections/requests`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-demo-user-id": "user-su",
+      },
+      body: JSON.stringify({
+        recipient_id: "user-lin",
+        event_id: "hackathon-2026",
+        source: "nfc",
+      }),
+    });
+    const otherRequestId = (await otherRequested.json()).request.id;
+    const otherAccepted = await fetch(`${baseUrl}/api/connections/requests/${otherRequestId}`, {
+      method: "PATCH",
+      headers: {
+        "content-type": "application/json",
+        "x-demo-user-id": "user-lin",
+      },
+      body: JSON.stringify({ action: "accept" }),
+    });
+    assert.equal(otherAccepted.status, 200);
+
     const recentResponse = await fetch(
       `${baseUrl}/api/admin/analytics/events?exhibition_id=hackathon-2026&limit=100`,
       { headers: { "x-analytics-admin-token": ADMIN_TOKEN } },
@@ -359,12 +382,31 @@ describe("first-party analytics", () => {
       .find((item) => item.id === "collaboration");
     assert.deepEqual(
       collaboration.steps.slice(0, 4).map((step) => step.unique_actors),
-      [1, 1, 1, 1],
+      [2, 1, 1, 1],
     );
-    assert.equal(
-      collaboration.by_source.find((item) => item.source === "online_recommendation")
-        .steps[3].unique_actors,
-      1,
+    assert.deepEqual(
+      collaboration.by_source
+        .find((item) => item.source === "online_recommendation")
+        .steps.slice(0, 4)
+        .map((step) => ({ total: step.total, unique_actors: step.unique_actors })),
+      [
+        { total: 1, unique_actors: 1 },
+        { total: 1, unique_actors: 1 },
+        { total: 1, unique_actors: 1 },
+        { total: 1, unique_actors: 1 },
+      ],
+    );
+    assert.deepEqual(
+      collaboration.by_source
+        .find((item) => item.source === "nfc")
+        .steps.slice(0, 4)
+        .map((step) => ({ total: step.total, unique_actors: step.unique_actors })),
+      [
+        { total: 1, unique_actors: 1 },
+        { total: 0, unique_actors: 0 },
+        { total: 0, unique_actors: 0 },
+        { total: 0, unique_actors: 0 },
+      ],
     );
   });
 

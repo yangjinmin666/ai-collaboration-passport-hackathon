@@ -170,6 +170,32 @@ describe("connection confirmation", () => {
     );
   });
 
+  test("records an invalid touch even when the supplied event id does not exist", async () => {
+    const touch = await fetch(`${baseUrl}/api/connections/physical-mutual`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-touch-device-key": "touch-secret",
+      },
+      body: JSON.stringify({
+        event_id: "event-that-does-not-exist",
+        card_a_token: "cp_7mJ4Qv9N2xK8Rt5W",
+        card_b_token: "cp_B3kP8sT6yH2nV9qL",
+      }),
+    });
+    assert.equal(touch.status, 409);
+
+    const summaryResponse = await fetch(
+      `${baseUrl}/api/admin/analytics/summary?exhibition_id=hackathon-2026`,
+      { headers: { "x-analytics-admin-token": ANALYTICS_ADMIN_TOKEN } },
+    );
+    const summary = await summaryResponse.json();
+    assert.equal(
+      summary.event_counts.find((event) => event.event_name === "touch_handshake_failed").total,
+      1,
+    );
+  });
+
   test("repeating a request in either direction returns the pair's existing connection", async () => {
     const request = await createRequest();
     const accepted = await fetch(

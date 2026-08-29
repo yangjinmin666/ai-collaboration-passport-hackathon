@@ -357,17 +357,27 @@ export function createApi({
   const trackTouchFailure = (request, failureCode, {
     exhibitionId = otpEventId,
     handshakeId = randomUUID(),
-  } = {}) => trackBackendAnalytics({
-    eventName: "touch_handshake_failed",
-    exhibitionId,
-    source: "physical_mutual",
-    objectType: "touch_handshake",
-    objectId: handshakeId,
-    properties: { handshake_id: handshakeId, failure_code: failureCode },
-    request,
-    occurredAt: clock().toISOString(),
-    dedupeKey: `touch_handshake_failed:${handshakeId}:${failureCode}`,
-  });
+  } = {}) => {
+    const analyticsExhibitionId = database.prepare(`
+      SELECT event_id
+      FROM events
+      WHERE event_id IN (?, ?)
+      ORDER BY CASE WHEN event_id = ? THEN 0 ELSE 1 END
+      LIMIT 1
+    `).get(exhibitionId, otpEventId, exhibitionId)?.event_id;
+    if (!analyticsExhibitionId) return;
+    trackBackendAnalytics({
+      eventName: "touch_handshake_failed",
+      exhibitionId: analyticsExhibitionId,
+      source: "physical_mutual",
+      objectType: "touch_handshake",
+      objectId: handshakeId,
+      properties: { handshake_id: handshakeId, failure_code: failureCode },
+      request,
+      occurredAt: clock().toISOString(),
+      dedupeKey: `touch_handshake_failed:${handshakeId}:${failureCode}`,
+    });
+  };
   const handleRequest = async (request, response) => {
     if (request.method === "OPTIONS") {
       sendJson(response, 204, null);
