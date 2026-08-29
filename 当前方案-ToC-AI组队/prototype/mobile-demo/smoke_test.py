@@ -531,6 +531,7 @@ def main():
         report["flow"]["brand_lockup_only_appears_on_discovery"] = (
             discovery_header.locator(".app-brand").count() == 1
             and discovery_header.get_by_text("COSPAN", exact=True).is_visible()
+            and discovery_header.get_by_text("合拍 · 发现", exact=True).is_visible()
         )
         assert report["flow"]["brand_lockup_only_appears_on_discovery"]
         for tab, title in (
