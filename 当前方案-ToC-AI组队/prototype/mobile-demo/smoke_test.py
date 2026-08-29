@@ -346,6 +346,9 @@ def main():
                 "variant": page.locator("body").get_attribute("data-variant"),
                 "scope": page.locator("body").get_attribute("data-scope"),
                 "nav_buttons": page.locator(".app-nav button").count(),
+                "collaboration_nav_uses_orchestration_icon": page.locator(
+                    '.app-nav [data-tab="collaboration"] svg[data-nav-icon="orchestration"]'
+                ).count() == 1,
                 "discovery_tabs": page.locator(".discovery-tabs button").count(),
                 "context_switchers": page.locator(".context-switch-trigger").count(),
                 "context_label": page.locator(".context-switch-trigger").get_attribute("aria-label"),
@@ -368,6 +371,7 @@ def main():
                 "viewport_width": page.evaluate("window.innerWidth"),
             }
             assert report["variants"][variant]["nav_buttons"] == 4
+            assert report["variants"][variant]["collaboration_nav_uses_orchestration_icon"]
             assert report["variants"][variant]["discovery_tabs"] == 3
             assert report["variants"][variant]["scope"] == "event"
             assert report["variants"][variant]["context_switchers"] == 1
