@@ -1229,6 +1229,7 @@ function signalBars(level) {
 }
 
 function render() {
+  const overlayFocus = captureOverlayFocus();
   const showsOnboarding = state.onboarding && liveAppReady();
   document.body.dataset.variant = state.variant;
   document.body.dataset.scope = state.discoveryContext;
@@ -1254,7 +1255,7 @@ function render() {
 
   app.innerHTML = `${phone}${renderOverlay()}${renderToast()}`;
   bindEvents();
-  syncOverlayAccessibility();
+  syncOverlayAccessibility(overlayFocus);
   syncLivePresenceLifecycle();
 }
 
@@ -2885,13 +2886,43 @@ function overlayFocusableElements() {
   ));
 }
 
-function syncOverlayAccessibility() {
+function captureOverlayFocus() {
+  const overlay = app.querySelector(".overlay");
+  const active = document.activeElement;
+  if (!overlay || !active || !overlay.contains(active)) return null;
+  return {
+    overlayClassName: overlay.className,
+    action: active.dataset?.action || "",
+    name: active.getAttribute?.("name") || "",
+    ariaLabel: active.getAttribute?.("aria-label") || "",
+    selectionStart: Number.isInteger(active.selectionStart) ? active.selectionStart : null,
+    selectionEnd: Number.isInteger(active.selectionEnd) ? active.selectionEnd : null,
+  };
+}
+
+function syncOverlayAccessibility(previousFocus = null) {
   const stage = app.querySelector(".prototype-stage");
+  const overlay = app.querySelector(".overlay");
   const focusable = overlayFocusableElements();
-  if (!state.overlay || !stage) return;
+  if (!state.overlay || !stage || !overlay) return;
   stage.inert = true;
   stage.setAttribute("aria-hidden", "true");
-  requestAnimationFrame(() => focusable[0]?.focus({ preventScroll: true }));
+  requestAnimationFrame(() => {
+    if (!overlay.isConnected) return;
+    const restoresSameOverlay = previousFocus?.overlayClassName === overlay.className;
+    const restored = restoresSameOverlay
+      ? focusable.find((element) => (
+        (previousFocus.name && element.getAttribute("name") === previousFocus.name)
+        || (previousFocus.action && element.dataset.action === previousFocus.action)
+        || (previousFocus.ariaLabel && element.getAttribute("aria-label") === previousFocus.ariaLabel)
+      ))
+      : null;
+    const target = restored || focusable[0];
+    target?.focus({ preventScroll: true });
+    if (restored && previousFocus.selectionStart !== null && typeof restored.setSelectionRange === "function") {
+      restored.setSelectionRange(previousFocus.selectionStart, previousFocus.selectionEnd);
+    }
+  });
 }
 
 function trapOverlayFocus(event) {
