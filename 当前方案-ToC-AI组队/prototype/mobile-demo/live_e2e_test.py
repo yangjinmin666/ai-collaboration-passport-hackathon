@@ -973,7 +973,7 @@ def main():
             login_live(lin_page, "user-lin")
 
             zhou_page.get_by_role("button", name="向 林澈 表达想认识").click()
-            zhou_page.get_by_text("已向 林澈 表达“想认识”", exact=True).wait_for(
+            zhou_page.get_by_text("已表达想认识，线下碰卡后才会交换联系方式", exact=True).wait_for(
                 timeout=5000
             )
             lin_page.locator('.app-nav [data-tab="connections"]').click()

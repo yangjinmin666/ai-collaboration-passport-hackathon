@@ -254,23 +254,23 @@ def main():
                     and page.get_by_text("右滑想认识 →", exact=True).count() == 0
                 )
                 assert report["variants"][variant]["persistent_swipe_hint_removed"]
-                boundary_style = page.locator(".recommendation-boundary").evaluate(
-                    """element => {
-                        const style = getComputedStyle(element);
-                        const box = element.getBoundingClientRect();
+                recommendation_viewport = page.locator(".phone-shell").evaluate(
+                    """shell => {
+                        shell.style.setProperty('--rally-safe-area-top', '47px');
+                        shell.style.setProperty('--rally-safe-area-bottom', '27px');
+                        const screen = shell.querySelector('.screen');
+                        screen.scrollTop = screen.scrollHeight;
                         return {
-                            border: parseFloat(style.borderTopWidth),
-                            background: style.backgroundColor,
-                            height: box.height,
-                            text: element.textContent.trim(),
+                            clientHeight: screen.clientHeight,
+                            scrollHeight: screen.scrollHeight,
+                            scrollTop: screen.scrollTop,
                         };
                     }"""
                 )
-                report["variants"][variant]["connection_boundary_is_lightweight"] = (
-                    boundary_style["border"] == 0
-                    and boundary_style["background"] == "rgba(0, 0, 0, 0)"
-                    and boundary_style["height"] < 48
-                    and boundary_style["text"] == "线上只表达“想认识”，线下碰卡后才交换双方授权信息并建联。"
+                report["variants"][variant]["recommendation_stays_in_one_viewport"] = (
+                    page.locator(".recommendation-boundary").count() == 0
+                    and recommendation_viewport["scrollHeight"] <= recommendation_viewport["clientHeight"] + 1
+                    and recommendation_viewport["scrollTop"] == 0
                 )
                 card_geometry = page.locator(".recommendation-card-active").evaluate(
                     """card => {
@@ -295,7 +295,7 @@ def main():
                 )
                 assert report["variants"][variant]["active_recommendation_cards"] == 1
                 assert report["variants"][variant]["recommendation_progress_count"] == 11
-                assert report["variants"][variant]["connection_boundary_is_lightweight"], boundary_style
+                assert report["variants"][variant]["recommendation_stays_in_one_viewport"], recommendation_viewport
                 assert report["variants"][variant]["recommendation_card_has_safe_bottom_inset"], card_geometry
                 assert report["variants"][variant]["table_like_lists_removed"]
             if variant == "B":
@@ -489,6 +489,10 @@ def main():
         page.locator(".app-nav [data-tab='discover']").click()
         page.locator("[data-action='dismiss-recommendation']").click()
         page.locator("[data-action='like-recommendation']").click()
+        report["flow"]["interest_boundary_appears_after_action"] = page.get_by_text(
+            "已表达想认识，线下碰卡后才会交换联系方式", exact=True
+        ).is_visible()
+        assert report["flow"]["interest_boundary_appears_after_action"]
         page.locator(".app-nav [data-tab='connections']").click()
         assert page.locator(".connection-card").count() == 1
         assert page.locator(".pending-row").count() == 1

@@ -1435,7 +1435,7 @@ function renderVariantA() {
   const currentIndex = state.recommendationIndex % recommendationPool.length;
   const nextPerson = recommendationPool[(currentIndex + 1) % recommendationPool.length];
   return `
-    <div class="view view-a">
+    <div class="view view-a recommendation-view">
       ${commonHeader("发现", "filters")}
       ${renderDiscoveryTabs()}
       <section class="recommendation-intro">
@@ -1471,7 +1471,6 @@ function renderVariantA() {
       <section class="recommendation-progress" aria-label="推荐浏览进度">
         ${recommendationPool.map((item, index) => `<i class="${index === currentIndex ? "active" : ""}" title="${item.name}"></i>`).join("")}
       </section>
-      <p class="recommendation-boundary">线上只表达“想认识”，线下碰卡后才交换双方授权信息并建联。</p>
     </div>
   `;
 }
@@ -1514,6 +1513,10 @@ function advanceRecommendation(pool = filterDiscoveryPeople(discoveryPeople())) 
   state.selectedId = recommendedPerson(pool).id;
 }
 
+function interestConfirmationCopy() {
+  return "已表达想认识，线下碰卡后才会交换联系方式";
+}
+
 function expressRecommendationInterest(personId) {
   const person = (state.live.enabled ? livePeople() : people).find((item) => item.id === personId) || recommendedPerson();
   if (!person) return;
@@ -1522,7 +1525,7 @@ function expressRecommendationInterest(personId) {
     return;
   }
   if (!state.greeted.includes(person.id)) state.greeted.push(person.id);
-  showToast(`已向 ${person.name} 表达“想认识”`);
+  showToast(interestConfirmationCopy());
   advanceRecommendation();
 }
 
@@ -3433,7 +3436,7 @@ function handleAction(action, element) {
     }
     if (!state.greeted.includes(id)) {
       state.greeted.push(id);
-      showToast(`已向 ${selectedPerson().name} 表达“想认识”`);
+      showToast(interestConfirmationCopy());
     } else {
       showToast("你已经表达过想认识，等待对方回应即可");
     }
@@ -4383,7 +4386,7 @@ async function sendLiveConnectionRequest(person) {
       },
     ));
     if (payload.connection) showToast(`你和 ${person.name} 已经建联`);
-    else showToast(payload.idempotent_replay ? "招呼已存在，等待对方回应" : `已向 ${person.name} 表达“想认识”`);
+    else showToast(payload.idempotent_replay ? "招呼已存在，等待对方回应" : interestConfirmationCopy());
     await refreshLiveState();
     advanceRecommendation(filterDiscoveryPeople(discoveryPeople()));
   } catch (error) {

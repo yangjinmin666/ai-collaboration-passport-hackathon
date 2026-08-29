@@ -219,6 +219,10 @@ body::before {
 .recommendation-intro em { flex: 0 0 auto; color: #7b8794; font-family: "SFMono-Regular", Consolas, monospace; font-size: 9px; font-style: normal; }
 
 .recommendation-deck { position: relative; height: 368px; margin: 0 2px; perspective: 1000px; }
+.screen:has(> .recommendation-view) { overflow-y: hidden; overscroll-behavior: none; }
+.recommendation-view { --recommendation-deck-max: 368px; height: 100%; min-height: 0; display: grid; grid-template-rows: repeat(6, auto); align-content: start; gap: clamp(6px, 1.4vh, 12px); overflow: hidden; padding: 10px 18px 8px; }
+.recommendation-view .app-header, .recommendation-view .discovery-tabs, .recommendation-view .recommendation-intro, .recommendation-view .recommendation-actions, .recommendation-view .recommendation-progress { margin-top: 0; margin-bottom: 0; }
+.recommendation-view .recommendation-deck { height: clamp(300px, calc(100dvh - max(12px, var(--rally-safe-area-top)) - var(--rally-safe-area-bottom) - 341px), var(--recommendation-deck-max)); min-height: 0; }
 .recommendation-card { position: absolute; inset: 0; overflow: hidden; border: 1px solid #d7dee7; border-radius: 30px; background: #fff; }
 .recommendation-card-next { inset: 9px 13px -8px; display: grid; place-items: center; background: #eef1f5; box-shadow: 0 10px 24px rgba(31,48,70,.08); transform: scale(.975); }
 .recommendation-card-next .memoji-avatar { width: 64px; height: 64px; opacity: .18; filter: grayscale(1); }
@@ -258,9 +262,6 @@ body::before {
 .recommendation-progress { display: flex; justify-content: center; gap: 4px; margin-top: 9px; }
 .recommendation-progress i { width: 4px; height: 4px; border-radius: 999px; background: #d5dbe2; transition: width .18s ease, background .18s ease; }
 .recommendation-progress i.active { width: 15px; background: var(--guide-blue); }
-.recommendation-boundary { display: flex; align-items: flex-start; gap: 7px; margin: 14px 5px 0; color: #7d8894; font-size: 8px; line-height: 1.5; }
-.recommendation-boundary::before { width: 5px; height: 5px; flex: 0 0 auto; margin-top: .42em; border-radius: 50%; background: var(--guide-blue); content: ""; }
-
 .text-action { border: 0; background: transparent; padding: 6px; font-size: 10px; font-weight: 650; color: var(--cobalt); cursor: pointer; }
 
 /* Evidence-first onboarding: Bonjour's low-friction rhythm, rebuilt as a collaboration passport. */
@@ -1003,7 +1004,7 @@ body[data-flow="onboarding"] .onboarding-shell { background: #fff; background-im
   .screen { padding-bottom: calc(104px + var(--rally-safe-area-bottom)); }
   .screen:has(> .live-gate) { padding-top: 0; padding-bottom: 0; }
   .radar-field { width: 286px; height: 286px; margin-top: -2px; }
-  .recommendation-deck { height: 408px; }
+  .recommendation-view { --recommendation-deck-max: 408px; }
 
   /* Mobile typography foundation: real-device sizes, not scaled mockup sizes. */
   .micro-label, .eyebrow { font-size: var(--type-micro); line-height: 1.4; }
@@ -1037,8 +1038,6 @@ body[data-flow="onboarding"] .onboarding-shell { background: #fff; background-im
   .recommendation-card-active > footer b { font-size: var(--type-label); }
   .recommendation-actions small { font-size: 11px; }
   .recommendation-hint { font-size: var(--type-micro); }
-  .recommendation-boundary { font-size: 11px; line-height: var(--leading-body); }
-
   /* Onboarding: one readable hierarchy across all four steps. */
   .onboarding-header > strong { font-size: var(--type-label); }
   .guide-mark { font-size: var(--type-label); }
