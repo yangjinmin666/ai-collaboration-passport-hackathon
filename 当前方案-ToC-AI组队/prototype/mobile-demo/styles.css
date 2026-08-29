@@ -37,6 +37,8 @@
   --touch-target: 44px;
   --rally-safe-area-top: env(safe-area-inset-top);
   --rally-safe-area-bottom: env(safe-area-inset-bottom);
+  --rally-safe-area-left: env(safe-area-inset-left);
+  --rally-safe-area-right: env(safe-area-inset-right);
   font-family: "SF Pro Display", "PingFang SC", "Helvetica Neue", Arial, sans-serif;
   color: var(--ink);
   background: var(--paper);
@@ -117,26 +119,27 @@ body::before {
 .app-nav {
   position: absolute;
   z-index: 30;
-  left: 10px; right: 10px; bottom: 10px;
-  height: 72px;
+  left: var(--space-4); right: var(--space-4); bottom: var(--space-4);
+  min-height: 72px;
+  padding: var(--space-2);
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  align-items: center;
+  align-items: stretch;
   border: 1px solid rgba(23, 33, 45, .09);
-  border-radius: 26px;
+  border-radius: 24px;
   background: rgba(248, 249, 251, .96);
   box-shadow:
-    0 -10px 30px rgba(31, 48, 70, .10),
-    0 4px 14px rgba(31, 48, 70, .08);
+    0 16px 28px rgba(31, 48, 70, .16),
+    0 6px 12px rgba(31, 48, 70, .08);
   backdrop-filter: blur(18px);
 }
 
-.app-nav button { position: relative; display: grid; gap: 2px; justify-items: center; border: 0; background: transparent; color: #89928d; cursor: pointer; }
-.app-nav button span { font-size: 21px; line-height: 1; }
-.app-nav button small { font-size: 9px; font-weight: 650; }
+.app-nav button { position: relative; min-width: 0; min-height: 56px; display: grid; grid-template-rows: 24px auto; align-content: center; justify-items: center; gap: var(--space-1); padding: var(--space-1) var(--space-2); border: 0; border-radius: var(--radius-md); background: transparent; color: #89928d; cursor: pointer; transition: color .18s ease, background-color .18s ease; }
+.app-nav button:active { background: rgba(52, 124, 248, .08); }
+.app-nav button span { width: 24px; height: 24px; display: grid; place-items: center; margin: 0; font-size: 20px; line-height: 1; }
+.app-nav button small { margin: 0; font-size: 9px; font-weight: 650; line-height: 1.25; }
 .app-nav button.active { color: var(--cobalt); }
-.app-nav button.active span { transform: translateY(-1px); }
-.app-nav button i { position: absolute; top: -5px; right: 18px; min-width: 15px; height: 15px; display: grid; place-items: center; border-radius: 99px; background: var(--coral); color: white; font-size: 8px; font-style: normal; }
+.app-nav button i { position: absolute; top: var(--space-1); right: var(--space-3); min-width: 15px; height: 15px; display: grid; place-items: center; border-radius: 99px; background: var(--coral); color: white; font-size: 8px; font-style: normal; }
 
 .prototype-notes { align-self: center; position: sticky; top: 28vh; }
 .prototype-notes h1 { max-width: 300px; margin: 10px 0 14px; font-size: clamp(42px, 5vw, 76px); line-height: .91; letter-spacing: -.075em; }
@@ -803,8 +806,12 @@ body[data-flow="onboarding"] .onboarding-shell { background: #fff; background-im
   .prototype-stage { display: block; min-height: 100%; height: 100%; padding: 0; }
   .phone-shell { width: 100%; min-height: 100vh; height: 100vh; border: 0; border-radius: 0; box-shadow: none; }
   .prototype-notes { display: none; }
-  .app-nav { bottom: max(10px, var(--rally-safe-area-bottom)); }
-  .screen { padding-bottom: calc(96px + var(--rally-safe-area-bottom)); }
+  .app-nav {
+    left: max(var(--space-4), var(--rally-safe-area-left));
+    right: max(var(--space-4), var(--rally-safe-area-right));
+    bottom: max(var(--space-4), var(--rally-safe-area-bottom));
+  }
+  .screen { padding-bottom: calc(104px + var(--rally-safe-area-bottom)); }
   .radar-field { width: 286px; height: 286px; margin-top: -2px; }
   .recommendation-deck { height: 408px; }
 
