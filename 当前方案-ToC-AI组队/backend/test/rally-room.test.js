@@ -121,7 +121,11 @@ describe("human-confirmed COSPAN Space starter pack", () => {
 
     const finalConfirmation = await fetch(
       `${baseUrl}/api/projects/${projectId}/plan-confirmations`,
-      { method: "POST", headers: headers("user-lin"), body: "{}" },
+      {
+        method: "POST",
+        headers: headers("user-lin", { "x-cospan-surface": "mobile" }),
+        body: "{}",
+      },
     );
     const finalBody = await finalConfirmation.json();
     assert.equal(finalBody.starter_pack.status, "CONFIRMED");
@@ -141,6 +145,9 @@ describe("human-confirmed COSPAN Space starter pack", () => {
     ), true);
     assert.equal(roomBody.activity.some(
       (item) => item.event_type === "plan_confirmation_recorded" && item.source === "desktop"
+    ), true);
+    assert.equal(roomBody.activity.some(
+      (item) => item.event_type === "plan_confirmation_recorded" && item.source === "mobile"
     ), true);
 
     const started = await fetch(`${baseUrl}/api/tasks/${preferredTask.id}`, {

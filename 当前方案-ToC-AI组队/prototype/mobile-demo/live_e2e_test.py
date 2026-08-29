@@ -1105,6 +1105,15 @@ def main():
             lin_page.locator(
                 '.toast:has-text("全员已确认当前计划")'
             ).wait_for(timeout=5000)
+            _, final_room = request_json(
+                f"{backend_url}/api/projects/{project_id}/room",
+                user_id="user-lin",
+            )
+            assert any(
+                item["event_type"] == "plan_confirmation_recorded"
+                and item["source"] == "mobile"
+                for item in final_room["activity"]
+            )
             desktop_grid.get_by_text("2 / 2 位成员已确认", exact=True).wait_for(
                 timeout=8000
             )

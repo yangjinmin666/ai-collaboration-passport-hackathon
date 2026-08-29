@@ -2173,6 +2173,18 @@ export function createProductModule(database, {
     const confirmed = Number(database.prepare(`
       SELECT count(*) AS count FROM plan_confirmations WHERE pack_id = ?
     `).get(pack.id).count);
+    if (inserted.changes > 0) {
+      appendEventLog(database, {
+        eventId: project.event_id,
+        actorId,
+        type: "plan_confirmation_recorded",
+        objectType: "starter_pack",
+        objectId: pack.id,
+        source: auditSource,
+        payload: { project_id: projectId },
+        createdAt: now,
+      });
+    }
     if (confirmed === required && pack.status !== "CONFIRMED") {
       database.prepare(`
         UPDATE starter_packs SET status = 'CONFIRMED', confirmed_at = ? WHERE pack_id = ?
@@ -2185,17 +2197,6 @@ export function createProductModule(database, {
         objectId: pack.id,
         source: "team_confirmation",
         payload: { project_id: projectId, confirmed_members: confirmed },
-        createdAt: now,
-      });
-    } else if (inserted.changes > 0) {
-      appendEventLog(database, {
-        eventId: project.event_id,
-        actorId,
-        type: "plan_confirmation_recorded",
-        objectType: "starter_pack",
-        objectId: pack.id,
-        source: auditSource,
-        payload: { project_id: projectId },
         createdAt: now,
       });
     }
