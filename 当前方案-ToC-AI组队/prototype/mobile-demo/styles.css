@@ -132,8 +132,8 @@ body::before {
 .context-switch-trigger:active { transform: scale(.96); }
 .context-switch-glyph { position: relative; width: 22px; height: 22px; display: block; }
 .context-switch-copy { min-width: 0; display: grid; gap: 1px; text-align: left; }
-.context-switch-copy small { color: #7b8793; font-size: 10px; line-height: 1.2; }
-.context-switch-copy strong { overflow: hidden; font-size: 10px; line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; }
+.context-switch-copy small { color: #7b8793; font-size: 12px; line-height: 1.2; }
+.context-switch-copy strong { overflow: hidden; font-size: 12px; line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; }
 .context-switch-trigger.is-event .context-switch-glyph::before { content: ""; position: absolute; inset: 3px; border: 1.6px solid currentColor; border-radius: 5px; }
 .context-switch-trigger.is-event .context-switch-glyph i { position: absolute; left: 7px; top: 7px; width: 8px; height: 2px; border-radius: 2px; background: currentColor; box-shadow: 0 4px 0 #a8b2bd; }
 .context-switch-trigger.is-event .context-switch-glyph b { position: absolute; right: 0; top: 0; width: 7px; height: 7px; border: 2px solid #fff; border-radius: 50%; background: var(--guide-blue); box-sizing: content-box; }
@@ -822,7 +822,7 @@ body[data-source="android-app"] .direct-conversation-head { padding-top: max(44p
 .context-manage-button { width: 100%; min-height: 44px; display: flex; align-items: center; justify-content: space-between; margin-top: 7px; padding: 0 2px; border: 0; background: transparent; color: #285fae; font-size: 13px; font-weight: 760; cursor: pointer; }
 .context-manage-button b { font-size: 15px; }
 .context-manage-button:hover { color: var(--brand-deep); }
-.context-switcher-head > button:focus-visible, .context-option:focus-visible, .context-manage-button:focus-visible { outline: 3px solid rgba(52,124,248,.24); outline-offset: 2px; }
+.context-switcher-head > button:focus-visible, .context-option:focus-visible, .context-manage-button:focus-visible { outline: 3px solid rgba(52,124,248,.24); outline-offset: 3px; }
 .profile-settings-overlay { background: rgba(20,28,38,.28); backdrop-filter: blur(9px); }
 .profile-block-overlay { background: rgba(20,28,38,.34); backdrop-filter: blur(11px); }
 .profile-block-library, .profile-block-editor { width: min(430px, 100%); max-height: min(92dvh, 820px); padding: 0 18px calc(22px + env(safe-area-inset-bottom)); background: #f5f7fa; }

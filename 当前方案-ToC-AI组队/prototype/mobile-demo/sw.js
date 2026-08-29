@@ -1,4 +1,4 @@
-const CACHE_NAME = "cospan-shell-v12";
+const CACHE_NAME = "cospan-shell-v13";
 const SHELL_ASSETS = [
   "./",
   "./index.html",
@@ -36,7 +36,8 @@ self.addEventListener("fetch", (event) => {
   if (request.mode === "navigate") {
     event.respondWith(
       fetch(request).catch(async () => (
-        (await caches.match("./index.html")) || caches.match("./offline.html")
+        (await caches.match(url.pathname.endsWith("/join.html") ? "./join.html" : "./index.html"))
+          || caches.match("./offline.html")
       )),
     );
     return;

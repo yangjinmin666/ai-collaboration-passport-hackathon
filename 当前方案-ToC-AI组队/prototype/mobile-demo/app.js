@@ -1502,12 +1502,12 @@ function renderContextSwitcherSheet() {
         <button data-action="close-context-switcher" aria-label="关闭发现范围选择">×</button>
       </header>
       <div class="context-options" role="radiogroup" aria-label="选择发现范围">
-        <button class="context-option ${activeContext ? "selected" : ""}" data-action="select-discovery-context" data-context-scope="event" aria-pressed="${Boolean(activeContext)}" ${eventDisabled ? "disabled" : ""}>
+        <button class="context-option ${activeContext ? "selected" : ""}" data-action="select-discovery-context" data-context-scope="event" role="radio" aria-checked="${Boolean(activeContext)}" ${eventDisabled ? "disabled" : ""}>
           <span class="context-option-mark is-event" aria-hidden="true"><i></i><b></b></span>
           <span><strong>${escapeHtml(eventName)}</strong><small>本场推荐、附近和授权名册</small></span>
           <em aria-hidden="true">${activeContext ? "✓" : "→"}</em>
         </button>
-        <button class="context-option ${activeContext ? "" : "selected"}" data-action="select-discovery-context" data-context-scope="nearby" aria-pressed="${!activeContext}">
+        <button class="context-option ${activeContext ? "" : "selected"}" data-action="select-discovery-context" data-context-scope="nearby" role="radio" aria-checked="${!activeContext}">
           <span class="context-option-mark is-nearby" aria-hidden="true"><i></i><b></b></span>
           <span><strong>日常附近</strong><small>发现身边主动开放的人</small></span>
           <em aria-hidden="true">${activeContext ? "→" : "✓"}</em>

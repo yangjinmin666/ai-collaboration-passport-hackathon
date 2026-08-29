@@ -119,7 +119,7 @@ def mobile_sheet_metrics(locator):
                     )
                 ),
                 undersizedControls: controls.filter(
-                    (item) => item.width < 43.5 || item.height < 43.5
+                    (item) => Math.round(item.width) < 44 || Math.round(item.height) < 44
                 ),
                 sheetBottom: box.bottom,
                 viewportHeight: innerHeight,

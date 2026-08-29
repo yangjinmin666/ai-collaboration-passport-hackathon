@@ -6,9 +6,9 @@
     <meta name="theme-color" content="#ffffff" />
     <title>COSPAN 合拍 · 现场入口</title>
     <style>
-      :root { color: #17212d; background: #f2f5f9; font-family: "PingFang SC", "Helvetica Neue", Arial, sans-serif; }
+      :root { color: #17212d; background: #f2f5f9; font-family: "SF Pro Display", "PingFang SC", "Helvetica Neue", Arial, sans-serif; }
       * { box-sizing: border-box; }
-      body { min-height: 100vh; display: grid; place-items: center; margin: 0; padding: 24px; }
+      body { min-height: 100vh; min-height: 100dvh; display: grid; place-items: center; margin: 0; padding: max(24px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left)); }
       main { width: min(720px, 100%); display: grid; justify-items: center; gap: 18px; padding: clamp(28px, 5vw, 52px); border: 1px solid #d6dde7; border-radius: 30px; background: #fff; box-shadow: 0 24px 70px rgba(31, 48, 70, .14); text-align: center; }
       .brand { display: flex; align-items: center; gap: 12px; }
       .brand img { width: 52px; height: 52px; border-radius: 14px; }
@@ -31,8 +31,8 @@
       <p>无需预先安装 App。用手机扫码，完成短信登录和协作资料，即可发现现场真人并进入组队。</p>
       <div class="qr"><img src="./assets/event-entry-qr.svg" alt="COSPAN 现场入口二维码" /></div>
       <ol><li>扫码</li><li>短信登录</li><li>完善资料</li><li>发现与协作</li></ol>
-      <a href="./?live=1&amp;event=hackathon-2026">在本机打开 COSPAN</a>
-      <code>https://101.43.172.166/?live=1&amp;event=hackathon-2026</code>
+      <a href="./?live=1&amp;event=hackathon-2026&amp;source=qr">在本机打开 COSPAN</a>
+      <code>https://101.43.172.166/?live=1&amp;event=hackathon-2026&amp;source=qr</code>
     </main>
   </body>
 </html>

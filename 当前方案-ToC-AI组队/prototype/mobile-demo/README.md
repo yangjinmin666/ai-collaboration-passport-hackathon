@@ -74,7 +74,8 @@ Live 数据请求具有有限退避重试，401 与网络故障分开处理；�
 ### 现场扫码与 NDEF 入口
 
 - 现场投屏／打印页：`https://101.43.172.166/join.html`
-- 二维码与被动 NFC 标签写入同一条 NDEF URL：`https://101.43.172.166/?live=1&event=hackathon-2026`
+- 二维码入口：`https://101.43.172.166/?live=1&event=hackathon-2026&source=qr`
+- 被动 NFC 标签写入同一现场页面的 NDEF URL：`https://101.43.172.166/?live=1&event=hackathon-2026&source=nfc`
 - 扫码后直接进入短信登录；未安装 Android App 也可在浏览器完成全部主链。
 - 实体卡写入后仍需分别用一台 iPhone 和一台 Android 手机做现场读取验收。
 
