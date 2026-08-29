@@ -3,6 +3,9 @@ import { randomUUID } from "node:crypto";
 
 import { AnalyticsRequestError, createAnalyticsService } from "./analytics.js";
 import { createProductModule } from "./product-module.js";
+import { createAgentRunner } from "./agent-runner.js";
+import { createGitHubAnalyzer } from "./github-analyzer.js";
+import { GITHUB_ANALYZER_PAGE } from "./github-analyzer-page.js";
 
 import {
   acceptConnectionRequest,
@@ -172,6 +175,14 @@ function sendRedirect(response, location) {
   response.end();
 }
 
+function sendHtml(response, body) {
+  response.writeHead(200, {
+    "cache-control": "no-store",
+    "content-type": "text/html; charset=utf-8",
+  });
+  response.end(body);
+}
+
 function readPathParameter(response, encodedValue) {
   try {
     return decodeURIComponent(encodedValue);
@@ -274,6 +285,9 @@ export function createApi({
   analyticsAdminToken = null,
   analyticsAppVersion = "development",
   analyticsDebugEnabled = false,
+  agentRunner,
+  agentDailyTokenCap = 10_000,
+  githubAnalyzer = createGitHubAnalyzer(),
 }) {
   const smsLoginReady = typeof otpSecret === "string"
     && otpSecret.length > 0
@@ -284,12 +298,17 @@ export function createApi({
     adminToken: analyticsAdminToken,
     appVersion: analyticsAppVersion,
   });
+  const resolvedAgentRunner = agentRunner === undefined
+    ? (process.env.OPENAI_API_KEY || process.env.LLM_API_KEY ? createAgentRunner({ clock }) : null)
+    : agentRunner;
   const productModule = createProductModule(database, {
     clock,
     presenceTtlMs,
     platformMetadataFetcher,
     demoAccessKey,
     eventPolicyOverrides,
+    agentRunner: resolvedAgentRunner,
+    agentDailyTokenCap,
   });
   const enabledOAuthProviders = Object.fromEntries(
     OAUTH_PROVIDERS.map((provider) => [
@@ -385,6 +404,25 @@ export function createApi({
     }
 
     const url = new URL(request.url, "http://localhost");
+    if (request.method === "GET" && url.pathname === "/github-analyzer") {
+      sendHtml(response, GITHUB_ANALYZER_PAGE);
+      return;
+    }
+    if (request.method === "POST" && url.pathname === "/api/analyze-github") {
+      const parsedBody = await readJsonBody(request, response);
+      if (!parsedBody.ok) return;
+      try {
+        const result = await githubAnalyzer.analyze(parsedBody.value?.github_url);
+        sendJson(response, 200, result);
+      } catch (error) {
+        if (error?.code && Number.isInteger(error.status)) {
+          sendError(response, error.status, error.code, error.message);
+        } else {
+          sendError(response, 502, "GITHUB_ANALYSIS_FAILED", "GitHub analysis failed.");
+        }
+      }
+      return;
+    }
     if (request.method === "GET" && url.pathname === "/health") {
       sendJson(response, 200, {
         status: "ok",
