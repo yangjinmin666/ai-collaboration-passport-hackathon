@@ -645,20 +645,24 @@ def main():
         settings_top = page.locator(".profile-settings-trigger").evaluate(
             "button => button.getBoundingClientRect().top"
         )
+        profile_header_position = page.locator(".profile-view .app-header").evaluate(
+            "header => getComputedStyle(header).position"
+        )
         page.locator(".screen").evaluate("screen => { screen.scrollTop = 700; }")
         page.wait_for_timeout(180)
-        sticky_settings_top = page.evaluate(
+        scrolled_settings_top = page.evaluate(
             "document.querySelector('.profile-settings-trigger').getBoundingClientRect().top"
         )
-        report["flow"]["profile_settings_remains_floating"] = (
-            abs(sticky_settings_top - settings_top) < 1
+        report["flow"]["profile_header_scrolls_with_content"] = (
+            profile_header_position not in ("sticky", "fixed")
+            and scrolled_settings_top < settings_top - 300
         )
         page.locator(".screen").evaluate("screen => { screen.scrollTop = 0; }")
         assert report["flow"]["profile_has_floating_settings"]
         assert report["flow"]["platform_links_use_input_rows"]
         assert report["flow"]["platform_links_use_minimal_lines"], platform_style
         assert report["flow"]["device_privacy_moved_off_profile"]
-        assert report["flow"]["profile_settings_remains_floating"]
+        assert report["flow"]["profile_header_scrolls_with_content"]
         assert_mobile_visual_baseline(page, report["visual_baseline"], "profile")
         page.locator(".profile-settings-trigger").click()
         report["flow"]["settings_sheet_contains_device_privacy"] = (
