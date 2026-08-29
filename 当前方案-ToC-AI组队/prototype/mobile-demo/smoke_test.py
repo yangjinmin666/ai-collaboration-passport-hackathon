@@ -30,7 +30,7 @@ def mobile_visual_baseline(page) -> dict:
                 const raw = element.getAttribute('aria-label') || element.textContent || element.tagName;
                 return raw.replace(/\\s+/g, ' ').trim().slice(0, 48);
             };
-            const typeExclusions = '.eink-card, .onboarding-eink';
+            const typeExclusions = '.demo-badge, .onboarding-eink';
             const textNodes = [...document.querySelectorAll('body *')].filter((element) =>
                 isVisible(element)
                 && !element.closest(typeExclusions)
@@ -555,7 +555,7 @@ def main():
         )
         page.locator(".app-nav [data-tab='profile']").click()
         report["flow"]["published_passport_is_visible"] = "is-hidden" not in (
-            page.locator(".eink-card").get_attribute("class") or ""
+            page.locator(".demo-badge").get_attribute("class") or ""
         )
         assert report["flow"]["published_passport_is_visible"]
 
@@ -975,7 +975,7 @@ def main():
         report["flow"]["profile_has_settings_button"] = page.locator(
             ".profile-settings-trigger"
         ).is_visible()
-        demo_display = page.locator(".eink-card")
+        demo_display = page.locator(".demo-badge")
         display_ratio = demo_display.evaluate(
             "element => element.getBoundingClientRect().width / element.getBoundingClientRect().height"
         )
@@ -1069,7 +1069,7 @@ def main():
         )
         page.get_by_role("button", name="返回我的页面").click()
         page.locator("[data-action='toggle-visible']").click()
-        report["flow"]["visibility_paused"] = "is-hidden" in (page.locator(".eink-card").get_attribute("class") or "")
+        report["flow"]["visibility_paused"] = "is-hidden" in (page.locator(".demo-badge").get_attribute("class") or "")
         page.screenshot(path=str(OUTPUT_DIR / "profile-eink.png"), full_page=True)
 
         page.locator(".app-nav [data-tab='discover']").click()

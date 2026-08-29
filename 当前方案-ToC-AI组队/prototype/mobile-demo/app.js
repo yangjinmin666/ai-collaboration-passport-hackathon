@@ -2082,18 +2082,18 @@ function renderProfile() {
           <div><p class="micro-label">DEMO BADGE</p><h3>4.3″ 竖向现场工牌</h3></div>
           <span class="sync-chip"><b>● 已同步</b><small>ESP32-8048S043</small><small>480 × 800</small></span>
         </div>
-        <div class="eink-card ${state.visible ? "" : "is-hidden"}" data-orientation="portrait">
+        <div class="demo-badge ${state.visible ? "" : "is-hidden"}" data-orientation="portrait">
           <header class="demo-display-top">
             <span class="demo-display-brand">COSPAN <b>合拍</b></span>
             <span class="demo-display-event">AI HARDWARE HACKATHON 2026</span>
             <em>${state.visible ? `● ${collaborationStatusLabel()}` : "○ 已暂停"}</em>
           </header>
           <div class="demo-display-main">
-            <section class="eink-identity">
-              <span class="eink-glyph">ZW</span>
+            <section class="badge-identity">
+              <span class="badge-glyph">ZW</span>
               <div><small>PASSPORT P·0087</small><strong>周闻</strong><span>AI · 后端 · Agent</span></div>
             </section>
-            <section class="eink-need">
+            <section class="badge-intent">
               <span>CURRENT COLLABORATION INTENT</span>
               <b>${collaborationNeedLabel()}</b>
               <p>现场组队 · 可聊到 22:00</p>
