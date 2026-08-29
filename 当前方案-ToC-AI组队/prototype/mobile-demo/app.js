@@ -404,6 +404,17 @@ const state = {
   stage: "browse",
   greeted: startsInWorkspace ? ["lin"] : [],
   connected: startsInWorkspace ? ["lin"] : [],
+  directionPersonId: startsInWorkspace ? "lin" : null,
+  directionDraft: startsInWorkspace
+    ? {
+        audience: "线下黑客松参与者",
+        problem: "现场组队方向迟迟无法收敛",
+        outcome: "15 分钟内形成双方确认的项目方向",
+      }
+    : { audience: "", problem: "", outcome: "" },
+  directionDraftSubmitted: startsInWorkspace,
+  directionPartnerConfirmed: startsInWorkspace,
+  directionConfirmed: startsInWorkspace,
   invited: startsInWorkspace ? ["lin"] : [],
   joined: startsInWorkspace ? ["lin"] : [],
   connectionFilter: "all",
@@ -1440,9 +1451,53 @@ function renderOverlay() {
     return `<div class="overlay success-overlay"><section class="success-card">
       <div class="success-mark">✓</div><p class="micro-label">CONNECTION STAMP</p><h3>你和 ${person.name}<br>已经建立协作关系</h3>
       <div class="stamp"><span>CONNECTED</span><strong>${person.pairLabel}</strong><small>HACKATHON 01 · JUST NOW</small></div>
-      <p>下一步不是交换联系方式，而是邀请对方进入一个明确项目。</p>
-      <button class="primary-button full" data-action="invite-team" data-person="${person.id}">邀请加入「离线会议洞察终端」</button>
+      <p>碰卡只建立关系。项目方向还未确定，先由你们说清楚想服务谁、解决什么问题。</p>
+      <button class="primary-button full" data-action="enter-intent-clarification" data-person="${person.id}">进入意图澄清</button>
       <button class="secondary-button full" data-action="view-connection">稍后处理</button>
+    </section></div>`;
+  }
+  if (state.overlay === "intent-clarification") {
+    return `<div class="overlay success-overlay"><section class="success-card intent-card">
+      <p class="micro-label">INTENT ALIGNMENT</p><h3>先对齐意图，<br>再决定做不做项目</h3>
+      <div class="intent-people">
+        <article><span>周闻</span><strong>把线下真实交流变成可继续的协作</strong><small>边界：不做完整项目管理工具</small></article>
+        <article><span>${person.name}</span><strong>${person.caution}</strong><small>兴趣：${person.reason}</small></article>
+      </div>
+      <aside class="intent-ai-note"><span>AI 整理</span><strong>重合点：都希望缩短现场从认识到开工的路径</strong><p>AI 只整理重合点和待确认问题，不替你们决定方向。</p></aside>
+      <button class="primary-button full" data-action="draft-direction">共同填写方向草案</button>
+      <button class="secondary-button full" data-action="view-connection">暂不形成项目</button>
+    </section></div>`;
+  }
+  if (state.overlay === "direction-review" && !state.directionDraftSubmitted) {
+    return `<div class="overlay success-overlay"><section class="success-card intent-card direction-card">
+      <p class="micro-label">DIRECTION DRAFT</p><h3>由人写下<br>共同想验证的方向</h3>
+      <p>这不是 AI 生成的项目结论。三个字段都由你们讨论后填写，确认前不会创建项目或任务。</p>
+      <form class="direction-form" data-direction-form>
+        <label><span>服务谁</span><input name="audience" required value="${escapeHtml(state.directionDraft.audience)}" placeholder="例如：线下黑客松参与者"></label>
+        <label><span>解决什么问题</span><input name="problem" required value="${escapeHtml(state.directionDraft.problem)}" placeholder="例如：现场组队方向难收敛"></label>
+        <label><span>验证什么结果</span><input name="outcome" required value="${escapeHtml(state.directionDraft.outcome)}" placeholder="例如：15 分钟内确认方向"></label>
+        <button class="primary-button full" type="submit">确认我的方向草案</button>
+      </form>
+      <button class="text-action direction-back" data-action="enter-intent-clarification">返回查看双方意图</button>
+    </section></div>`;
+  }
+  if (state.overlay === "direction-review") {
+    return `<div class="overlay success-overlay"><section class="success-card intent-card direction-card">
+      <p class="micro-label">WAITING FOR BOTH</p><h3>方向草案等待<br>${person.name} 确认</h3>
+      <dl class="direction-summary"><div><dt>服务谁</dt><dd>${escapeHtml(state.directionDraft.audience)}</dd></div><div><dt>解决什么</dt><dd>${escapeHtml(state.directionDraft.problem)}</dd></div><div><dt>验证结果</dt><dd>${escapeHtml(state.directionDraft.outcome)}</dd></div></dl>
+      <div class="direction-confirmations"><span>周闻 · 已确认</span><span>${person.name} · 待确认</span></div>
+      <p>此刻仍然只有协作关系，没有项目、团队成员或任务。</p>
+      <button class="primary-button full" data-action="confirm-partner-direction" data-person="${person.id}">模拟${person.name}确认方向</button>
+      <button class="secondary-button full" data-action="view-connection">稍后继续</button>
+    </section></div>`;
+  }
+  if (state.overlay === "direction-confirmed") {
+    return `<div class="overlay success-overlay"><section class="success-card intent-card direction-card">
+      <div class="success-mark">✓</div><p class="micro-label">DIRECTION CONFIRMED</p><h3>方向已由双方确认</h3>
+      <dl class="direction-summary"><div><dt>服务谁</dt><dd>${escapeHtml(state.directionDraft.audience)}</dd></div><div><dt>解决什么</dt><dd>${escapeHtml(state.directionDraft.problem)}</dd></div><div><dt>验证结果</dt><dd>${escapeHtml(state.directionDraft.outcome)}</dd></div></dl>
+      <p>现在才可以创建项目关系；任务和负责人仍要等成员入队后共同确认。</p>
+      <button class="primary-button full" data-action="invite-team" data-person="${person.id}">创建项目并邀请入队</button>
+      <button class="secondary-button full" data-action="view-connection">稍后创建</button>
     </section></div>`;
   }
   if (state.overlay === "invite-sent") {
@@ -1475,6 +1530,9 @@ function stageLabel() {
   if (state.onboarding) return `正在组装协作护照 · ${state.onboardingStep + 1}/4`;
   if (state.acceptedTasks.length) return "已开始协作";
   if (state.joined.length) return "已加入项目";
+  if (state.invited.length) return "项目邀请待确认";
+  if (state.directionConfirmed) return "项目方向已确认";
+  if (state.directionDraftSubmitted) return "方向草案待双方确认";
   if (state.connected.length) return "已碰卡建联";
   if (state.greeted.length) return "已发送招呼";
   return `正在浏览${variantNames[state.variant]}`;
@@ -1511,6 +1569,21 @@ function bindEvents() {
     form.addEventListener("submit", (event) => {
       event.preventDefault();
       connectPlatform(form.dataset.platform, input?.value || "");
+    });
+  });
+  document.querySelectorAll("[data-direction-form]").forEach((form) => {
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      if (!form.reportValidity()) return;
+      const formData = new FormData(form);
+      state.directionDraft = {
+        audience: String(formData.get("audience") || "").trim(),
+        problem: String(formData.get("problem") || "").trim(),
+        outcome: String(formData.get("outcome") || "").trim(),
+      };
+      state.directionDraftSubmitted = true;
+      state.overlay = "direction-review";
+      render();
     });
   });
   bindRecommendationSwipe();
@@ -1831,9 +1904,27 @@ function handleAction(action, element) {
   if (action === "confirm-connect") {
     const id = element.dataset.person;
     if (!state.connected.includes(id)) state.connected.push(id);
+    if (state.directionPersonId !== id) {
+      state.directionPersonId = id;
+      state.directionDraft = { audience: "", problem: "", outcome: "" };
+      state.directionDraftSubmitted = false;
+      state.directionPartnerConfirmed = false;
+      state.directionConfirmed = false;
+    }
     state.overlay = "success";
   }
+  if (action === "enter-intent-clarification") state.overlay = "intent-clarification";
+  if (action === "draft-direction") state.overlay = "direction-review";
+  if (action === "confirm-partner-direction") {
+    state.directionPartnerConfirmed = true;
+    state.directionConfirmed = state.directionDraftSubmitted;
+    state.overlay = "direction-confirmed";
+  }
   if (action === "invite-team") {
+    if (!state.directionConfirmed) {
+      showToast("先由双方确认项目方向");
+      return;
+    }
     const id = element.dataset.person;
     if (!state.invited.includes(id)) state.invited.push(id);
     state.overlay = "invite-sent";

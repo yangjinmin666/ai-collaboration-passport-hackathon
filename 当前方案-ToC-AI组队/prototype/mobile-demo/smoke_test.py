@@ -479,7 +479,44 @@ def main():
         page.screenshot(path=str(OUTPUT_DIR / "step-2-card-handshake.png"), full_page=True)
         page.get_by_role("button", name="模拟双方主动碰卡").click()
         page.screenshot(path=str(OUTPUT_DIR / "step-3-connected.png"), full_page=True)
-        page.get_by_role("button", name="邀请加入「离线会议洞察终端」").click()
+        report["flow"]["connection_enters_intent_clarification_first"] = (
+            page.get_by_role("button", name="进入意图澄清").is_visible()
+            and page.get_by_role("button", name="邀请加入「离线会议洞察终端」").count() == 0
+            and page.locator(".task-item").count() == 0
+        )
+        assert report["flow"]["connection_enters_intent_clarification_first"]
+        page.get_by_role("button", name="进入意图澄清").click()
+        report["flow"]["intent_alignment_is_human_led"] = page.get_by_text(
+            "AI 只整理重合点和待确认问题，不替你们决定方向。",
+            exact=True,
+        ).is_visible()
+        assert report["flow"]["intent_alignment_is_human_led"]
+        assert page.locator(".task-item").count() == 0
+        page.get_by_role("button", name="共同填写方向草案").click()
+        direction_form = page.locator("[data-direction-form]")
+        report["flow"]["direction_requires_three_human_inputs"] = (
+            direction_form.locator("input[required]").count() == 3
+            and not direction_form.evaluate("form => form.checkValidity()")
+        )
+        assert report["flow"]["direction_requires_three_human_inputs"]
+        page.get_by_label("服务谁").fill("线下黑客松参与者")
+        page.get_by_label("解决什么问题").fill("现场组队方向迟迟无法收敛")
+        page.get_by_label("验证什么结果").fill("15 分钟内形成双方确认的项目方向")
+        page.get_by_role("button", name="确认我的方向草案").click()
+        report["flow"]["first_confirmation_keeps_partner_pending"] = (
+            page.get_by_text("周闻 · 已确认", exact=True).is_visible()
+            and page.get_by_text("林澈 · 待确认", exact=True).is_visible()
+            and page.get_by_role("button", name="创建项目并邀请入队").count() == 0
+            and page.locator(".task-item").count() == 0
+        )
+        assert report["flow"]["first_confirmation_keeps_partner_pending"]
+        page.get_by_role("button", name="模拟林澈确认方向").click()
+        report["flow"]["project_gate_opens_only_after_both_confirm"] = (
+            page.get_by_text("方向已由双方确认", exact=True).is_visible()
+            and page.get_by_role("button", name="创建项目并邀请入队").is_visible()
+        )
+        assert report["flow"]["project_gate_opens_only_after_both_confirm"]
+        page.get_by_role("button", name="创建项目并邀请入队").click()
         report["flow"]["team_invite_requires_recipient_confirmation"] = page.get_by_text(
             "对方确认前不会被写入团队，也不会被分配任务。",
             exact=True,
@@ -551,6 +588,35 @@ def main():
             and page.locator(".platform-connect-list input").count() == 7
             and page.locator(".platform-connect-grid").count() == 0
         )
+        platform_style = page.evaluate(
+            """() => {
+                const panel = getComputedStyle(document.querySelector('.platform-links-panel'));
+                const shell = getComputedStyle(document.querySelector('.platform-input-shell'));
+                const save = getComputedStyle(document.querySelector('.platform-save-button'));
+                return {
+                    panelBorder: parseFloat(panel.borderTopWidth),
+                    panelBackground: panel.backgroundColor,
+                    shellTop: parseFloat(shell.borderTopWidth),
+                    shellRight: parseFloat(shell.borderRightWidth),
+                    shellBottom: parseFloat(shell.borderBottomWidth),
+                    shellLeft: parseFloat(shell.borderLeftWidth),
+                    shellRadius: parseFloat(shell.borderTopLeftRadius),
+                    shellShadow: shell.boxShadow,
+                    saveBackground: save.backgroundColor,
+                };
+            }"""
+        )
+        report["flow"]["platform_links_use_minimal_lines"] = (
+            platform_style["panelBorder"] == 0
+            and platform_style["panelBackground"] == "rgba(0, 0, 0, 0)"
+            and platform_style["shellTop"] == 0
+            and platform_style["shellRight"] == 0
+            and platform_style["shellBottom"] > 0
+            and platform_style["shellLeft"] == 0
+            and platform_style["shellRadius"] == 0
+            and platform_style["shellShadow"] == "none"
+            and platform_style["saveBackground"] == "rgba(0, 0, 0, 0)"
+        )
         report["flow"]["device_privacy_moved_off_profile"] = not page.locator(
             ".profile-fields"
         ).get_by_text("设备与隐私", exact=True).is_visible()
@@ -568,6 +634,7 @@ def main():
         page.locator(".screen").evaluate("screen => { screen.scrollTop = 0; }")
         assert report["flow"]["profile_has_floating_settings"]
         assert report["flow"]["platform_links_use_input_rows"]
+        assert report["flow"]["platform_links_use_minimal_lines"], platform_style
         assert report["flow"]["device_privacy_moved_off_profile"]
         assert report["flow"]["profile_settings_remains_floating"]
         assert_mobile_visual_baseline(page, report["visual_baseline"], "profile")
