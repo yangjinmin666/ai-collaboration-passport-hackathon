@@ -1649,8 +1649,7 @@ function bindPersonSheetGesture() {
     sheet.classList.remove("is-dragging");
     if (gestureAxis === "horizontal") {
       if (deltaX < -64) {
-        if (state.personDetailExpanded) transitionPersonDetail(false);
-        else closePersonDetailWithSwipe(sheet);
+        closePersonDetailWithSwipe(sheet);
       } else {
         settlePersonSheetHorizontal(sheet);
       }

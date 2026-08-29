@@ -450,8 +450,10 @@ def main():
                 surface.dispatchEvent(new PointerEvent('pointerup', {bubbles:true, pointerId:11, clientX:startX - 100, clientY:y + 3}));
             }"""
         )
-        page.locator(".person-sheet.is-preview").wait_for()
-        report["flow"]["full_profile_left_swipe_returns_to_preview"] = True
+        page.locator(".person-overlay").wait_for(state="detached")
+        report["flow"]["full_profile_left_swipe_returns_to_discovery"] = page.locator(".recommendation-card-active").is_visible()
+        assert report["flow"]["full_profile_left_swipe_returns_to_discovery"]
+        page.locator(".recommendation-card-active").click()
         page.locator("[data-action='expand-person']").click()
         page.locator(".person-sheet.is-expanded").wait_for()
         page.wait_for_timeout(430)
