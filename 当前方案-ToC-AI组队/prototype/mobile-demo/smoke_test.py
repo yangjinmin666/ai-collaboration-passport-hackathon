@@ -1030,6 +1030,15 @@ def main():
             and abs(expanded_geometry["bottom"] - expanded_geometry["viewportBottom"]) <= 1
         )
         assert report["flow"]["person_sheet_swipes_to_full_profile"]
+        detail_module_backgrounds = page.locator(
+            ".collaboration-style, .evidence-section, .ai-reference"
+        ).evaluate_all(
+            "elements => elements.map(element => getComputedStyle(element).backgroundColor)"
+        )
+        report["flow"]["person_detail_modules_share_neutral_surface"] = (
+            detail_module_backgrounds == ["rgb(245, 246, 242)"] * 3
+        )
+        assert report["flow"]["person_detail_modules_share_neutral_surface"]
         page.locator(".person-sheet-content").evaluate(
             """surface => {
                 const box = surface.getBoundingClientRect();
@@ -1240,6 +1249,29 @@ def main():
         report["flow"]["profile_has_settings_button"] = page.locator(
             ".profile-settings-trigger"
         ).is_visible()
+        visibility_toggle_geometry = page.locator("[data-action='toggle-visible']").evaluate(
+            """button => {
+                const hitBox = button.getBoundingClientRect();
+                const track = button.querySelector('i');
+                const trackBox = track.getBoundingClientRect();
+                return {
+                    hitWidth: hitBox.width,
+                    hitHeight: hitBox.height,
+                    trackWidth: trackBox.width,
+                    trackHeight: trackBox.height,
+                    buttonBackground: getComputedStyle(button).backgroundColor,
+                    trackBackground: getComputedStyle(track).backgroundColor,
+                };
+            }"""
+        )
+        report["flow"]["visibility_toggle_uses_compact_visual_track"] = (
+            visibility_toggle_geometry["hitWidth"] >= 44
+            and visibility_toggle_geometry["hitHeight"] >= 44
+            and visibility_toggle_geometry["trackWidth"] == 46
+            and visibility_toggle_geometry["trackHeight"] == 28
+            and visibility_toggle_geometry["buttonBackground"] == "rgba(0, 0, 0, 0)"
+            and visibility_toggle_geometry["trackBackground"] == "rgb(52, 124, 248)"
+        )
         demo_display = page.locator(".demo-badge")
         display_ratio = demo_display.evaluate(
             "element => element.getBoundingClientRect().width / element.getBoundingClientRect().height"
@@ -1287,6 +1319,30 @@ def main():
             and platform_style["shellShadow"] == "none"
             and platform_style["saveBackground"] == "rgba(0, 0, 0, 0)"
         )
+        logout_action_style = page.evaluate(
+            """() => {
+                const button = document.createElement('button');
+                button.className = 'profile-logout-button';
+                button.textContent = '退出当前账号';
+                document.body.append(button);
+                const style = getComputedStyle(button);
+                const result = {
+                    background: style.backgroundColor,
+                    border: style.borderTopColor,
+                    color: style.color,
+                };
+                button.remove();
+                return result;
+            }"""
+        )
+        report["flow"]["profile_logout_action_uses_neutral_colors"] = (
+            logout_action_style
+            == {
+                "background": "rgb(255, 255, 255)",
+                "border": "rgb(214, 221, 231)",
+                "color": "rgb(23, 33, 45)",
+            }
+        )
         report["flow"]["device_privacy_moved_off_profile"] = not page.locator(
             ".profile-fields"
         ).get_by_text("设备与隐私", exact=True).is_visible()
@@ -1307,9 +1363,11 @@ def main():
         )
         page.locator(".screen").evaluate("screen => { screen.scrollTop = 0; }")
         assert report["flow"]["profile_has_settings_button"]
+        assert report["flow"]["visibility_toggle_uses_compact_visual_track"], visibility_toggle_geometry
         assert report["flow"]["demo_display_matches_esp32_8048s043"], display_ratio
         assert report["flow"]["platform_links_use_input_rows"]
         assert report["flow"]["platform_links_use_minimal_lines"], platform_style
+        assert report["flow"]["profile_logout_action_uses_neutral_colors"], logout_action_style
         assert report["flow"]["device_privacy_moved_off_profile"]
         assert report["flow"]["profile_header_scrolls_with_content"]
         assert_mobile_visual_baseline(page, report["visual_baseline"], "profile")
