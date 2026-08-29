@@ -6,7 +6,7 @@ updated: 2026-08-29
 status: ready-for-review
 ---
 
-# COSPAN｜合拍：手机端可交互 Demo
+# COSPAN｜共域：手机端可交互 Demo
 
 ## 1. Demo 目的
 

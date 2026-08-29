@@ -4,7 +4,7 @@ version: "0.8"
 created: 2026-08-28
 updated: 2026-08-29
 status: concept-with-mvp-boundary
-product: COSPAN｜合拍
+product: COSPAN｜共域
 scope: 碰卡建联后的协作启动与长期演进
 ---
 

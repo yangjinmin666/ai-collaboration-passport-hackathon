@@ -5,13 +5,13 @@ version: "0.1.0"
 created: 2026-08-29
 updated: 2026-08-29
 status: active-baseline
-product: COSPAN｜合拍
+product: COSPAN｜共域
 release: MVP v0.1
 verified_code_baseline: 9929ba4
 public_demo: http://49.233.197.225/
 ---
 
-# COSPAN｜合拍：MVP v0.1 版本基线与验收
+# COSPAN｜共域：MVP v0.1 版本基线与验收
 
 > 本文回答“当前版本到底是什么、已经能做什么、哪些仍是演示、进入真实内测前还缺什么”。长期产品方向以 [01-产品设计PRD.md](./01-产品设计PRD.md) 为准；本文只冻结 MVP v0.1 的实际交付边界。
 
