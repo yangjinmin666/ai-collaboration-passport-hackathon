@@ -1,9 +1,11 @@
 package ai.rally.collaboration;
 
+import android.Manifest;
 import android.annotation.SuppressLint;
 import android.annotation.TargetApi;
 import android.app.Activity;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.Insets;
 import android.net.Uri;
@@ -18,6 +20,8 @@ import android.window.OnBackInvokedCallback;
 import android.window.OnBackInvokedDispatcher;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
+import android.webkit.GeolocationPermissions;
+import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -27,12 +31,15 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 
 public final class MainActivity extends Activity {
+    private static final int LOCATION_PERMISSION_REQUEST = 7001;
     private static final String ASSET_HOST = BuildConfig.RALLY_ASSET_HOST;
     private static final String HOME_URL =
             "https://" + ASSET_HOST + "/index.html?variant=A&source=android-app";
 
     private WebView webView;
     private Object predictiveBackCallback;
+    private GeolocationPermissions.Callback pendingGeolocationCallback;
+    private String pendingGeolocationOrigin;
 
     @Override
     @SuppressLint("SetJavaScriptEnabled")
@@ -52,6 +59,7 @@ public final class MainActivity extends Activity {
         settings.setBuiltInZoomControls(false);
         settings.setDisplayZoomControls(false);
 
+        webView.setWebChromeClient(new RallyWebChromeClient());
         webView.setWebViewClient(new RallyWebViewClient());
         setContentView(createContentView());
         configureSystemBars();
@@ -136,16 +144,71 @@ public final class MainActivity extends Activity {
     }
 
     @Override
+    public void onRequestPermissionsResult(
+            int requestCode,
+            String[] permissions,
+            int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode != LOCATION_PERMISSION_REQUEST || pendingGeolocationCallback == null) {
+            return;
+        }
+        boolean granted = checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)
+                        == PackageManager.PERMISSION_GRANTED
+                || checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION)
+                        == PackageManager.PERMISSION_GRANTED;
+        pendingGeolocationCallback.invoke(pendingGeolocationOrigin, granted, false);
+        pendingGeolocationCallback = null;
+        pendingGeolocationOrigin = null;
+    }
+
+    @Override
     protected void onDestroy() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
                 && predictiveBackCallback != null) {
             Api33BackHandler.unregister(this, predictiveBackCallback);
             predictiveBackCallback = null;
         }
+        if (pendingGeolocationCallback != null) {
+            pendingGeolocationCallback.invoke(pendingGeolocationOrigin, false, false);
+            pendingGeolocationCallback = null;
+            pendingGeolocationOrigin = null;
+        }
         webView.stopLoading();
+        webView.setWebChromeClient(null);
         webView.setWebViewClient(null);
         webView.destroy();
         super.onDestroy();
+    }
+
+    private final class RallyWebChromeClient extends WebChromeClient {
+        @Override
+        public void onGeolocationPermissionsShowPrompt(
+                String origin,
+                GeolocationPermissions.Callback callback) {
+            if (!("https://" + ASSET_HOST).equals(origin)) {
+                callback.invoke(origin, false, false);
+                return;
+            }
+            boolean alreadyGranted = checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)
+                            == PackageManager.PERMISSION_GRANTED
+                    || checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION)
+                            == PackageManager.PERMISSION_GRANTED;
+            if (alreadyGranted) {
+                callback.invoke(origin, true, false);
+                return;
+            }
+            if (pendingGeolocationCallback != null) {
+                pendingGeolocationCallback.invoke(pendingGeolocationOrigin, false, false);
+            }
+            pendingGeolocationCallback = callback;
+            pendingGeolocationOrigin = origin;
+            requestPermissions(
+                    new String[] {
+                        Manifest.permission.ACCESS_FINE_LOCATION,
+                        Manifest.permission.ACCESS_COARSE_LOCATION,
+                    },
+                    LOCATION_PERMISSION_REQUEST);
+        }
     }
 
     @TargetApi(Build.VERSION_CODES.TIRAMISU)

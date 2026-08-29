@@ -367,9 +367,20 @@ const initialTab = ["discover", "connections", "collaboration", "profile"].inclu
 const storedAccessToken = localStorage.getItem("rally_access_token");
 const storedSessionExpiry = localStorage.getItem("rally_session_expires_at");
 const storedSwipeSoundEnabled = localStorage.getItem("rally_swipe_sound_enabled") !== "false";
+const packagedApiBase = (() => {
+  const value = document.querySelector('meta[name="rally-api-origin"]')?.content.trim();
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:" || url.username || url.password) return null;
+    return url.href.replace(/\/$/, "");
+  } catch {
+    return null;
+  }
+})();
 
 function resolveApiBase() {
-  const explicitlyTrustedBase = localStorage.getItem("rally_api_base");
+  const explicitlyTrustedBase = packagedApiBase || localStorage.getItem("rally_api_base");
   const requestedBase = initialParams.get("apiBase");
   const candidate = storedAccessToken
     ? (explicitlyTrustedBase || location.origin)
@@ -392,7 +403,7 @@ function resolveApiBase() {
 }
 
 const liveConfig = {
-  enabled: initialParams.get("live") === "1",
+  enabled: initialParams.get("live") === "1" || Boolean(packagedApiBase),
   apiBase: resolveApiBase(),
   eventId: initialParams.get("event") || "hackathon-2026",
   demoUserId: initialParams.get("demoUser") || null,

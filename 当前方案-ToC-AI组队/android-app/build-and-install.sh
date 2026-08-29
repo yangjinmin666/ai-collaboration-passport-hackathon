@@ -33,7 +33,11 @@ if ! adb get-state >/dev/null 2>&1; then
   exit 1
 fi
 
-./gradlew --no-daemon :app:assembleDebug
+if [ -n "${RALLY_API_ORIGIN:-}" ]; then
+  ./gradlew --no-daemon :app:assembleDebug "-PrallyApiOrigin=${RALLY_API_ORIGIN}"
+else
+  ./gradlew --no-daemon :app:assembleDebug
+fi
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb shell am start -n ai.rally.collaboration/.MainActivity
 
