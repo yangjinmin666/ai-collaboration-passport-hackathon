@@ -2128,16 +2128,42 @@ function renderProfile() {
   `;
 }
 
+function renderAppNavIcon(id) {
+  const paths = {
+    discover: `
+      <circle cx="12" cy="12" r="8.25"></circle>
+      <path d="m15.4 8.6-2.05 4.75L8.6 15.4l2.05-4.75 4.75-2.05Z"></path>
+    `,
+    connections: `
+      <path d="m9.25 14.75-1.4 1.4a3.4 3.4 0 0 1-4.8-4.8l2.3-2.3a3.4 3.4 0 0 1 4.8 0"></path>
+      <path d="m14.75 9.25 1.4-1.4a3.4 3.4 0 1 1 4.8 4.8l-2.3 2.3a3.4 3.4 0 0 1-4.8 0"></path>
+      <path d="m8.75 15.25 6.5-6.5"></path>
+    `,
+    collaboration: `
+      <circle cx="9" cy="9" r="2.5"></circle>
+      <circle cx="16.75" cy="10.25" r="2"></circle>
+      <path d="M4.5 18.75v-.8a4.5 4.5 0 0 1 9 0v.8"></path>
+      <path d="M14 15.35a3.75 3.75 0 0 1 5.5 3.4"></path>
+    `,
+    profile: `
+      <circle cx="12" cy="12" r="8.25"></circle>
+      <circle cx="12" cy="9.25" r="2.5"></circle>
+      <path d="M6.75 18.4a5.8 5.8 0 0 1 10.5 0"></path>
+    `,
+  };
+  return `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${paths[id]}</svg>`;
+}
+
 function renderAppNav() {
   const items = [
-    ["discover", "⌁", "发现"],
-    ["connections", "↔", "连接"],
-    ["collaboration", "◎", "协作"],
-    ["profile", "◉", "我的"],
+    ["discover", "发现"],
+    ["connections", "连接"],
+    ["collaboration", "协作"],
+    ["profile", "我的"],
   ];
   const connectionCount = state.connected.length || state.greeted.length;
   const collaborationCount = state.joined.length;
-  return `<nav class="app-nav">${items.map(([id, icon, label]) => `<button class="${state.tab === id ? "active" : ""}" data-tab="${id}"><span>${icon}</span><small>${label}</small>${id === "connections" && connectionCount ? `<i>${connectionCount}</i>` : id === "collaboration" && collaborationCount ? `<i>${collaborationCount}</i>` : ""}</button>`).join("")}</nav>`;
+  return `<nav class="app-nav" aria-label="主导航">${items.map(([id, label]) => `<button class="${state.tab === id ? "active" : ""}" data-tab="${id}" aria-label="${label}" ${state.tab === id ? 'aria-current="page"' : ""}><span>${renderAppNavIcon(id)}</span><small>${label}</small>${id === "connections" && connectionCount ? `<i>${connectionCount}</i>` : id === "collaboration" && collaborationCount ? `<i>${collaborationCount}</i>` : ""}</button>`).join("")}</nav>`;
 }
 
 function renderDiscoveryFilterChip(group, value, label) {
