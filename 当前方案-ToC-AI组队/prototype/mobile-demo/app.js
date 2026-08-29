@@ -292,6 +292,7 @@ const state = {
   connected: startsInWorkspace ? ["lin"] : [],
   invited: startsInWorkspace ? ["lin"] : [],
   joined: startsInWorkspace ? ["lin"] : [],
+  connectionFilter: "all",
   acceptedTasks: [],
   live: {
     enabled: liveConfig.enabled,
@@ -748,6 +749,18 @@ function renderVariantC() {
 function renderConnections() {
   const connectedPeople = people.filter((person) => state.connected.includes(person.id));
   const pendingPeople = people.filter((person) => state.greeted.includes(person.id) && !state.connected.includes(person.id));
+  const visibleConnectedPeople = state.connectionFilter === "pending" ? [] : connectedPeople;
+  const visiblePendingPeople = state.connectionFilter === "connected" ? [] : pendingPeople;
+  const filters = [
+    ["all", "全部"],
+    ["pending", "待回应"],
+    ["connected", "已建联"],
+  ];
+  const emptyCopy = state.connectionFilter === "pending"
+    ? ["没有待回应的招呼", "向感兴趣的人表达“想认识”后，等待中的记录会出现在这里。"]
+    : state.connectionFilter === "connected"
+      ? ["还没有正式连接", "现实交流后通过碰卡完成双方确认，连接会保存在这里。"]
+      : ["还没有连接记录", "你可以先在线表达“想认识”，也可以在现实交流后直接碰卡建联。"];
   return `
     <div class="view utility-view">
       ${commonHeader("连接")}
@@ -755,18 +768,21 @@ function renderConnections() {
         <div class="connection-summary"><strong>${connectedPeople.length}</strong><span>位已建联</span>${pendingPeople.length ? `<em>${pendingPeople.length} 个待回应</em>` : ""}</div>
         <p>${connectedPeople.length ? "碰卡来源、认识原因和共同项目都会保存在这里。" : "线上先表达想认识，见面后通过碰卡建立真实连接。"}</p>
       </section>
-      <div class="filter-row"><button class="active">全部</button><button>待回应</button><button>已建联</button></div>
+      <div class="filter-row" role="group" aria-label="连接状态筛选">
+        ${filters.map(([id, label]) => `<button class="${state.connectionFilter === id ? "active" : ""}" data-action="filter-connections" data-filter="${id}" aria-pressed="${state.connectionFilter === id}">${label}</button>`).join("")}
+      </div>
       <section class="connection-list">
-        ${connectedPeople.length ? connectedPeople.map((person) => `
+        ${visibleConnectedPeople.map((person) => `
           <article class="connection-card">
             <div class="connection-card-head">${glyph(person, "md")}<div><h4>${person.name}</h4><p>${person.role}</p></div><span class="source-chip">碰卡建联</span></div>
             <div class="connection-context"><span>认识于</span><strong>AI Hardware Hackathon</strong><small>刚刚 · ${person.pairLabel}</small></div>
             <button class="primary-button full" data-tab="collaboration">查看共同项目</button>
           </article>
-        `).join("") : `
-          <div class="empty-state"><span class="empty-symbol">◎</span><h4>还没有正式连接</h4><p>你可以先在线表达“想认识”，也可以在现实交流后直接碰卡建联。</p><button class="primary-button" data-tab="discover">去发现</button></div>
+        `).join("")}
+        ${visiblePendingPeople.map((person) => `<article class="pending-row">${glyph(person, "sm")}<div><strong>${person.name}</strong><span>招呼已发出 · 等待见面</span></div><em>待回应</em></article>`).join("")}
+        ${visibleConnectedPeople.length || visiblePendingPeople.length ? "" : `
+          <div class="empty-state"><span class="empty-symbol">◎</span><h4>${emptyCopy[0]}</h4><p>${emptyCopy[1]}</p><button class="primary-button" data-tab="discover">去发现</button></div>
         `}
-        ${pendingPeople.map((person) => `<article class="pending-row">${glyph(person, "sm")}<div><strong>${person.name}</strong><span>招呼已发出 · 等待见面</span></div><em>待回应</em></article>`).join("")}
       </section>
     </div>
   `;
@@ -1220,6 +1236,11 @@ function handleAction(action, element) {
     else state.onboardingStep += 1;
   }
   if (action === "preview-mode") state.previewMode = element.dataset.mode;
+  if (action === "filter-connections") {
+    state.connectionFilter = ["all", "pending", "connected"].includes(element.dataset.filter)
+      ? element.dataset.filter
+      : "all";
+  }
   if (action === "draft-refresh") {
     state.draftVersion += 1;
     showToast("AI 已根据项目证据重组表达");

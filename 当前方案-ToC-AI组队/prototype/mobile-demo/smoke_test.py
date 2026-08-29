@@ -257,6 +257,39 @@ def main():
                 )
                 assert report["variants"][variant]["avatar_subjects_are_centered"], avatar_offsets
 
+        page.goto(f"{BASE_URL}/?variant=A&workspace=1")
+        page.wait_for_load_state("networkidle")
+        page.locator(".app-nav [data-tab='discover']").click()
+        page.locator("[data-action='dismiss-recommendation']").click()
+        page.locator("[data-action='like-recommendation']").click()
+        page.locator(".app-nav [data-tab='connections']").click()
+        assert page.locator(".connection-card").count() == 1
+        assert page.locator(".pending-row").count() == 1
+
+        page.get_by_role("button", name="待回应", exact=True).click()
+        report["flow"]["pending_connection_filter_works"] = (
+            page.locator(".filter-row button.active").inner_text() == "待回应"
+            and page.locator(".connection-card").count() == 0
+            and page.locator(".pending-row").count() == 1
+        )
+        assert report["flow"]["pending_connection_filter_works"]
+
+        page.get_by_role("button", name="已建联", exact=True).click()
+        report["flow"]["connected_filter_works"] = (
+            page.locator(".filter-row button.active").inner_text() == "已建联"
+            and page.locator(".connection-card").count() == 1
+            and page.locator(".pending-row").count() == 0
+        )
+        assert report["flow"]["connected_filter_works"]
+
+        page.get_by_role("button", name="全部", exact=True).click()
+        report["flow"]["all_connection_filter_works"] = (
+            page.locator(".filter-row button.active").inner_text() == "全部"
+            and page.locator(".connection-card").count() == 1
+            and page.locator(".pending-row").count() == 1
+        )
+        assert report["flow"]["all_connection_filter_works"]
+
         page.goto(f"{BASE_URL}/?variant=C&onboarding=1")
         page.wait_for_load_state("networkidle")
         report["flow"]["onboarding_starts_at_status"] = page.get_by_text("你现在来现场，最需要什么？", exact=True).is_visible()
