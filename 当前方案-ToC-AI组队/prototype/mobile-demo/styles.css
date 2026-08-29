@@ -11,11 +11,11 @@
   --brand-tint: #eaf2ff;
   --brand-border: #b8cef4;
   --brand-rgb: 52, 124, 248;
-  --success: #347cf8;
-  --success-soft: #edf4ff;
-  --success-border: #aac8ff;
-  --warning: #245fc8;
-  --warning-soft: #eef5ff;
+  --success: #207a52;
+  --success-soft: #eaf7f0;
+  --success-border: #a9d8c2;
+  --warning: #9a6700;
+  --warning-soft: #fff4d6;
   --danger: #b42318;
   --danger-soft: #fff1ef;
   /* Legacy aliases remain while components migrate to semantic tokens. */

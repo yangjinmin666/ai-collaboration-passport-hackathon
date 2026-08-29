@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#ffffff" />
+    <title>COSPAN 合拍 · 现场入口</title>
+    <style>
+      :root { color: #17212d; background: #f2f5f9; font-family: "PingFang SC", "Helvetica Neue", Arial, sans-serif; }
+      * { box-sizing: border-box; }
+      body { min-height: 100vh; display: grid; place-items: center; margin: 0; padding: 24px; }
+      main { width: min(720px, 100%); display: grid; justify-items: center; gap: 18px; padding: clamp(28px, 5vw, 52px); border: 1px solid #d6dde7; border-radius: 30px; background: #fff; box-shadow: 0 24px 70px rgba(31, 48, 70, .14); text-align: center; }
+      .brand { display: flex; align-items: center; gap: 12px; }
+      .brand img { width: 52px; height: 52px; border-radius: 14px; }
+      .brand span { display: grid; gap: 2px; text-align: left; }
+      .brand strong { font-size: 26px; letter-spacing: -.04em; }
+      .brand small { color: #6f7b89; font-size: 13px; }
+      h1 { margin: 8px 0 0; font-size: clamp(28px, 5vw, 42px); line-height: 1.15; letter-spacing: -.05em; }
+      p { max-width: 520px; margin: 0; color: #637080; font-size: 16px; line-height: 1.65; }
+      .qr { width: min(380px, 78vw); padding: 12px; border: 1px solid #d6dde7; border-radius: 24px; background: #fff; }
+      .qr img { display: block; width: 100%; }
+      ol { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 22px; margin: 0; padding: 0; list-style-position: inside; color: #435160; font-size: 14px; }
+      a { min-height: 48px; display: inline-flex; align-items: center; justify-content: center; padding: 0 20px; border-radius: 16px; background: #347cf8; color: #fff; font-size: 15px; font-weight: 750; text-decoration: none; }
+      code { padding: 8px 10px; border-radius: 10px; background: #f3f5f8; color: #65717e; font-size: 12px; overflow-wrap: anywhere; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="brand"><img src="./assets/cospan-icon.svg" alt="" /><span><strong>COSPAN</strong><small>合拍 · Co-Span</small></span></div>
+      <h1>扫码进入现场协作</h1>
+      <p>无需预先安装 App。用手机扫码，完成短信登录和协作资料，即可发现现场真人并进入组队。</p>
+      <div class="qr"><img src="./assets/event-entry-qr.svg" alt="COSPAN 现场入口二维码" /></div>
+      <ol><li>扫码</li><li>短信登录</li><li>完善资料</li><li>发现与协作</li></ol>
+      <a href="./?live=1&amp;event=hackathon-2026">在本机打开 COSPAN</a>
+      <code>https://101.43.172.166/?live=1&amp;event=hackathon-2026</code>
+    </main>
+  </body>
+</html>

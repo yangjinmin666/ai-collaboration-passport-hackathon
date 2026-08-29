@@ -1,12 +1,14 @@
-const CACHE_NAME = "cospan-shell-v11";
+const CACHE_NAME = "cospan-shell-v12";
 const SHELL_ASSETS = [
   "./",
   "./index.html",
+  "./join.html",
   "./styles.css",
   "./app.js",
   "./api-client.js",
   "./manifest.webmanifest",
   "./assets/cospan-icon.svg",
+  "./assets/event-entry-qr.svg",
   "./assets/splash.css",
   "./assets/default-memoji-grid.jpg",
   "./offline.html",
