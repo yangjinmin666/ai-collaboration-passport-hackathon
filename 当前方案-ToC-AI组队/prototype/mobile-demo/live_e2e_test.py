@@ -162,19 +162,46 @@ def main():
             assert page.evaluate("window.__rallyXss") is None
 
             page.locator('.app-nav [data-tab="profile"]').click()
-            page.get_by_text("外部平台与作品", exact=True).wait_for(timeout=4000)
-            assert page.get_by_text("作品链接", exact=True).first.is_visible()
-            assert page.get_by_text("portfolio.example.com · 用户提交", exact=True).is_visible()
-            page.get_by_text("外部平台与作品", exact=True).scroll_into_view_if_needed()
+            page.get_by_text("连接你的外部平台", exact=True).wait_for(timeout=4000)
+            website_row = page.locator(
+                '.platform-connect-row[data-platform="website"]'
+            )
+            assert website_row.locator("input").input_value() == (
+                "https://portfolio.example.com/zhou-wen"
+            )
+            assert website_row.get_by_text(
+                "✓ portfolio.example.com · 已保存", exact=True
+            ).is_visible()
+            assert website_row.locator("a").get_attribute("href") == (
+                "https://portfolio.example.com/zhou-wen"
+            )
+            page.get_by_text("连接你的外部平台", exact=True).scroll_into_view_if_needed()
             page.screenshot(
                 path=str(HERE / "artifacts" / "live-profile-platforms.png"),
                 full_page=True,
             )
             page.once("dialog", lambda dialog: dialog.accept())
             page.locator('[data-action="remove-platform"][data-platform="website"]').click()
-            page.get_by_text("尚未绑定真实链接", exact=True).wait_for(timeout=4000)
+            page.wait_for_function(
+                """() => document.querySelector(
+                    '.platform-connect-row[data-platform="website"] input'
+                )?.value === ''""",
+                timeout=4000,
+            )
+            assert website_row.locator("input").input_value() == ""
             _, me = request_json(f"{backend_url}/api/me", user_id="user-zhou")
             assert me["platform_links"] == []
+
+            website_input = website_row.locator("input")
+            website_input.fill("https://portfolio.example.com/zhou-wen-v2")
+            website_row.locator(".platform-save-button").click()
+            page.get_by_text(
+                "✓ portfolio.example.com · 已保存", exact=True
+            ).wait_for(timeout=4000)
+            _, me = request_json(f"{backend_url}/api/me", user_id="user-zhou")
+            assert me["platform_links"][0]["url"] == (
+                "https://portfolio.example.com/zhou-wen-v2"
+            )
 
             page.locator('[data-action="toggle-visible"]').click()
             page.get_by_text("已暂停附近展示", exact=True).wait_for(timeout=4000)

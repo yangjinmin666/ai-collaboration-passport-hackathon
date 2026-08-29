@@ -376,13 +376,13 @@ const liveConfig = {
   accessToken: storedAccessToken,
 };
 const platformCatalog = {
-  github: { label: "GitHub", hint: "https://github.com/用户名" },
-  jike: { label: "即刻", hint: "https://web.okjike.com/u/..." },
-  xiaohongshu: { label: "小红书", hint: "https://www.xiaohongshu.com/user/profile/..." },
-  douyin: { label: "抖音", hint: "https://www.douyin.com/user/..." },
-  linkedin: { label: "LinkedIn", hint: "https://www.linkedin.com/in/..." },
-  website: { label: "作品链接", hint: "https://你的作品地址" },
-  other: { label: "其他链接", hint: "https://你的公开资料地址" },
+  xiaohongshu: { label: "小红书", hint: "粘贴小红书主页链接", mark: "小红书", tone: "red" },
+  jike: { label: "即刻", hint: "粘贴即刻主页链接", mark: "J", tone: "jike" },
+  github: { label: "GitHub", hint: "粘贴 GitHub 主页链接", mark: "GH", tone: "github" },
+  linkedin: { label: "LinkedIn", hint: "粘贴 LinkedIn 主页链接", mark: "in", tone: "linkedin" },
+  douyin: { label: "抖音", hint: "粘贴抖音主页链接", mark: "♪", tone: "douyin" },
+  website: { label: "作品链接", hint: "粘贴作品或项目链接", mark: "↗", tone: "website" },
+  other: { label: "其他链接", hint: "粘贴其他公开资料链接", mark: "+", tone: "other" },
 };
 
 const state = {
@@ -409,6 +409,7 @@ const state = {
   connectionFilter: "all",
   discoveryFilters: defaultDiscoveryFilters(),
   discoveryFilterDraft: defaultDiscoveryFilters(),
+  platformDrafts: {},
   acceptedTasks: [],
   live: {
     enabled: liveConfig.enabled,
@@ -756,16 +757,20 @@ function renderCurrentView() {
   return renderVariantA();
 }
 
-function commonHeader(title = "发现") {
+function commonHeader(title = "发现", utility = null) {
   const filterCount = activeDiscoveryFilterCount();
-  const filterButton = title === "发现"
+  const utilityButton = utility === "filters"
     ? `<button class="discovery-filter-trigger ${filterCount ? "is-filtered" : ""}" data-action="open-discovery-filters" aria-label="设置筛选偏好${filterCount ? `，已启用 ${filterCount} 项` : ""}">
         <span aria-hidden="true"><i></i><i></i><i></i></span>${filterCount ? `<b>${filterCount}</b>` : ""}
       </button>`
-    : "";
+    : utility === "settings"
+      ? `<button class="profile-settings-trigger" data-action="open-profile-settings" aria-label="打开设置">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.5A3.5 3.5 0 1 0 12 15.5 3.5 3.5 0 0 0 12 8.5Zm8.1 4.7v-2.4l-2.2-.7a7 7 0 0 0-.7-1.7l1.1-2-1.7-1.7-2 1.1a7 7 0 0 0-1.7-.7L12.2 3H9.8l-.7 2.2a7 7 0 0 0-1.7.7l-2-1.1-1.7 1.7 1.1 2a7 7 0 0 0-.7 1.7l-2.2.7v2.4l2.2.7a7 7 0 0 0 .7 1.7l-1.1 2 1.7 1.7 2-1.1a7 7 0 0 0 1.7.7l.7 2.2h2.4l.7-2.2a7 7 0 0 0 1.7-.7l2 1.1 1.7-1.7-1.1-2a7 7 0 0 0 .7-1.7l2.2-.7Z"/></svg>
+        </button>`
+      : "";
   return `
     <header class="app-header">
-      <div class="app-header-start">${filterButton}<div class="app-brand"><strong>RALLY</strong><span>集结 · ${title}</span></div></div>
+      <div class="app-header-start">${utilityButton}<div class="app-brand"><strong>RALLY</strong><span>集结 · ${title}</span></div></div>
       <span class="event-context"><i></i>当前活动 · 2026</span>
     </header>
   `;
@@ -787,7 +792,7 @@ function renderVariantA() {
   const nextPerson = recommendationPool[(currentIndex + 1) % recommendationPool.length];
   return `
     <div class="view view-a">
-      ${commonHeader("发现")}
+      ${commonHeader("发现", "filters")}
       ${renderDiscoveryTabs()}
       <section class="recommendation-intro">
         <div><span>为你的项目推荐</span><strong>${collaborationNeedLabel()}</strong></div>
@@ -833,7 +838,7 @@ function renderVariantA() {
 
 function renderDiscoveryEmpty(mode) {
   return `<div class="view view-${state.variant.toLowerCase()}">
-    ${commonHeader("发现")}
+    ${commonHeader("发现", "filters")}
     ${renderDiscoveryTabs()}
     <section class="discovery-filter-empty">
       <span class="empty-symbol">⌁</span>
@@ -896,7 +901,7 @@ function renderVariantB() {
         : ["● 手机前台发现", "仅在打开本页时更新，离开后停止"];
   return `
     <div class="view view-b">
-      ${commonHeader("发现")}
+      ${commonHeader("发现", "filters")}
       ${renderDiscoveryTabs()}
       <div class="mobile-discovery-note" aria-live="polite"><span>${liveStatus[0]}</span><small>${liveStatus[1]}</small></div>
       <section class="radar-copy">
@@ -935,7 +940,7 @@ function renderVariantC() {
   if (!directoryPeople.length) return renderDiscoveryEmpty("名册");
   return `
     <div class="view view-c">
-      ${commonHeader("发现")}
+      ${commonHeader("发现", "filters")}
       ${renderDiscoveryTabs()}
       <section class="directory-copy"><span class="status-pill status-open"><i></i>本场活动</span><h3>活动名册</h3><p>查看明确授权参加当前活动的成员，名册仍属于你手机上的发现页。</p></section>
       <section class="ledger-status">
@@ -1196,11 +1201,50 @@ function renderTask(task, accepted) {
   return `<button class="task-item ${accepted ? "accepted" : ""}" data-task="${task.id}">${content}</button>`;
 }
 
+function renderPlatformMark(platform, item) {
+  if (platform === "github") {
+    return `<span class="platform-mark platform-mark-${item.tone}" aria-hidden="true">
+      <svg viewBox="0 0 24 24" focusable="false"><path d="M12 .7a11.5 11.5 0 0 0-3.64 22.4c.58.1.79-.25.79-.56v-2.2c-3.22.7-3.9-1.36-3.9-1.36-.52-1.34-1.28-1.7-1.28-1.7-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.57-.29-5.27-1.28-5.27-5.68 0-1.26.45-2.28 1.19-3.08-.12-.29-.52-1.46.11-3.04 0 0 .97-.31 3.16 1.18a10.9 10.9 0 0 1 5.75 0c2.19-1.49 3.15-1.18 3.15-1.18.63 1.58.23 2.75.11 3.04.74.8 1.19 1.82 1.19 3.08 0 4.41-2.71 5.38-5.29 5.67.42.36.79 1.07.79 2.16v3.2c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .7Z"/></svg>
+    </span>`;
+  }
+  return `<span class="platform-mark platform-mark-${item.tone}" aria-hidden="true"><b>${item.mark}</b></span>`;
+}
+
+function platformLinkSummary(link) {
+  if (!link) return "";
+  const metadata = link.metadata || {};
+  if (metadata.username) {
+    return [`@${metadata.username}`, Number.isInteger(metadata.public_repos) ? `${metadata.public_repos} 个公开仓库` : "", Number.isInteger(metadata.followers) ? `${metadata.followers} 关注者` : ""].filter(Boolean).join(" · ");
+  }
+  try {
+    return `${new URL(link.url).hostname.replace(/^www\./, "")} · 已保存`;
+  } catch {
+    return "链接已保存";
+  }
+}
+
+function renderPlatformConnectRow(platform, item, linkedPlatforms) {
+  const linked = linkedPlatforms.find((link) => link.platform === platform);
+  const draft = state.platformDrafts[platform];
+  const value = draft ?? linked?.url ?? "";
+  return `<form class="platform-connect-row ${linked ? "is-linked" : ""}" data-platform-form data-platform="${platform}">
+    ${renderPlatformMark(platform, item)}
+    <div class="platform-input-column">
+      <label class="platform-input-shell">
+        <span class="sr-only">${item.label}公开主页链接</span>
+        <input type="url" name="platform-url" value="${escapeHtml(value)}" placeholder="${escapeHtml(item.hint)}" aria-label="${item.label}公开主页链接" inputmode="url" autocomplete="url" autocapitalize="off" spellcheck="false">
+        <button class="platform-save-button" type="submit" aria-label="${linked ? "更新" : "保存"}${item.label}链接">${linked ? "更新" : "保存"}</button>
+      </label>
+      ${linked ? `<div class="platform-link-receipt"><a href="${escapeHtml(linked.url)}" target="_blank" rel="noopener noreferrer">✓ ${escapeHtml(platformLinkSummary(linked))}</a><button type="button" data-action="remove-platform" data-platform="${platform}">移除</button></div>` : ""}
+    </div>
+  </form>`;
+}
+
 function renderProfile() {
   const linkedPlatforms = state.live.platformLinks;
   return `
     <div class="view utility-view profile-view">
-      ${commonHeader("我的")}
+      ${commonHeader("我的", "settings")}
       <section class="profile-intro">
         ${glyph(currentUser, "xl")}
         <div><h3>${currentUser.name}</h3><p>${currentUser.role}</p><span class="passport-id">PASSPORT P·0087</span></div>
@@ -1221,21 +1265,11 @@ function renderProfile() {
         <button class="secondary-button full" data-action="sync-card">编辑卡片公开内容</button>
       </section>
       <section class="platform-links-panel">
-        <header><div><p class="micro-label">AUTHORIZED EVIDENCE</p><h3>外部平台与作品</h3></div><span>${linkedPlatforms.length ? `${linkedPlatforms.length} 项` : "自主授权"}</span></header>
-        <p>只读取公开资料。GitHub 可同步公开摘要，其他平台只保存你主动提交的链接。</p>
-        ${linkedPlatforms.length ? `<div class="linked-platform-list">${linkedPlatforms.map((link) => {
-          const label = platformCatalog[link.platform]?.label || link.platform;
-          const host = new URL(link.url).hostname.replace(/^www\./, "");
-          const metadata = link.metadata || {};
-          const title = metadata.name ? `${label} · ${metadata.name}` : label;
-          const facts = metadata.username
-            ? [`@${metadata.username}`, Number.isInteger(metadata.public_repos) ? `${metadata.public_repos} 个公开仓库` : "", Number.isInteger(metadata.followers) ? `${metadata.followers} 关注者` : ""].filter(Boolean).join(" · ")
-            : `${host} · 用户提交`;
-          return `<article><a href="${escapeHtml(link.url)}" target="_blank" rel="noopener noreferrer"><strong>${escapeHtml(title)}</strong><small>${escapeHtml(facts)}</small>${metadata.bio ? `<small class="platform-bio">${escapeHtml(metadata.bio)}</small>` : ""}</a><button data-action="remove-platform" data-platform="${escapeHtml(link.platform)}" aria-label="移除 ${escapeHtml(label)}">×</button></article>`;
-        }).join("")}</div>` : `<div class="platform-empty">尚未绑定真实链接</div>`}
-        <div class="platform-connect-grid">${Object.entries(platformCatalog).map(([platform, item]) => `<button data-action="bind-platform" data-platform="${platform}">＋ ${item.label}</button>`).join("")}</div>
+        <header><div><p class="micro-label">AUTHORIZED EVIDENCE</p><h3>连接你的外部平台</h3></div><span>${linkedPlatforms.length}/${Object.keys(platformCatalog).length} 已连接</span></header>
+        <p>粘贴公开主页或作品链接。GitHub 可同步公开摘要，其他平台只保存你主动提交的地址。</p>
+        <div class="platform-connect-list">${Object.entries(platformCatalog).map(([platform, item]) => renderPlatformConnectRow(platform, item, linkedPlatforms)).join("")}</div>
       </section>
-      <section class="profile-fields"><button data-action="restart-onboarding"><span>重新组装协作护照</span><b>4 步 ›</b></button><button><span>能力与项目证据</span><b>5 项 ›</b></button><button><span>设备与隐私</span><b>已连接 ›</b></button></section>
+      <section class="profile-fields"><button data-action="restart-onboarding"><span>重新组装协作护照</span><b>4 步 ›</b></button><button data-action="profile-placeholder" data-label="能力与项目证据"><span>能力与项目证据</span><b>5 项 ›</b></button></section>
     </div>
   `;
 }
@@ -1317,9 +1351,34 @@ function renderDiscoveryFilterSheet() {
   </div>`;
 }
 
+function renderProfileSettingsSheet() {
+  const settings = [
+    ["device", "设备与隐私", "1 台 AI Passport 已连接", "⌁"],
+    ["authorization", "数据与授权", "管理公开字段和平台链接权限", "◎"],
+    ["activity", "活动与账号", "当前活动 · Hackathon 2026", "R"],
+  ];
+  return `<div class="overlay profile-settings-overlay">
+    <button class="overlay-backdrop" data-action="close-profile-settings" aria-label="关闭设置"></button>
+    <section class="bottom-sheet profile-settings-sheet" aria-label="我的设置">
+      <header class="profile-settings-head">
+        <button data-action="close-profile-settings" aria-label="返回我的页面">←</button>
+        <div><p class="micro-label">RALLY SETTINGS</p><h3>设置</h3></div>
+      </header>
+      <p class="profile-settings-copy">管理设备、隐私和活动账号。这些次级选项不会打断你的协作身份编辑。</p>
+      <div class="profile-settings-list">${settings.map(([id, label, detail, mark]) => `<button data-action="profile-setting-detail" data-setting="${id}" data-label="${label}">
+        <span class="settings-row-mark" aria-hidden="true">${mark}</span>
+        <span><strong>${label}</strong><small>${detail}</small></span>
+        <b>›</b>
+      </button>`).join("")}</div>
+      <aside class="settings-privacy-note"><b>默认最小公开</b><span>RALLY 只展示你在当前活动主动授权的字段，活动结束后自动隐藏。</span></aside>
+    </section>
+  </div>`;
+}
+
 function renderOverlay() {
   if (!state.overlay) return "";
   if (state.overlay === "filters") return renderDiscoveryFilterSheet();
+  if (state.overlay === "profile-settings") return renderProfileSettingsSheet();
   const person = selectedPerson();
   if (state.overlay === "person") {
     const greeted = state.greeted.includes(person.id);
@@ -1444,6 +1503,16 @@ function bindEvents() {
   document.querySelectorAll("[data-action]").forEach((element) => element.addEventListener("click", () => handleAction(element.dataset.action, element)));
   document.querySelectorAll("[data-task]").forEach((element) => element.addEventListener("click", () => toggleTask(element.dataset.task)));
   document.querySelectorAll("[data-discovery-view]").forEach((element) => element.addEventListener("click", () => setVariant(element.dataset.discoveryView)));
+  document.querySelectorAll("[data-platform-form]").forEach((form) => {
+    const input = form.querySelector("input[name='platform-url']");
+    input?.addEventListener("input", () => {
+      state.platformDrafts[form.dataset.platform] = input.value;
+    });
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      connectPlatform(form.dataset.platform, input?.value || "");
+    });
+  });
   bindRecommendationSwipe();
   bindPersonSheetGesture();
 }
@@ -1661,6 +1730,11 @@ function handleAction(action, element) {
     state.overlay = "filters";
   }
   if (action === "close-discovery-filters") state.overlay = null;
+  if (action === "open-profile-settings") state.overlay = "profile-settings";
+  if (action === "close-profile-settings") state.overlay = null;
+  if (action === "profile-setting-detail" || action === "profile-placeholder") {
+    showToast(`${element.dataset.label}将在下一轮接入`);
+  }
   if (action === "reset-discovery-filters") state.discoveryFilterDraft = defaultDiscoveryFilters();
   if (action === "toggle-discovery-filter") {
     const group = element.dataset.group;
@@ -1892,15 +1966,21 @@ async function updateLiveVisibility(nextVisible) {
   render();
 }
 
-async function connectPlatform(platform) {
-  if (!state.live.enabled) {
-    showToast("开启 live=1 并连接后端后，可绑定真实平台链接");
-    return;
-  }
+async function connectPlatform(platform, suppliedUrl = "") {
   const item = platformCatalog[platform];
   if (!item) return;
-  const url = window.prompt(`粘贴${item.label}公开链接`, item.hint);
-  if (!url || url === item.hint) return;
+  const url = suppliedUrl.trim();
+  if (!url) {
+    showToast(`请先粘贴${item.label}公开链接`);
+    render();
+    return;
+  }
+  state.platformDrafts[platform] = url;
+  if (!state.live.enabled) {
+    showToast("当前是静态演示；开启 Live 模式后即可保存真实链接");
+    render();
+    return;
+  }
   try {
     const response = await fetch(`${liveConfig.apiBase}/api/me/platform-links/${platform}`, {
       method: "PUT",
@@ -1913,6 +1993,7 @@ async function connectPlatform(platform) {
       ...state.live.platformLinks.filter((link) => link.platform !== platform),
       payload.platform_link,
     ];
+    delete state.platformDrafts[platform];
     showToast(
       payload.platform_link.verification_state === "PUBLIC_API_SYNCED"
         ? `${item.label}公开资料已同步`
@@ -1935,6 +2016,7 @@ async function disconnectPlatform(platform) {
     });
     if (!response.ok) throw new Error("链接移除失败");
     state.live.platformLinks = state.live.platformLinks.filter((link) => link.platform !== platform);
+    delete state.platformDrafts[platform];
     showToast(`${item.label}链接已移除`);
   } catch (error) {
     showToast(error.message);

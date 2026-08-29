@@ -543,6 +543,49 @@ def main():
         }
 
         page.locator(".app-nav [data-tab='profile']").click()
+        report["flow"]["profile_has_floating_settings"] = page.locator(
+            ".profile-settings-trigger"
+        ).is_visible()
+        report["flow"]["platform_links_use_input_rows"] = (
+            page.locator(".platform-connect-list .platform-connect-row").count() == 7
+            and page.locator(".platform-connect-list input").count() == 7
+            and page.locator(".platform-connect-grid").count() == 0
+        )
+        report["flow"]["device_privacy_moved_off_profile"] = not page.locator(
+            ".profile-fields"
+        ).get_by_text("设备与隐私", exact=True).is_visible()
+        settings_top = page.locator(".profile-settings-trigger").evaluate(
+            "button => button.getBoundingClientRect().top"
+        )
+        page.locator(".screen").evaluate("screen => { screen.scrollTop = 700; }")
+        page.wait_for_timeout(180)
+        sticky_settings_top = page.evaluate(
+            "document.querySelector('.profile-settings-trigger').getBoundingClientRect().top"
+        )
+        report["flow"]["profile_settings_remains_floating"] = (
+            abs(sticky_settings_top - settings_top) < 1
+        )
+        page.locator(".screen").evaluate("screen => { screen.scrollTop = 0; }")
+        assert report["flow"]["profile_has_floating_settings"]
+        assert report["flow"]["platform_links_use_input_rows"]
+        assert report["flow"]["device_privacy_moved_off_profile"]
+        assert report["flow"]["profile_settings_remains_floating"]
+        assert_mobile_visual_baseline(page, report["visual_baseline"], "profile")
+        page.locator(".profile-settings-trigger").click()
+        report["flow"]["settings_sheet_contains_device_privacy"] = (
+            page.locator(".profile-settings-sheet").is_visible()
+            and page.locator(".profile-settings-sheet").get_by_text(
+                "设备与隐私", exact=True
+            ).is_visible()
+        )
+        assert report["flow"]["settings_sheet_contains_device_privacy"]
+        assert_mobile_visual_baseline(
+            page, report["visual_baseline"], "profile_settings"
+        )
+        page.screenshot(
+            path=str(OUTPUT_DIR / "profile-settings.png"), full_page=True
+        )
+        page.get_by_role("button", name="返回我的页面").click()
         page.locator("[data-action='toggle-visible']").click()
         report["flow"]["visibility_paused"] = "is-hidden" in (page.locator(".eink-card").get_attribute("class") or "")
         page.screenshot(path=str(OUTPUT_DIR / "profile-eink.png"), full_page=True)
