@@ -431,6 +431,185 @@ const platformCatalog = {
   website: { label: "作品链接", hint: "粘贴作品或项目链接", mark: "↗", tone: "website" },
   other: { label: "其他链接", hint: "粘贴其他公开资料链接", mark: "+", tone: "other" },
 };
+const profileBlockCatalog = Object.freeze({
+  project_link: Object.freeze({
+    group: "work",
+    category: "项目证据",
+    label: "链接",
+    mark: "↗",
+    signature: "【项目证据·链接】",
+    titleLabel: "证据标题",
+    titleHint: "例如：开源工具或作品集",
+    detailLabel: "为什么能证明你的能力",
+    detailHint: "说清你负责的部分或结果",
+    urlLabel: "公开链接",
+    urlHint: "https://…",
+    needsUrl: true,
+  }),
+  project_title: Object.freeze({
+    group: "work",
+    category: "项目证据",
+    label: "标题",
+    mark: "T",
+    signature: "【项目证据·标题】",
+    titleLabel: "证据标题",
+    titleHint: "例如：RALLY 现场协作终端",
+    detailLabel: "一句话证据",
+    detailHint: "你完成了什么，结果是什么",
+  }),
+  project_text: Object.freeze({
+    group: "work",
+    category: "项目证据",
+    label: "文字",
+    mark: "¶",
+    signature: "【项目证据·文字】",
+    titleLabel: "主题",
+    titleHint: "例如：我如何组织黑客松协作",
+    detailLabel: "证据正文",
+    detailHint: "写下可被队友追问和核对的事实",
+    needsDetail: true,
+  }),
+  project_image: Object.freeze({
+    group: "work",
+    category: "项目证据",
+    label: "图片",
+    mark: "▧",
+    signature: "【项目证据·图片】",
+    titleLabel: "图片标题",
+    titleHint: "例如：硬件原型第二版",
+    detailLabel: "图片说明",
+    detailHint: "说明图片中的成果和你的贡献",
+    urlLabel: "公开图片链接",
+    urlHint: "https://…/prototype.jpg",
+    needsUrl: true,
+    isImage: true,
+  }),
+  project_demo: Object.freeze({
+    group: "work",
+    category: "项目证据",
+    label: "Demo / App",
+    mark: "▶",
+    signature: "【项目证据·Demo】",
+    titleLabel: "证据标题",
+    titleHint: "例如：RALLY Live 真机闭环",
+    detailLabel: "你完成了什么",
+    detailHint: "例如：双设备建联、组队与刷新恢复",
+    urlLabel: "公开链接",
+    urlHint: "https://…/demo",
+    needsUrl: true,
+  }),
+  experience_highlight: Object.freeze({
+    group: "experience",
+    category: "经历",
+    label: "高光",
+    mark: "✦",
+    signature: "【经历·高光】",
+    titleLabel: "高光时刻",
+    titleHint: "例如：48 小时完成首个真机闭环",
+    detailLabel: "发生了什么",
+    detailHint: "补充你承担的角色和可核对结果",
+  }),
+  experience_education: Object.freeze({
+    group: "experience",
+    category: "经历",
+    label: "教育",
+    mark: "△",
+    signature: "【经历·教育】",
+    titleLabel: "学习经历",
+    titleHint: "例如：同济大学 · 工业设计",
+    detailLabel: "与协作相关的方向",
+    detailHint: "只写会影响合作判断的信息",
+  }),
+  experience_work: Object.freeze({
+    group: "experience",
+    category: "经历",
+    label: "工作",
+    mark: "▣",
+    signature: "【经历·工作】",
+    titleLabel: "工作经历",
+    titleHint: "例如：AI 产品负责人",
+    detailLabel: "职责与结果",
+    detailHint: "说明你真正负责和交付过什么",
+  }),
+  experience_award: Object.freeze({
+    group: "experience",
+    category: "经历",
+    label: "获奖",
+    mark: "◇",
+    signature: "【经历·获奖】",
+    titleLabel: "奖项或认可",
+    titleHint: "例如：Hackathon 最佳设计奖",
+    detailLabel: "获奖作品与贡献",
+    detailHint: "说明作品、年份和你的角色",
+  }),
+  social_github: Object.freeze({
+    group: "social",
+    category: "社交平台",
+    label: "GitHub",
+    mark: "GH",
+    platform: "github",
+    urlLabel: "GitHub 公开主页",
+    urlHint: "https://github.com/…",
+  }),
+  social_x: Object.freeze({
+    group: "social",
+    category: "社交平台",
+    label: "X",
+    mark: "X",
+    signature: "【社交平台·X】",
+    storeAsEvidence: true,
+    needsUrl: true,
+    urlLabel: "X 公开主页",
+    urlHint: "https://x.com/…",
+  }),
+  social_xiaohongshu: Object.freeze({
+    group: "social",
+    category: "社交平台",
+    label: "小红书",
+    mark: "RED",
+    platform: "xiaohongshu",
+    urlLabel: "小红书公开主页",
+    urlHint: "粘贴公开主页链接",
+  }),
+  social_jike: Object.freeze({
+    group: "social",
+    category: "社交平台",
+    label: "即刻",
+    mark: "J",
+    platform: "jike",
+    urlLabel: "即刻公开主页",
+    urlHint: "粘贴公开主页链接",
+  }),
+  social_more: Object.freeze({
+    group: "social",
+    category: "社交平台",
+    label: "更多",
+    mark: "•••",
+    platform: "other",
+    urlLabel: "其他公开主页",
+    urlHint: "https://…",
+  }),
+});
+const profileBlockGroups = Object.freeze([
+  Object.freeze({
+    id: "work",
+    index: "01",
+    title: "作品 / 项目证据",
+    copy: "用可打开、可追问的成果说明你做过什么。",
+  }),
+  Object.freeze({
+    id: "experience",
+    index: "02",
+    title: "经历",
+    copy: "只保留会帮助队友判断合作方式的经历。",
+  }),
+  Object.freeze({
+    id: "social",
+    index: "03",
+    title: "社交平台",
+    copy: "链接只在你授权后展示，不读取私信或非公开内容。",
+  }),
+]);
 const publicFieldCatalog = {
   display_name: "姓名",
   avatar: "头像",
@@ -474,6 +653,7 @@ const state = {
   discoveryFilters: defaultDiscoveryFilters(),
   discoveryFilterDraft: defaultDiscoveryFilters(),
   platformDrafts: {},
+  profileBlockDraft: null,
   acceptedTasks: [],
   live: {
     enabled: liveConfig.enabled,
@@ -527,6 +707,7 @@ function appHistoryPayload() {
     variant: state.variant,
     tab: state.tab,
     overlay: state.overlay,
+    profileBlockType: state.profileBlockDraft?.type || null,
   };
 }
 
@@ -537,6 +718,11 @@ function writeAppHistory({ replace = false } = {}) {
   else url.searchParams.set("view", state.tab);
   if (state.overlay) url.searchParams.set("overlay", state.overlay);
   else url.searchParams.delete("overlay");
+  if (state.overlay === "profile-block-editor" && state.profileBlockDraft?.type) {
+    url.searchParams.set("block", state.profileBlockDraft.type);
+  } else {
+    url.searchParams.delete("block");
+  }
   const method = replace ? "replaceState" : "pushState";
   history[method]({ rally: appHistoryPayload() }, "", url);
 }
@@ -620,6 +806,136 @@ function escapeHtml(value) {
 function safeLiveText(value, fallback, maximumLength = 160) {
   if (typeof value !== "string" || !value.trim()) return fallback;
   return escapeHtml(value.trim().slice(0, maximumLength));
+}
+
+function cleanProfileBlockField(value, maximumLength) {
+  return String(value || "")
+    .replace(/[｜\r\n]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, maximumLength);
+}
+
+function safePublicUrl(value) {
+  try {
+    const url = new URL(String(value || "").trim());
+    if (url.protocol !== "https:" || url.username || url.password) return "";
+    return url.href;
+  } catch {
+    return "";
+  }
+}
+
+function parseProfileBlockEvidenceItem(value, evidenceIndex = -1) {
+  if (typeof value !== "string") return null;
+  const entry = Object.entries(profileBlockCatalog).find(([, item]) => (
+    item.signature && value.startsWith(item.signature)
+  ));
+  if (!entry) return null;
+  const [type, item] = entry;
+  const [title = "", detail = "", url = ""] = value
+    .slice(item.signature.length)
+    .split("｜");
+  if (!title.trim()) return null;
+  return {
+    source: "evidence",
+    evidenceIndex,
+    type,
+    category: item.category,
+    label: item.label,
+    mark: item.mark,
+    title: title.trim(),
+    detail: detail.trim(),
+    url: safePublicUrl(url),
+    isImage: Boolean(item.isImage),
+    serialized: value,
+  };
+}
+
+function serializeProfileBlock(type, values) {
+  const item = profileBlockCatalog[type];
+  if (!item?.signature) return "";
+  const title = cleanProfileBlockField(values.title, 40);
+  const detail = cleanProfileBlockField(values.detail, 72);
+  const url = item.needsUrl ? safePublicUrl(values.url) : "";
+  return [`${item.signature}${title}`, detail, url]
+    .filter((value, index, list) => value || index === 0 || list.slice(index + 1).some(Boolean))
+    .join("｜");
+}
+
+function profileBlockEvidence(profile = state.live.currentProfile) {
+  return (Array.isArray(profile?.evidence) ? profile.evidence : [])
+    .map((item, index) => parseProfileBlockEvidenceItem(item, index))
+    .filter(Boolean);
+}
+
+function plainProfileEvidence(profile = state.live.currentProfile) {
+  return (Array.isArray(profile?.evidence) ? profile.evidence : [])
+    .filter((item) => !parseProfileBlockEvidenceItem(item));
+}
+
+function platformPresentation(link) {
+  let inferredPlatform = link?.platform;
+  if (inferredPlatform === "other") {
+    try {
+      const hostname = new URL(link.url).hostname.replace(/^www\./, "");
+      if (hostname === "x.com" || hostname === "twitter.com") inferredPlatform = "x";
+    } catch {
+      // Keep the generic label for a malformed legacy link.
+    }
+  }
+  if (inferredPlatform === "x") return { label: "X", mark: "X" };
+  const item = platformCatalog[inferredPlatform] || platformCatalog.other;
+  return { label: item.label, mark: item.mark };
+}
+
+function publicProfileCardItems() {
+  const profile = state.live.currentProfile;
+  const evidenceItems = (Array.isArray(profile?.evidence) ? profile.evidence : []).map((value, index) => {
+    const block = parseProfileBlockEvidenceItem(value, index);
+    if (block) return block;
+    return {
+      source: "evidence",
+      evidenceIndex: index,
+      type: "plain_evidence",
+      category: "能力证据",
+      label: "证据",
+      mark: "✓",
+      title: value,
+      detail: "",
+      url: "",
+      isImage: false,
+      serialized: value,
+    };
+  });
+  const platformItems = state.live.platformLinks.map((link) => {
+    const presentation = platformPresentation(link);
+    return {
+      source: "platform",
+      platform: link.platform,
+      type: `social_${link.platform}`,
+      category: "社交平台",
+      label: presentation.label,
+      mark: presentation.mark,
+      title: presentation.label,
+      detail: platformLinkSummary(link),
+      url: safePublicUrl(link.url),
+      isImage: false,
+    };
+  });
+  return [...evidenceItems, ...platformItems];
+}
+
+function profileBlockAuthorizationField(item) {
+  return item?.group === "social" && !item.storeAsEvidence
+    ? "platform_links"
+    : "evidence";
+}
+
+function profileBlockExistingAuthorizationCount(item) {
+  return profileBlockAuthorizationField(item) === "platform_links"
+    ? state.live.platformLinks.length
+    : (state.live.currentProfile?.evidence || []).length;
 }
 
 function activeRadarPeople() {
@@ -719,8 +1035,11 @@ function livePerson(person) {
     ? person.skills.slice(0, 12).map((skill) => safeLiveText(skill, "", 40)).filter(Boolean)
     : [];
   const evidenceItems = Array.isArray(person.evidence)
-    ? person.evidence.slice(0, 8).map((item) => safeLiveText(item, "", 120)).filter(Boolean)
+    ? person.evidence.slice(0, 8).map((item) => String(item || "").trim().slice(0, 160)).filter(Boolean)
     : [];
+  const evidenceBlocks = evidenceItems.map((item, index) => (
+    parseProfileBlockEvidenceItem(item, index)
+  ));
   const platformLinks = Array.isArray(person.platform_links) ? person.platform_links : [];
   const signal = person.distance?.band === "under_50m"
     ? 3
@@ -739,7 +1058,11 @@ function livePerson(person) {
     skills,
     availability: safeLiveText(person.availability, "", 120),
     proximity: safeLiveText(person.distance?.label, "展会现场", 40),
-    evidence: evidenceItems[0] || "展会内授权公开资料",
+    evidence: safeLiveText(
+      evidenceBlocks[0]?.title || evidenceItems[0],
+      "展会内授权公开资料",
+      120,
+    ),
     hasPublicEvidence: evidenceItems.length > 0 || platformLinks.length > 0,
     reason: safeLiveText(
       person.recommendation?.reasons?.join("；"),
@@ -764,8 +1087,8 @@ function livePerson(person) {
         ? person.collaboration_preferences.map((item) => safeLiveText(item, "", 60)).filter(Boolean).join("、")
         : "协作偏好未公开",
       projects: evidenceItems.map((item, index) => ({
-        title: `公开证据 ${index + 1}`,
-        detail: item,
+        title: safeLiveText(evidenceBlocks[index]?.title, `公开证据 ${index + 1}`, 80),
+        detail: safeLiveText(evidenceBlocks[index]?.detail || item, "已授权公开证据", 160),
         tags: skills.slice(0, 3),
       })),
     },
@@ -1592,6 +1915,53 @@ function renderPlatformConnectRow(platform, item, linkedPlatforms) {
   </form>`;
 }
 
+function renderPublicProfileCardItem(item, index, authorizedFields) {
+  const authorized = authorizedFields.has(item.source === "platform" ? "platform_links" : "evidence");
+  const authorizationLabel = authorized
+    ? (state.visible ? "已授权公开" : "已授权 · 当前暂停")
+    : "未公开";
+  const safeUrl = safePublicUrl(item.url);
+  const visual = item.isImage && safeUrl
+    ? `<img src="${escapeHtml(safeUrl)}" alt="" loading="lazy" referrerpolicy="no-referrer">`
+    : `<span class="public-block-mark" aria-hidden="true">${escapeHtml(item.mark)}</span>`;
+  const content = `<span class="public-block-kicker">PROOF ${String(index + 1).padStart(2, "0")} · ${escapeHtml(item.category)}</span>
+    <strong>${escapeHtml(item.title)}</strong>
+    ${item.detail ? `<p>${escapeHtml(item.detail)}</p>` : ""}
+    <em class="${authorized ? "is-authorized" : ""}">${authorizationLabel}</em>`;
+  return `<article class="public-profile-block ${item.isImage ? "is-image" : ""}" data-public-profile-block>
+    ${visual}
+    <div>${safeUrl ? `<a href="${escapeHtml(safeUrl)}" target="_blank" rel="noopener noreferrer">${content}</a>` : content}</div>
+  </article>`;
+}
+
+function renderPublicProfileCard() {
+  const profile = state.live.currentProfile;
+  const items = publicProfileCardItems();
+  const authorizedFields = new Set(profile?.visibility?.public_fields || []);
+  const canAdd = state.live.enabled && Boolean(profile);
+  return `<section class="public-profile-card" data-public-profile-card>
+    <header class="public-profile-card-head">
+      <div><p class="micro-label">OUTWARD COLLABORATION CARD</p><h3>对外协作卡</h3></div>
+      <span>${items.length} BLOCK${items.length === 1 ? "" : "S"}</span>
+    </header>
+    <div class="public-profile-identity">
+      ${glyph(currentUser, "md")}
+      <div><strong>${escapeHtml(currentUser.name)}</strong><span>${escapeHtml(currentUser.role)}</span></div>
+      <em>${state.visible ? (currentExhibition ? "本场展会公开" : "附近公开") : "当前暂停"}</em>
+    </div>
+    <div class="public-profile-blocks">
+      ${items.length
+        ? items.map((item, index) => renderPublicProfileCardItem(item, index, authorizedFields)).join("")
+        : `<div class="public-profile-empty"><span>＋</span><strong>还没有协作证据 Block</strong><p>添加作品、经历或公开平台，让队友看到可追问的真实证据。</p></div>`}
+    </div>
+    <footer class="public-profile-card-actions">
+      <button class="profile-add-block" data-action="open-profile-block-library" aria-label="添加内容" ${canAdd ? "" : "disabled"}><span>＋</span>添加内容</button>
+      <button class="profile-edit-foundation" data-action="${canAdd ? "open-profile-editor" : "profile-placeholder"}" data-label="基础协作资料">编辑基础资料</button>
+    </footer>
+    <p class="public-profile-boundary">只有标记为“已授权公开”的 Block 才会出现在推荐、附近、名册与 NFC / QR 卡片中。</p>
+  </section>`;
+}
+
 function renderProfile() {
   const linkedPlatforms = state.live.platformLinks;
   return `
@@ -1605,6 +1975,7 @@ function renderProfile() {
         <div><p class="micro-label">DISCOVERABILITY</p><h3>${state.visible ? visibilityScopeLabel() : "已暂停展示"}</h3><p>${visibilityScopeDescription()}</p></div>
         <button class="toggle ${state.visible ? "on" : ""}" data-action="toggle-visible" aria-pressed="${state.visible}" ${state.live.enabled ? liveBusyAttributes("visibility") : ""}><i></i></button>
       </section>
+      ${renderPublicProfileCard()}
       <section class="device-preview">
         <div class="device-preview-head"><div><p class="micro-label">AI PASSPORT / E-INK</p><h3>墨水屏公开面</h3></div><span class="sync-chip">● 已同步</span></div>
         <div class="eink-card ${state.visible ? "" : "is-hidden"}">
@@ -1621,7 +1992,7 @@ function renderProfile() {
         <p>粘贴公开主页或作品链接。GitHub 可同步公开摘要，其他平台只保存你主动提交的地址。</p>
         <div class="platform-connect-list">${Object.entries(platformCatalog).map(([platform, item]) => renderPlatformConnectRow(platform, item, linkedPlatforms)).join("")}</div>
       </section>
-      <section class="profile-fields"><button data-action="restart-onboarding"><span>重新组装协作护照</span><b>4 步 ›</b></button><button data-action="${state.live.enabled ? "open-profile-editor" : "profile-placeholder"}" data-label="能力与项目证据"><span>能力与项目证据</span><b>${state.live.enabled ? "编辑 ›" : "5 项 ›"}</b></button></section>
+      <section class="profile-fields"><button data-action="restart-onboarding"><span>重新组装协作护照</span><b>4 步 ›</b></button><button data-action="${state.live.enabled ? "open-profile-block-library" : "profile-placeholder"}" data-label="能力与项目证据"><span>能力与项目证据</span><b>${state.live.enabled ? `${profileBlockEvidence().length} Block ›` : "5 项 ›"}</b></button></section>
       ${state.live.enabled && liveConfig.accessToken ? `<button class="profile-logout-button" data-action="logout-live">退出当前账号</button>` : ""}
     </div>
   `;
@@ -1733,6 +2104,85 @@ function renderProfileSettingsSheet() {
   </div>`;
 }
 
+function renderProfileBlockPickerButton(type, item) {
+  return `<button data-action="choose-profile-block" data-block-type="${type}" aria-label="${escapeHtml(item.label)}">
+    <span aria-hidden="true">${escapeHtml(item.mark)}</span>
+    <strong>${escapeHtml(item.label)}</strong>
+  </button>`;
+}
+
+function renderProfileBlockLibrary() {
+  return `<div class="overlay profile-block-overlay">
+    <button class="overlay-backdrop" data-action="close-profile-block-library" aria-label="关闭添加内容面板"></button>
+    <section class="bottom-sheet profile-block-library" data-profile-block-library aria-label="添加协作证据内容">
+      <header class="profile-block-sheet-head">
+        <button data-action="close-profile-block-library" aria-label="返回我的页面">←</button>
+        <div><p class="micro-label">ADD A RALLY BLOCK</p><h3>添加内容</h3></div>
+      </header>
+      <aside class="profile-block-intro"><span>只放真实、可追问的协作证据</span><p>像搭积木一样补充对外卡片；每项都会先预览，再由你明确授权公开。</p></aside>
+      <div class="profile-block-groups">
+        ${profileBlockGroups.map((group) => {
+          const items = Object.entries(profileBlockCatalog).filter(([, item]) => item.group === group.id);
+          return `<section class="profile-block-picker-group" data-block-group="${group.id}">
+            <header><span>${group.index}</span><div><h4>${group.title}</h4><p>${group.copy}</p></div></header>
+            <div class="profile-block-picker-grid">${items.map(([type, item]) => renderProfileBlockPickerButton(type, item)).join("")}</div>
+          </section>`;
+        }).join("")}
+      </div>
+      <p class="profile-block-library-boundary">RALLY 不读取平台私信、草稿或非公开资料；保存后仍可在“编辑协作资料”撤回对应公开字段。</p>
+    </section>
+  </div>`;
+}
+
+function renderProfileBlockEditor() {
+  const type = state.profileBlockDraft?.type;
+  const item = profileBlockCatalog[type];
+  if (!item) return renderProfileBlockLibrary();
+  const isSocial = item.group === "social";
+  const authorizationField = profileBlockAuthorizationField(item);
+  const authorizationLabel = publicFieldCatalog[authorizationField];
+  const authorizationAlreadyOpen = new Set(
+    state.live.currentProfile?.visibility?.public_fields || [],
+  ).has(authorizationField);
+  const existingAuthorizationCount = profileBlockExistingAuthorizationCount(item);
+  const title = isSocial ? item.label : item.titleHint;
+  const detail = isSocial ? "公开主页链接" : item.detailHint;
+  return `<div class="overlay profile-block-overlay">
+    <button class="overlay-backdrop" data-action="close-profile-block-library" aria-label="关闭 Block 编辑"></button>
+    <section class="bottom-sheet profile-block-editor" aria-label="编辑 ${escapeHtml(item.label)} Block">
+      <header class="profile-block-sheet-head">
+        <button data-action="back-profile-block-library" aria-label="返回内容类型选择">←</button>
+        <div><p class="micro-label">${escapeHtml(item.category.toUpperCase())} / PREVIEW</p><h3>${escapeHtml(item.label)}</h3></div>
+      </header>
+      <form data-profile-block-form data-block-type="${type}">
+        <article class="profile-block-live-preview ${item.isImage ? "is-image" : ""}" data-profile-block-preview>
+          <span class="public-block-mark" aria-hidden="true">${escapeHtml(item.mark)}</span>
+          <div>
+            <span data-preview-kicker>PROOF · ${escapeHtml(item.category)}</span>
+            <strong data-preview-title>${escapeHtml(title)}</strong>
+            <p data-preview-detail>${escapeHtml(detail)}</p>
+            <a data-preview-link hidden target="_blank" rel="noopener noreferrer"></a>
+          </div>
+          ${item.isImage ? `<img data-preview-image hidden alt="图片 Block 预览" referrerpolicy="no-referrer">` : ""}
+        </article>
+        ${isSocial ? "" : `<label><span>${escapeHtml(item.titleLabel)}</span><input name="title" required maxlength="40" placeholder="${escapeHtml(item.titleHint)}" aria-label="${escapeHtml(item.titleLabel)}"></label>
+        <label><span>${escapeHtml(item.detailLabel)}</span><textarea name="detail" maxlength="72" ${item.needsDetail ? "required" : ""} placeholder="${escapeHtml(item.detailHint)}" aria-label="${escapeHtml(item.detailLabel)}"></textarea></label>`}
+        ${item.needsUrl || isSocial ? `<label><span>${escapeHtml(item.urlLabel)}</span><input name="url" type="url" required maxlength="180" placeholder="${escapeHtml(item.urlHint)}" aria-label="${escapeHtml(item.urlLabel)}" inputmode="url" autocomplete="url" autocapitalize="off" spellcheck="false"></label>` : ""}
+        <aside class="profile-block-authorization">
+          <span aria-hidden="true">✓</span>
+          <div><strong>${authorizationAlreadyOpen ? `沿用已开启的“${authorizationLabel}”公开` : `保存将开启“${authorizationLabel}”公开`}</strong><p>${authorizationAlreadyOpen
+            ? "该类内容已经获得字段级授权；暂停展示或取消字段勾选后立即停止对外显示。"
+            : existingAuthorizationCount
+              ? `现有 ${existingAuthorizationCount} 条同类内容也会一起公开；这是当前字段级授权模型的边界。`
+              : "该 Block 将公开到推荐、附近、名册与 NFC / QR 卡片。"}</p></div>
+          ${authorizationAlreadyOpen ? "" : `<label class="profile-block-public-confirm"><input name="confirm-public-field" type="checkbox" required><span>我确认开启“${authorizationLabel}”字段，并公开上述范围</span></label>`}
+        </aside>
+        <button class="primary-button full" type="submit" ${liveBusyAttributes(isSocial && !item.storeAsEvidence ? `platform:${item.platform}` : "profile-block:add")}>保存到对外协作卡</button>
+      </form>
+    </section>
+  </div>`;
+}
+
 function renderLiveProfileEditor() {
   const profile = state.live.currentProfile;
   if (!profile) return "";
@@ -1750,7 +2200,7 @@ function renderLiveProfileEditor() {
         <label><span>可投入时间</span><input name="availability" required maxlength="120" value="${escapeHtml(profile.availability)}"></label>
         <label><span>协作偏好</span><input name="preferences" required value="${arrayValue(profile.collaboration_preferences)}"></label>
         <label><span>当前协作需求</span><textarea name="need" maxlength="160">${escapeHtml(profile.collaboration_need)}</textarea></label>
-        <label><span>能力与项目证据（每行一项）</span><textarea name="evidence">${escapeHtml((profile.evidence || []).join("\n"))}</textarea></label>
+        <label><span>其他能力证据（每行一项）</span><textarea name="evidence">${escapeHtml(plainProfileEvidence(profile).join("\n"))}</textarea></label>
         <fieldset><legend>对外公开字段</legend><p>未勾选字段不会出现在推荐、附近、名册或 NFC/QR 页面。</p><div class="public-field-grid">${Object.entries(publicFieldCatalog).map(([field, label]) => `<label><input type="checkbox" name="public-fields" value="${field}" ${selectedFields.has(field) ? "checked" : ""}><span>${label}</span></label>`).join("")}</div></fieldset>
         <aside class="settings-privacy-note"><b>实际公开预览</b><span data-public-fields-preview>${[...selectedFields].map((field) => publicFieldCatalog[field]).filter(Boolean).join("、") || "当前没有公开字段"}</span></aside>
         <button class="primary-button full" type="submit" ${liveBusyAttributes("profile:update")}>保存资料与公开范围</button>
@@ -1769,6 +2219,8 @@ function renderOverlay() {
   if (state.overlay === "filters") return renderDiscoveryFilterSheet();
   if (state.overlay === "profile-settings") return renderProfileSettingsSheet();
   if (state.overlay === "profile-editor") return renderLiveProfileEditor();
+  if (state.overlay === "profile-block-library") return renderProfileBlockLibrary();
+  if (state.overlay === "profile-block-editor") return renderProfileBlockEditor();
   const person = selectedPerson();
   if (!person) return "";
   const directionAlignment = directionAlignmentFor(person.id);
@@ -1926,6 +2378,42 @@ function variantDescription() {
   return "手机端发现的推荐模式：围绕当前项目缺口解释谁值得先聊。";
 }
 
+function updateProfileBlockPreview(form) {
+  const item = profileBlockCatalog[form.dataset.blockType];
+  const preview = form.querySelector("[data-profile-block-preview]");
+  if (!item || !preview) return;
+  const title = item.group === "social"
+    ? item.label
+    : cleanProfileBlockField(form.elements.namedItem("title")?.value, 40) || item.titleHint;
+  const url = safePublicUrl(form.elements.namedItem("url")?.value);
+  let detail = item.group === "social"
+    ? "公开主页链接"
+    : cleanProfileBlockField(form.elements.namedItem("detail")?.value, 72) || item.detailHint;
+  if (item.group === "social" && url) {
+    try {
+      detail = new URL(url).hostname.replace(/^www\./, "");
+    } catch {
+      detail = "公开主页链接";
+    }
+  }
+  const previewTitle = preview.querySelector("[data-preview-title]");
+  const previewDetail = preview.querySelector("[data-preview-detail]");
+  const previewLink = preview.querySelector("[data-preview-link]");
+  const previewImage = preview.querySelector("[data-preview-image]");
+  if (previewTitle) previewTitle.textContent = title;
+  if (previewDetail) previewDetail.textContent = detail;
+  if (previewLink) {
+    previewLink.hidden = !url;
+    previewLink.href = url || "#";
+    previewLink.textContent = url ? "打开公开链接 ↗" : "";
+  }
+  if (previewImage) {
+    previewImage.hidden = !url;
+    if (url) previewImage.src = url;
+    else previewImage.removeAttribute("src");
+  }
+}
+
 function bindEvents() {
   document.querySelector("[data-live-login]")?.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -1934,6 +2422,14 @@ function bindEvents() {
   document.querySelector("[data-live-profile-form]")?.addEventListener("submit", (event) => {
     event.preventDefault();
     if (event.currentTarget.reportValidity()) updateLiveProfile(event.currentTarget);
+  });
+  const profileBlockForm = document.querySelector("[data-profile-block-form]");
+  profileBlockForm?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    if (event.currentTarget.reportValidity()) saveProfileBlock(event.currentTarget);
+  });
+  profileBlockForm?.querySelectorAll("input, textarea").forEach((input) => {
+    input.addEventListener("input", () => updateProfileBlockPreview(profileBlockForm));
   });
   const liveProfileForm = document.querySelector("[data-live-profile-form]");
   liveProfileForm?.querySelectorAll('input[name="public-fields"]').forEach((input) => {
@@ -2383,6 +2879,29 @@ function handleAction(action, element) {
   }
   if (action === "open-profile-editor") state.overlay = "profile-editor";
   if (action === "close-profile-editor") state.overlay = null;
+  if (action === "open-profile-block-library") {
+    if (!state.live.currentProfile) {
+      showToast("Live 账号资料加载完成后即可添加内容");
+      return;
+    }
+    state.profileBlockDraft = null;
+    state.overlay = "profile-block-library";
+  }
+  if (action === "close-profile-block-library") {
+    state.profileBlockDraft = null;
+    state.overlay = null;
+  }
+  if (action === "back-profile-block-library") {
+    state.profileBlockDraft = null;
+    state.overlay = "profile-block-library";
+  }
+  if (action === "choose-profile-block") {
+    const type = element.dataset.blockType;
+    if (profileBlockCatalog[type]) {
+      state.profileBlockDraft = { type };
+      state.overlay = "profile-block-editor";
+    }
+  }
   if (action === "profile-setting-detail" || action === "profile-placeholder") {
     showToast(`${element.dataset.label}将在下一轮接入`);
   }
@@ -2630,6 +3149,7 @@ function showToast(message) {
 function handlePlatformBack() {
   if (state.overlay) {
     state.overlay = null;
+    state.profileBlockDraft = null;
     writeAppHistory({ replace: true });
     render();
     return true;
@@ -2660,6 +3180,11 @@ window.addEventListener("popstate", (event) => {
     ? snapshot.tab
     : (new URL(location.href).searchParams.get("view") || "discover");
   state.overlay = typeof snapshot?.overlay === "string" ? snapshot.overlay : null;
+  const historyBlockType = snapshot?.profileBlockType
+    || new URL(location.href).searchParams.get("block");
+  state.profileBlockDraft = state.overlay === "profile-block-editor" && profileBlockCatalog[historyBlockType]
+    ? { type: historyBlockType }
+    : null;
   render();
 });
 
@@ -2668,6 +3193,7 @@ window.addEventListener("keydown", (event) => {
   if (["input", "textarea"].includes(tag) || event.target?.isContentEditable) return;
   if (event.key === "Escape" && state.overlay) {
     state.overlay = null;
+    state.profileBlockDraft = null;
     writeAppHistory({ replace: true });
     render();
   }
@@ -2681,6 +3207,7 @@ function clearLiveSession() {
   localStorage.removeItem("rally_access_token");
   localStorage.removeItem("rally_session_expires_at");
   state.overlay = null;
+  state.profileBlockDraft = null;
   writeAppHistory({ replace: true });
   state.live.authStatus = "required";
   state.live.sessionExpiresAt = null;
@@ -2779,6 +3306,118 @@ function parseProfileList(value, { maximumItems = 5 } = {}) {
     .slice(0, maximumItems);
 }
 
+function profileInputWithEvidence(profile, evidence) {
+  return {
+    role: profile.role,
+    status: profile.status,
+    skills: profile.skills || [],
+    interests: profile.interests || [],
+    availability: profile.availability,
+    collaboration_preferences: profile.collaboration_preferences || [],
+    collaboration_need: profile.collaboration_need || "",
+    evidence,
+  };
+}
+
+async function saveProfileBlock(form) {
+  const type = form.dataset.blockType;
+  const item = profileBlockCatalog[type];
+  const profile = state.live.currentProfile;
+  if (!item || !profile || !state.live.enabled) return;
+  const formData = new FormData(form);
+  const url = safePublicUrl(formData.get("url"));
+  if ((item.needsUrl || item.group === "social") && !url) {
+    showToast("请填写有效的 HTTPS 公开链接");
+    return;
+  }
+  const currentPublicFields = new Set(profile.visibility?.public_fields || []);
+  const authorizationField = profileBlockAuthorizationField(item);
+  if (!currentPublicFields.has(authorizationField) && !formData.get("confirm-public-field")) {
+    showToast(`请先确认开启“${publicFieldCatalog[authorizationField]}”公开`);
+    return;
+  }
+  currentPublicFields.add(authorizationField);
+  try {
+    if (item.group === "social" && !item.storeAsEvidence) {
+      const payload = await runLiveMutation(`platform:${item.platform}`, async () => {
+        const platformPayload = await api.put(
+          `/api/me/platform-links/${encodeURIComponent(item.platform)}`,
+          { url },
+        );
+        await api.patch(
+          `/api/events/${encodeURIComponent(liveConfig.eventId)}/visibility`,
+          {
+            state: state.visible ? "VISIBLE" : "PAUSED",
+            public_fields: [...currentPublicFields],
+          },
+        );
+        return platformPayload;
+      });
+      state.live.platformLinks = [
+        ...state.live.platformLinks.filter((link) => link.platform !== item.platform),
+        payload.platform_link,
+      ];
+    } else {
+      const serialized = serializeProfileBlock(type, {
+        title: item.storeAsEvidence ? item.label : formData.get("title"),
+        detail: item.storeAsEvidence ? "公开主页" : formData.get("detail"),
+        url,
+      });
+      if (!serialized || !cleanProfileBlockField(
+        item.storeAsEvidence ? item.label : formData.get("title"),
+        40,
+      )) {
+        showToast("请补充这个 Block 的证据标题");
+        return;
+      }
+      if (serialized.length > 160) {
+        showToast("这个 Block 过长，请缩短说明或公开链接");
+        return;
+      }
+      const evidence = [...(profile.evidence || []), serialized];
+      if (evidence.length > 12) {
+        showToast("对外卡片最多保存 12 条能力证据");
+        return;
+      }
+      await runLiveMutation("profile-block:add", async () => {
+        await api.patch(
+          `/api/events/${encodeURIComponent(liveConfig.eventId)}/profile`,
+          profileInputWithEvidence(profile, evidence),
+        );
+        await api.patch(
+          `/api/events/${encodeURIComponent(liveConfig.eventId)}/visibility`,
+          {
+            state: state.visible ? "VISIBLE" : "PAUSED",
+            public_fields: [...currentPublicFields],
+          },
+        );
+      });
+      state.live.currentProfile = {
+        ...profile,
+        evidence,
+      };
+    }
+    state.live.currentProfile = {
+      ...state.live.currentProfile,
+      visibility: {
+        ...state.live.currentProfile.visibility,
+        public_fields: [...currentPublicFields],
+      },
+    };
+    state.profileBlockDraft = null;
+    state.overlay = null;
+    writeAppHistory({ replace: true });
+    showToast(state.visible
+      ? `${item.label} 已添加并公开`
+      : `${item.label} 已保存，恢复展示后公开`);
+    await loadLiveMe({ force: true });
+  } catch (error) {
+    handleLiveFailure(error, "Block 保存失败");
+    showToast(state.live.error);
+  }
+  render();
+}
+
 async function updateLiveProfile(form) {
   const formData = new FormData(form);
   const skills = parseProfileList(formData.get("skills"));
@@ -2796,7 +3435,12 @@ async function updateLiveProfile(form) {
     availability: String(formData.get("availability") || "").trim(),
     collaboration_preferences: preferences,
     collaboration_need: String(formData.get("need") || "").trim(),
-    evidence: parseProfileList(formData.get("evidence"), { maximumItems: 12 }),
+    evidence: [
+      ...(state.live.currentProfile?.evidence || []).filter((item) => (
+        parseProfileBlockEvidenceItem(item)
+      )),
+      ...parseProfileList(formData.get("evidence"), { maximumItems: 12 }),
+    ].slice(0, 12),
   };
   const publicFields = formData.getAll("public-fields").map(String);
   try {

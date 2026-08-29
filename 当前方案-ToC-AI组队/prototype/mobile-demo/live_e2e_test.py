@@ -75,6 +75,61 @@ def wait_for_health(url: str, process=None):
     raise RuntimeError(f"Service did not become ready: {url}\n{last_error!r}")
 
 
+def mobile_sheet_metrics(locator):
+    return locator.evaluate(
+        """root => {
+            const visible = (element) => {
+                const style = getComputedStyle(element);
+                const box = element.getBoundingClientRect();
+                return style.display !== "none"
+                    && style.visibility !== "hidden"
+                    && style.opacity !== "0"
+                    && box.width > 0
+                    && box.height > 0;
+            };
+            const text = [...root.querySelectorAll("*")].filter(
+                (element) => visible(element)
+                    && [...element.childNodes].some(
+                        (node) => node.nodeType === Node.TEXT_NODE
+                            && node.textContent.trim()
+                    )
+            );
+            const controls = [...root.querySelectorAll(
+                "button, a[href], input:not([type='checkbox']), textarea, select, "
+                    + ".profile-block-public-confirm"
+            )]
+                .filter(visible)
+                .map((element) => {
+                    const box = element.getBoundingClientRect();
+                    return {
+                        label: element.getAttribute("aria-label")
+                            || element.textContent.trim(),
+                        width: box.width,
+                        height: box.height,
+                    };
+                });
+            const sheet = root.closest(".bottom-sheet") || root;
+            const box = sheet.getBoundingClientRect();
+            return {
+                minimumFontSize: Math.min(
+                    ...text.map(
+                        (element) => parseFloat(
+                            getComputedStyle(element).fontSize
+                        )
+                    )
+                ),
+                undersizedControls: controls.filter(
+                    (item) => item.width < 44 || item.height < 44
+                ),
+                sheetBottom: box.bottom,
+                viewportHeight: innerHeight,
+                horizontalOverflow:
+                    document.documentElement.scrollWidth > innerWidth,
+            };
+        }"""
+    )
+
+
 def main():
     backend_port = free_port()
     frontend_port = free_port()
@@ -183,6 +238,180 @@ def main():
             assert website_row.locator("a").get_attribute("href") == (
                 "https://portfolio.example.com/zhou-wen"
             )
+
+            page.get_by_role("button", name="添加内容").click()
+            block_library = page.locator("[data-profile-block-library]")
+            block_library.get_by_text("作品 / 项目证据", exact=True).wait_for()
+            assert block_library.get_by_text("经历", exact=True).is_visible()
+            assert block_library.get_by_text("社交平台", exact=True).is_visible()
+            assert block_library.get_by_role("button", name="Demo / App").is_visible()
+            assert block_library.get_by_role("button", name="获奖").is_visible()
+            assert block_library.get_by_role("button", name="X").is_visible()
+            block_mobile_metrics = mobile_sheet_metrics(block_library)
+            assert block_mobile_metrics["minimumFontSize"] >= 10, block_mobile_metrics
+            assert block_mobile_metrics["undersizedControls"] == [], block_mobile_metrics
+            assert abs(
+                block_mobile_metrics["sheetBottom"]
+                - block_mobile_metrics["viewportHeight"]
+            ) <= 1
+            assert not block_mobile_metrics["horizontalOverflow"]
+            assert page.locator(".phone-status, .phone-island").count() == 0
+            block_library.get_by_role("button", name="Demo / App").click()
+
+            block_form = page.locator("[data-profile-block-form]")
+            block_form.get_by_label("证据标题").wait_for()
+            block_form_mobile_metrics = mobile_sheet_metrics(block_form)
+            assert block_form_mobile_metrics["minimumFontSize"] >= 10, (
+                block_form_mobile_metrics
+            )
+            assert block_form_mobile_metrics["undersizedControls"] == [], (
+                block_form_mobile_metrics
+            )
+            assert abs(
+                block_form_mobile_metrics["sheetBottom"]
+                - block_form_mobile_metrics["viewportHeight"]
+            ) <= 1
+            assert not block_form_mobile_metrics["horizontalOverflow"]
+
+            page.evaluate(
+                """() => {
+                    window.__rallyBlockPopstateCount = 0;
+                    window.addEventListener("popstate", () => {
+                        window.__rallyBlockPopstateCount += 1;
+                    });
+                }"""
+            )
+            page.go_back()
+            block_library.get_by_text("作品 / 项目证据", exact=True).wait_for()
+            assert block_form.count() == 0
+            assert page.evaluate("window.__rallyBlockPopstateCount") == 1
+            assert page.evaluate(
+                "new URL(location.href).searchParams.get('overlay')"
+            ) == "profile-block-library"
+            assert page.evaluate(
+                "new URL(location.href).searchParams.has('block')"
+            ) is False
+
+            page.go_back()
+            block_library.wait_for(state="detached")
+            page.get_by_role("button", name="添加内容").wait_for()
+            assert page.locator("[data-profile-block-form]").count() == 0
+            assert page.evaluate("window.__rallyBlockPopstateCount") == 2
+            assert page.evaluate(
+                "new URL(location.href).searchParams.has('overlay')"
+            ) is False
+            assert page.evaluate(
+                "new URL(location.href).searchParams.get('view')"
+            ) == "profile"
+
+            page.get_by_role("button", name="添加内容").click()
+            block_library.get_by_role("button", name="Demo / App").click()
+            block_form.get_by_label("证据标题").wait_for()
+            block_form.get_by_label("证据标题").fill("RALLY Live 真机闭环")
+            block_form.get_by_label("你完成了什么").fill("双设备建联、组队与刷新恢复")
+            block_form.get_by_label("公开链接").fill(
+                "https://rally.example/demo"
+            )
+            public_confirmation = block_form.get_by_text(
+                '我确认开启“能力证据”字段，并公开上述范围', exact=True
+            )
+            assert public_confirmation.is_visible()
+            assert "现有" in block_form.locator(
+                ".profile-block-authorization"
+            ).inner_text()
+            public_confirmation.click()
+            assert block_form.locator("[data-profile-block-preview]").get_by_text(
+                "RALLY Live 真机闭环", exact=True
+            ).is_visible()
+            block_form.get_by_role(
+                "button", name="保存到对外协作卡"
+            ).click()
+            page.get_by_text("Demo / App 已添加并公开", exact=True).wait_for(
+                timeout=5000
+            )
+            public_card = page.locator("[data-public-profile-card]")
+            assert public_card.get_by_text(
+                "RALLY Live 真机闭环", exact=True
+            ).is_visible()
+            assert public_card.locator(
+                'a[href="https://rally.example/demo"]'
+            ).is_visible()
+            _, me = request_json(f"{backend_url}/api/me", user_id="user-zhou")
+            event_profile = next(
+                profile for profile in me["profiles"]
+                if profile["event_id"] == "hackathon-2026"
+            )
+            assert any(
+                item.startswith("【项目证据·Demo】RALLY Live 真机闭环")
+                for item in event_profile["evidence"]
+            )
+            assert "evidence" in event_profile["visibility"]["public_fields"]
+            _, discover_after_block = request_json(
+                f"{backend_url}/api/events/hackathon-2026/discover",
+                user_id="user-lin",
+            )
+            zhou_public = next(
+                person for person in discover_after_block["people"]
+                if person["user_id"] == "user-zhou"
+            )
+            assert any(
+                item.startswith("【项目证据·Demo】RALLY Live 真机闭环")
+                for item in zhou_public["evidence"]
+            )
+
+            page.reload()
+            page.locator('.app-nav [data-tab="profile"]').wait_for(timeout=8000)
+            page.locator('.app-nav [data-tab="profile"]').click()
+            assert page.locator("[data-public-profile-card]").get_by_text(
+                "RALLY Live 真机闭环", exact=True
+            ).is_visible()
+
+            page.get_by_role("button", name="添加内容").click()
+            page.locator("[data-profile-block-library]").get_by_role(
+                "button", name="获奖"
+            ).click()
+            award_form = page.locator("[data-profile-block-form]")
+            award_form.get_by_label("奖项或认可").fill("Hackathon 最佳协作体验")
+            award_form.get_by_label("获奖作品与贡献").fill(
+                "负责 Live 组队闭环与真机验收"
+            )
+            award_form.get_by_role(
+                "button", name="保存到对外协作卡"
+            ).click()
+            page.get_by_text("获奖 已添加并公开", exact=True).wait_for(
+                timeout=5000
+            )
+            assert page.locator("[data-public-profile-card]").get_by_text(
+                "Hackathon 最佳协作体验", exact=True
+            ).is_visible()
+
+            page.get_by_role("button", name="添加内容").click()
+            page.locator("[data-profile-block-library]").get_by_role(
+                "button", name="X"
+            ).click()
+            social_form = page.locator("[data-profile-block-form]")
+            social_form.get_by_label("X 公开主页").fill("https://x.com/rally_live")
+            social_form.get_by_role(
+                "button", name="保存到对外协作卡"
+            ).click()
+            page.get_by_text("X 已添加并公开", exact=True).wait_for(timeout=5000)
+            assert page.locator("[data-public-profile-card]").locator(
+                'a[href="https://x.com/rally_live"]'
+            ).is_visible()
+            _, me = request_json(f"{backend_url}/api/me", user_id="user-zhou")
+            assert any(
+                item.startswith("【社交平台·X】X")
+                and "https://x.com/rally_live" in item
+                for item in next(
+                    profile for profile in me["profiles"]
+                    if profile["event_id"] == "hackathon-2026"
+                )["evidence"]
+            )
+            assert "evidence" in next(
+                profile for profile in me["profiles"]
+                if profile["event_id"] == "hackathon-2026"
+            )["visibility"]["public_fields"]
+
             page.get_by_text("连接你的外部平台", exact=True).scroll_into_view_if_needed()
             page.screenshot(
                 path=str(HERE / "artifacts" / "live-profile-platforms.png"),
@@ -207,7 +436,10 @@ def main():
                 "✓ portfolio.example.com · 已保存", exact=True
             ).wait_for(timeout=4000)
             _, me = request_json(f"{backend_url}/api/me", user_id="user-zhou")
-            assert me["platform_links"][0]["url"] == (
+            assert next(
+                link for link in me["platform_links"]
+                if link["platform"] == "website"
+            )["url"] == (
                 "https://portfolio.example.com/zhou-wen-v2"
             )
 
@@ -241,7 +473,14 @@ def main():
             assert event_profile["role"] == "AI 产品与后端"
             assert event_profile["status"] == "团队缺人"
             assert event_profile["skills"] == ["Agent", "产品架构", "后端"]
-            assert event_profile["evidence"] == ["RALLY Live API", "双设备协作 E2E"]
+            assert event_profile["evidence"][3:] == ["RALLY Live API", "双设备协作 E2E"]
+            assert event_profile["evidence"][0].startswith(
+                "【项目证据·Demo】RALLY Live 真机闭环"
+            )
+            assert event_profile["evidence"][1].startswith(
+                "【经历·获奖】Hackathon 最佳协作体验"
+            )
+            assert event_profile["evidence"][2].startswith("【社交平台·X】X")
             assert "evidence" not in event_profile["visibility"]["public_fields"]
 
             page.reload()
@@ -584,6 +823,9 @@ def main():
             "presence_removed_after_leaving": True,
             "visibility_pause_persisted": True,
             "platform_link_saved_rendered_and_removed": True,
+            "profile_block_builder_saved_and_persisted": True,
+            "profile_block_mobile_contract": True,
+            "fake_phone_status_removed": True,
             "live_profile_edit_persisted_after_reload": True,
             "live_profile_xss_blocked": True,
             "bearer_api_base_query_ignored": True,
