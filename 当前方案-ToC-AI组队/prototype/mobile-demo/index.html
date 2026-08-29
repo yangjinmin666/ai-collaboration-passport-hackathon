@@ -11,9 +11,56 @@
     <link rel="icon" href="./assets/rally-icon.svg" type="image/svg+xml" />
     <title>RALLY 集结 · 手机端 Demo</title>
     <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./assets/splash.css" />
   </head>
   <body>
+    <button id="rally-splash" class="rally-splash" type="button" aria-label="RALLY 集结：找到队友，马上开工。点击跳过开屏">
+      <span class="rally-splash-contact" aria-hidden="true">
+        <i class="rally-splash-person rally-splash-person-a"></i>
+        <i class="rally-splash-person rally-splash-person-b"></i>
+        <b></b>
+      </span>
+      <span class="rally-splash-room">
+        <svg viewBox="0 0 280 230" aria-hidden="true">
+          <path class="rally-room-line rally-room-line-a" d="M132 27H72C49 27 34 43 34 65V157C34 179 50 195 72 195H118" />
+          <path class="rally-room-line rally-room-line-b" d="M148 27H208C231 27 246 43 246 65V157C246 179 230 195 208 195H162" />
+        </svg>
+        <span class="rally-splash-slogan">
+          <strong>找到队友，马上开工。</strong>
+          <small>Find your crew. Start building.</small>
+        </span>
+      </span>
+      <span class="rally-splash-brand"><strong>RALLY</strong><i></i><small>集结</small></span>
+    </button>
     <div id="app"></div>
+    <script>
+      (() => {
+        const splash = document.querySelector("#rally-splash");
+        const params = new URLSearchParams(location.search);
+        const forced = params.get("splash") === "1";
+        const skipped = params.get("splash") === "0" || (navigator.webdriver && !forced);
+        if (!splash || skipped) {
+          splash?.remove();
+          return;
+        }
+
+        let dismissed = false;
+        let removalTimer;
+        const dismiss = () => {
+          if (dismissed) return;
+          dismissed = true;
+          splash.classList.add("is-exiting");
+          removalTimer = window.setTimeout(() => splash.remove(), 360);
+        };
+        const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+        const autoDismissTimer = window.setTimeout(dismiss, reducedMotion ? 900 : 2400);
+        splash.addEventListener("click", dismiss);
+        window.addEventListener("pagehide", () => {
+          clearTimeout(autoDismissTimer);
+          clearTimeout(removalTimer);
+        }, { once: true });
+      })();
+    </script>
     <script type="module" src="./app.js"></script>
     <script>
       if ("serviceWorker" in navigator) {

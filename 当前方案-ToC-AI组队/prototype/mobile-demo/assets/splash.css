@@ -1,0 +1,165 @@
+.rally-splash {
+  position: fixed;
+  z-index: 1000;
+  inset: 0;
+  width: 100%;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  margin: 0;
+  padding: max(28px, env(safe-area-inset-top)) max(22px, env(safe-area-inset-right)) max(30px, env(safe-area-inset-bottom)) max(22px, env(safe-area-inset-left));
+  border: 0;
+  background: #fff;
+  color: #17212d;
+  font-family: "SF Pro Display", "PingFang SC", "Helvetica Neue", Arial, sans-serif;
+  text-align: center;
+  cursor: pointer;
+  opacity: 1;
+  transition: opacity .32s ease, transform .32s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.rally-splash:focus-visible { outline: 3px solid rgba(52, 124, 248, .42); outline-offset: -7px; }
+.rally-splash.is-exiting { opacity: 0; transform: scale(1.015); pointer-events: none; }
+
+.rally-splash-contact {
+  position: absolute;
+  top: max(64px, calc(env(safe-area-inset-top) + 34px));
+  left: 50%;
+  width: 104px;
+  height: 42px;
+  transform: translateX(-50%);
+}
+
+.rally-splash-person {
+  position: absolute;
+  top: 10px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  box-shadow: 0 5px 12px rgba(31, 48, 70, .14);
+}
+
+.rally-splash-person-a {
+  left: 0;
+  background: #17212d;
+  animation: rally-person-a .66s cubic-bezier(.22, .9, .28, 1) .08s forwards;
+}
+
+.rally-splash-person-b {
+  right: 0;
+  background: #347cf8;
+  animation: rally-person-b .66s cubic-bezier(.22, .9, .28, 1) .08s forwards;
+}
+
+.rally-splash-contact b {
+  position: absolute;
+  top: 4px;
+  left: 35px;
+  width: 34px;
+  height: 34px;
+  border: 1.5px solid rgba(52, 124, 248, .34);
+  border-radius: 50%;
+  opacity: 0;
+  animation: rally-contact-pulse .52s ease-out .57s forwards;
+}
+
+.rally-splash-room {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: min(82vw, 340px);
+  transform: translate(-50%, -52%);
+}
+
+.rally-splash-room svg { display: block; width: 100%; overflow: visible; }
+.rally-room-line {
+  fill: none;
+  stroke: #347cf8;
+  stroke-width: 5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 420;
+  stroke-dashoffset: 420;
+  filter: drop-shadow(0 5px 10px rgba(52, 124, 248, .08));
+  animation: rally-room-draw .84s cubic-bezier(.45, 0, .2, 1) .58s forwards;
+}
+
+.rally-room-line-b { animation-delay: .66s; }
+
+.rally-splash-slogan {
+  position: absolute;
+  top: 48%;
+  left: 50%;
+  width: 86%;
+  display: grid;
+  gap: 10px;
+  transform: translate(-50%, -42%);
+}
+
+.rally-splash-slogan strong,
+.rally-splash-slogan small,
+.rally-splash-brand {
+  opacity: 0;
+  transform: translateY(10px);
+  animation: rally-copy-in .46s cubic-bezier(.22, .8, .3, 1) forwards;
+}
+
+.rally-splash-slogan strong {
+  font-size: clamp(24px, 7vw, 31px);
+  line-height: 1.25;
+  letter-spacing: -.035em;
+  animation-delay: 1.02s;
+}
+
+.rally-splash-slogan small {
+  color: #6f7b89;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: clamp(10px, 3vw, 12px);
+  font-weight: 650;
+  line-height: 1.4;
+  letter-spacing: .01em;
+  animation-delay: 1.17s;
+}
+
+.rally-splash-brand {
+  position: absolute;
+  right: 0;
+  bottom: max(42px, calc(env(safe-area-inset-bottom) + 24px));
+  left: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  animation-delay: 1.42s;
+}
+
+.rally-splash-brand strong { font-size: 23px; line-height: 1; letter-spacing: -.045em; }
+.rally-splash-brand i { width: 5px; height: 5px; border-radius: 50%; background: #347cf8; }
+.rally-splash-brand small { color: #6f7b89; font-size: 11px; font-weight: 750; letter-spacing: .12em; }
+
+@keyframes rally-person-a { to { left: 31px; } }
+@keyframes rally-person-b { to { right: 31px; } }
+@keyframes rally-contact-pulse {
+  0% { opacity: 0; transform: scale(.45); }
+  35% { opacity: 1; }
+  100% { opacity: 0; transform: scale(1.55); }
+}
+@keyframes rally-room-draw { to { stroke-dashoffset: 0; } }
+@keyframes rally-copy-in { to { opacity: 1; transform: translateY(0); } }
+
+@media (max-height: 690px) {
+  .rally-splash-contact { top: max(42px, calc(env(safe-area-inset-top) + 20px)); }
+  .rally-splash-room { width: min(72vw, 300px); transform: translate(-50%, -50%); }
+  .rally-splash-brand { bottom: max(28px, calc(env(safe-area-inset-bottom) + 16px)); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rally-splash-person-a { left: 31px; }
+  .rally-splash-person-b { right: 31px; }
+  .rally-room-line { stroke-dashoffset: 0; }
+  .rally-splash-slogan strong,
+  .rally-splash-slogan small,
+  .rally-splash-brand { opacity: 1; transform: none; }
+  .rally-splash *, .rally-splash::before, .rally-splash::after { animation: none !important; }
+}

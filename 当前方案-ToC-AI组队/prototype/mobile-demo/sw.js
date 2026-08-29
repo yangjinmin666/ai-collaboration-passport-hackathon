@@ -1,4 +1,4 @@
-const CACHE_NAME = "rally-shell-v2";
+const CACHE_NAME = "rally-shell-v3";
 const SHELL_ASSETS = [
   "./",
   "./index.html",
@@ -7,6 +7,7 @@ const SHELL_ASSETS = [
   "./api-client.js",
   "./manifest.webmanifest",
   "./assets/rally-icon.svg",
+  "./assets/splash.css",
   "./assets/default-memoji-grid.jpg",
   "./offline.html",
 ];
