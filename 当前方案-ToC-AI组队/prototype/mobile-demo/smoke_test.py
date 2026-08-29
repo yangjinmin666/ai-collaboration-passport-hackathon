@@ -126,6 +126,7 @@ def recommendation_layout_geometry(page, text_scale: float = 1.0) -> dict:
                 cardScrollHeight: card.scrollHeight,
                 cardScrollTop: card.scrollTop,
                 cardFooterInset: rect(card).bottom - rect(footer).bottom,
+                cardActionGap: rect(actions).top - rect(card).bottom,
                 actionNavGap: rect(nav).top - rect(actions).bottom,
                 bodyScrollWidth: document.body.scrollWidth,
                 viewportWidth: innerWidth,
@@ -314,6 +315,7 @@ def main():
         assert short_layout["screenScrollTop"] == 0
         assert short_layout["cardScrollHeight"] <= short_layout["cardClientHeight"] + 1
         assert short_layout["cardFooterInset"] >= 10
+        assert short_layout["cardActionGap"] >= 16
         assert short_layout["actionNavGap"] >= 16
         assert short_layout["bodyScrollWidth"] <= short_layout["viewportWidth"]
         short_layout_page.close()
@@ -327,6 +329,7 @@ def main():
         assert large_text_layout["cardScrollHeight"] > large_text_layout["cardClientHeight"]
         assert large_text_layout["cardScrollTop"] > 0
         assert large_text_layout["cardFooterInset"] >= 10
+        assert large_text_layout["cardActionGap"] >= 16
         assert large_text_layout["actionNavGap"] >= 16
         large_text_page.close()
 
@@ -396,6 +399,9 @@ def main():
                     and recommendation_viewport["cardFooterInset"] >= 16
                     and recommendation_viewport["cardScrollHeight"] <= recommendation_viewport["cardClientHeight"]
                 )
+                report["variants"][variant]["recommendation_actions_have_breathing_room"] = (
+                    recommendation_viewport["cardActionGap"] >= 16
+                )
                 report["variants"][variant]["table_like_lists_removed"] = (
                     page.locator(".role-roster-person, .person-row").count() == 0
                 )
@@ -403,6 +409,7 @@ def main():
                 assert report["variants"][variant]["recommendation_progress_count"] == 11
                 assert report["variants"][variant]["recommendation_stays_in_one_viewport"], recommendation_viewport
                 assert report["variants"][variant]["recommendation_card_has_safe_bottom_inset"], recommendation_viewport
+                assert report["variants"][variant]["recommendation_actions_have_breathing_room"], recommendation_viewport
                 assert report["variants"][variant]["table_like_lists_removed"]
             if variant == "B":
                 discovery_backgrounds = page.locator(".phone-shell").evaluate(
