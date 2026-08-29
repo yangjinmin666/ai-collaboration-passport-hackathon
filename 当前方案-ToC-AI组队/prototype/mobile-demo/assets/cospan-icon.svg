@@ -1,7 +1,15 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="COSPAN 合拍">
-  <title>COSPAN 合拍：双拍合流标志</title>
-  <rect width="512" height="512" rx="116" fill="#347CF8"/>
-  <path d="M88 288h60l56-98 52 98" fill="none" stroke="#fff" stroke-width="38" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M424 288h-60l-56-98-52 98" fill="none" stroke="#fff" stroke-width="38" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="256" cy="288" r="30" fill="#FF735F"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="COSPAN 共域">
+  <title>COSPAN 共域：双手击掌标志</title>
+  <rect x="4" y="4" width="504" height="504" rx="116" fill="#F7F9FC" stroke="#DCE8F8" stroke-width="8"/>
+  <path d="m256 70 35 68 65-41 6 77 77-6-41 65 68 35-68 35 41 65-77-6-6 77-65-41-35 68-35-68-65 41-6-77-77 6 41-65-68-35 68-35-41-65 77 6 6-77 65 41z" fill="#347CF8"/>
+  <path d="m256 156 22 50 47-26-2 54 54 4-42 34 34 42-54 4 2 54-47-26-22 50-28-46-44 31 4-54-53 2 38-38-38-38 53 2-4-54 44 31z" fill="#FF735F"/>
+  <g transform="translate(56 48) scale(.78)">
+    <g fill="#FFFFFF" stroke="#17212D" stroke-width="15" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M258 414 250 310c-2-22 4-38 16-48v-68c0-20 12-34 30-34s30 14 30 34v42l4-62c2-20 16-32 34-30s28 18 26 38l-8 58 6-50c2-18 16-30 34-26s26 20 22 40l-14 76 18-26c12-16 32-20 48-8s20 32 10 50l-48 90c-8 16-20 26-38 28l-84 2z"/>
+      <path d="M326 236 320 280M382 240 374 286M430 280 420 308" fill="none"/>
+      <path d="M254 414 262 310c2-22-4-38-16-48v-68c0-20-12-34-30-34s-30 14-30 34v42l-4-62c-2-20-16-32-34-30s-28 18-26 38l8 58-6-50c-2-18-16-30-34-26s-26 20-22 40l14 76-18-26c-12-16-32-20-48-8s-20 32-10 50l48 90c8 16 20 26 38 28l84 2z"/>
+      <path d="M186 236 192 280M130 240 138 286M82 280 92 308" fill="none"/>
+    </g>
+    <path d="m256 242 10 24 25-8-10 24 21 14-25 8 2 26-21-14-18 19-2-26-26 2 18-19-14-22 26-2z" fill="#FFFFFF" stroke="#17212D" stroke-width="10" stroke-linejoin="round"/>
+  </g>
 </svg>
