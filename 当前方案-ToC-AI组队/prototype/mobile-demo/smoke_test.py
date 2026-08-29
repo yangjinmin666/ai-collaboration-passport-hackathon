@@ -405,9 +405,16 @@ def main():
             page.get_by_text("本人简介", exact=True).is_visible()
             and page.get_by_text("原文", exact=True).is_visible()
             and page.locator(".person-sheet.is-preview").count() == 1
-            and page.locator(".person-sheet.is-preview .ai-reason").count() == 0
+            and page.locator(".participant-bio p").inner_text() != page.locator(".ai-reference > p:not(.micro-label)").inner_text()
         )
         assert report["flow"]["person_preview_shows_authored_bio_not_agent_summary"]
+        report["flow"]["full_profile_content_preloaded_before_drag"] = (
+            page.locator("[data-person-full-profile]").count() == 1
+            and page.get_by_text("过往项目", exact=True).count() == 1
+            and page.get_by_text("协作方式", exact=True).count() == 1
+            and not page.locator("[data-person-full-profile]").is_visible()
+        )
+        assert report["flow"]["full_profile_content_preloaded_before_drag"]
         assert_mobile_visual_baseline(page, report["visual_baseline"], "person_detail_sheet")
         page.screenshot(path=str(OUTPUT_DIR / "step-1-match-reason.png"), full_page=True)
         expanding_drag_geometry = page.locator("[data-person-sheet-drag]").evaluate(
@@ -443,16 +450,16 @@ def main():
         page.locator(".person-sheet-content").evaluate(
             """surface => {
                 const box = surface.getBoundingClientRect();
-                const startX = box.left + box.width * .72;
+                const startX = box.left + box.width * .28;
                 const y = box.top + Math.min(160, box.height / 2);
                 surface.dispatchEvent(new PointerEvent('pointerdown', {bubbles:true, pointerId:11, clientX:startX, clientY:y}));
-                surface.dispatchEvent(new PointerEvent('pointermove', {bubbles:true, pointerId:11, clientX:startX - 100, clientY:y + 3}));
-                surface.dispatchEvent(new PointerEvent('pointerup', {bubbles:true, pointerId:11, clientX:startX - 100, clientY:y + 3}));
+                surface.dispatchEvent(new PointerEvent('pointermove', {bubbles:true, pointerId:11, clientX:startX + 100, clientY:y + 3}));
+                surface.dispatchEvent(new PointerEvent('pointerup', {bubbles:true, pointerId:11, clientX:startX + 100, clientY:y + 3}));
             }"""
         )
         page.locator(".person-overlay").wait_for(state="detached")
-        report["flow"]["full_profile_left_swipe_returns_to_discovery"] = page.locator(".recommendation-card-active").is_visible()
-        assert report["flow"]["full_profile_left_swipe_returns_to_discovery"]
+        report["flow"]["full_profile_right_swipe_returns_to_discovery"] = page.locator(".recommendation-card-active").is_visible()
+        assert report["flow"]["full_profile_right_swipe_returns_to_discovery"]
         page.locator(".recommendation-card-active").click()
         page.locator("[data-action='expand-person']").click()
         page.locator(".person-sheet.is-expanded").wait_for()

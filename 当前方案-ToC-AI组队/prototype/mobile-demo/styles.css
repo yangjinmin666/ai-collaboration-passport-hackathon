@@ -662,6 +662,7 @@ body[data-flow="onboarding"] .onboarding-shell { background: #fff; background-im
 .person-expand-cue span { color: var(--guide-blue-deep); font-size: 10px; font-weight: 800; }
 .person-expand-cue strong { grid-column: 1; font-size: 12px; }
 .person-expand-cue i { grid-column: 2; grid-row: 1 / span 2; color: var(--guide-blue); font-size: 22px; font-style: normal; }
+.person-sheet.is-preview:not(.is-revealing-profile) .person-full-profile { position: absolute; visibility: hidden; pointer-events: none; }
 .profile-facts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
 .profile-facts article { display: grid; gap: 5px; padding: 14px; border-radius: 17px; background: #f4f6f8; }
 .profile-facts span { color: var(--muted); font-size: 10px; }
