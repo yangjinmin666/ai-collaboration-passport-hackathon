@@ -78,6 +78,22 @@ def assert_mobile_visual_baseline(page, report: dict, label: str):
     assert not baseline["touchViolations"], baseline["touchViolations"]
 
 
+def dispatch_recommendation_swipe(page, delta_x: int, pointer_id: int):
+    """Dispatch one deterministic swipe gesture against the active recommendation."""
+    page.locator(".recommendation-card-active").evaluate(
+        """(card, gesture) => {
+            const box = card.getBoundingClientRect();
+            const startX = box.left + box.width / 2;
+            const y = box.top + box.height / 2;
+            const eventOptions = {bubbles: true, pointerId: gesture.pointerId, clientY: y};
+            card.dispatchEvent(new PointerEvent('pointerdown', {...eventOptions, clientX: startX}));
+            card.dispatchEvent(new PointerEvent('pointermove', {...eventOptions, clientX: startX + gesture.deltaX}));
+            card.dispatchEvent(new PointerEvent('pointerup', {...eventOptions, clientX: startX + gesture.deltaX}));
+        }""",
+        {"deltaX": delta_x, "pointerId": pointer_id},
+    )
+
+
 def bottom_center_brightness(png: bytes) -> float:
     """Measure whether the avatar crop exposes a full-width gray gutter."""
     image = Image.open(BytesIO(png)).convert("RGB")
@@ -480,23 +496,143 @@ def main():
 
         page.goto(f"{BASE_URL}/?variant=A")
         page.wait_for_load_state("networkidle")
-        first_recommendation = page.locator(".recommendation-person h3").inner_text()
-        page.locator(".recommendation-card-active").evaluate(
-            """card => {
-                const box = card.getBoundingClientRect();
-                const startX = box.left + box.width / 2;
-                const y = box.top + box.height / 2;
-                card.dispatchEvent(new PointerEvent('pointerdown', {bubbles:true, pointerId:7, clientX:startX, clientY:y}));
-                card.dispatchEvent(new PointerEvent('pointermove', {bubbles:true, pointerId:7, clientX:startX + 110, clientY:y}));
-                card.dispatchEvent(new PointerEvent('pointerup', {bubbles:true, pointerId:7, clientX:startX + 110, clientY:y}));
+        page.evaluate(
+            """() => {
+                window.__rallyAudioLog = {contexts: 0, closed: 0, suspended: 0, oscillators: []};
+                class FakeAudioParam {
+                    constructor(record = null) { this.record = record; }
+                    setValueAtTime(value) {
+                        if (this.record && this.record.start === undefined) this.record.start = value;
+                    }
+                    exponentialRampToValueAtTime(value) {
+                        if (this.record) this.record.end = value;
+                    }
+                }
+                class FakeAudioNode {
+                    connect() { return this; }
+                    start() {}
+                    stop() {}
+                }
+                class FakeAudioContext {
+                    constructor() {
+                        window.__rallyAudioLog.contexts += 1;
+                        this.currentTime = 1;
+                        this.sampleRate = 48000;
+                        this.state = 'running';
+                        this.destination = new FakeAudioNode();
+                    }
+                    createGain() {
+                        const node = new FakeAudioNode();
+                        node.gain = new FakeAudioParam();
+                        return node;
+                    }
+                    createOscillator() {
+                        const record = {};
+                        window.__rallyAudioLog.oscillators.push(record);
+                        const node = new FakeAudioNode();
+                        node.frequency = new FakeAudioParam(record);
+                        return node;
+                    }
+                    createBiquadFilter() {
+                        const node = new FakeAudioNode();
+                        node.frequency = new FakeAudioParam();
+                        node.Q = new FakeAudioParam();
+                        return node;
+                    }
+                    createBuffer(_channels, length) {
+                        const samples = new Float32Array(length);
+                        return {getChannelData: () => samples};
+                    }
+                    createBufferSource() { return new FakeAudioNode(); }
+                    resume() { this.state = 'running'; return Promise.resolve(); }
+                    suspend() {
+                        this.state = 'suspended';
+                        window.__rallyAudioLog.suspended += 1;
+                        return Promise.resolve();
+                    }
+                    close() {
+                        this.state = 'closed';
+                        window.__rallyAudioLog.closed += 1;
+                        return Promise.resolve();
+                    }
+                }
+                window.AudioContext = FakeAudioContext;
             }"""
         )
+        dispatch_recommendation_swipe(page, delta_x=30, pointer_id=6)
+        report["flow"]["subthreshold_swipe_is_silent"] = page.evaluate(
+            "window.__rallyAudioLog.oscillators.length === 0"
+        )
+        assert report["flow"]["subthreshold_swipe_is_silent"]
+        first_recommendation = page.locator(".recommendation-person h3").inner_text()
+        dispatch_recommendation_swipe(page, delta_x=110, pointer_id=7)
         page.wait_for_timeout(260)
         report["flow"]["right_swipe_advances_recommendation"] = (
             page.locator(".recommendation-person h3").inner_text() != first_recommendation
             and page.locator(".recommendation-intro em").inner_text() == "2 / 11"
         )
         assert report["flow"]["right_swipe_advances_recommendation"]
+
+        second_recommendation = page.locator(".recommendation-person h3").inner_text()
+        dispatch_recommendation_swipe(page, delta_x=-110, pointer_id=8)
+        page.wait_for_timeout(260)
+        swipe_audio_profile = page.evaluate(
+            """() => ({
+                contexts: window.__rallyAudioLog.contexts,
+                oscillatorCount: window.__rallyAudioLog.oscillators.length,
+                rightStart: window.__rallyAudioLog.oscillators[0]?.start,
+                rightEnd: window.__rallyAudioLog.oscillators[0]?.end,
+                leftStart: window.__rallyAudioLog.oscillators[2]?.start,
+                leftEnd: window.__rallyAudioLog.oscillators[2]?.end,
+            })"""
+        )
+        report["flow"]["left_swipe_advances_recommendation"] = (
+            page.locator(".recommendation-person h3").inner_text() != second_recommendation
+            and page.locator(".recommendation-intro em").inner_text() == "3 / 11"
+        )
+        report["flow"]["swipe_sounds_are_directional_and_single_fire"] = (
+            swipe_audio_profile["contexts"] == 1
+            and swipe_audio_profile["oscillatorCount"] == 4
+            and swipe_audio_profile["rightEnd"] > swipe_audio_profile["rightStart"]
+            and swipe_audio_profile["leftEnd"] < swipe_audio_profile["leftStart"]
+        )
+        assert report["flow"]["left_swipe_advances_recommendation"]
+        assert report["flow"]["swipe_sounds_are_directional_and_single_fire"], swipe_audio_profile
+
+        page.locator(".app-nav [data-tab='profile']").click()
+        page.locator(".profile-settings-trigger").click()
+        sound_toggle = page.locator("[data-action='toggle-swipe-sound']")
+        report["flow"]["swipe_sound_setting_defaults_on"] = (
+            sound_toggle.get_attribute("aria-pressed") == "true"
+        )
+        assert report["flow"]["swipe_sound_setting_defaults_on"]
+        sound_toggle.click()
+        report["flow"]["swipe_sound_setting_persists_off"] = (
+            sound_toggle.get_attribute("aria-pressed") == "false"
+            and page.evaluate("localStorage.getItem('rally_swipe_sound_enabled')") == "false"
+        )
+        report["flow"]["swipe_sound_disable_releases_audio"] = page.evaluate(
+            "window.__rallyAudioLog.closed === 1"
+        )
+        assert report["flow"]["swipe_sound_setting_persists_off"]
+        assert report["flow"]["swipe_sound_disable_releases_audio"]
+        page.get_by_role("button", name="返回我的页面").click()
+        page.locator(".app-nav [data-tab='discover']").click()
+        page.evaluate("window.__rallyAudioLog.oscillators = []")
+        dispatch_recommendation_swipe(page, delta_x=110, pointer_id=11)
+        page.wait_for_timeout(260)
+        report["flow"]["disabled_swipe_sound_is_silent"] = page.evaluate(
+            "window.__rallyAudioLog.oscillators.length === 0"
+        )
+        assert report["flow"]["disabled_swipe_sound_is_silent"]
+        page.locator(".app-nav [data-tab='profile']").click()
+        page.locator(".profile-settings-trigger").click()
+        page.locator("[data-action='toggle-swipe-sound']").click()
+        report["flow"]["swipe_sound_setting_restores_on"] = (
+            page.locator("[data-action='toggle-swipe-sound']").get_attribute("aria-pressed") == "true"
+            and page.evaluate("localStorage.getItem('rally_swipe_sound_enabled')") == "true"
+        )
+        assert report["flow"]["swipe_sound_setting_restores_on"]
 
         page.goto(f"{BASE_URL}/?variant=A")
         page.wait_for_load_state("networkidle")
@@ -771,7 +907,12 @@ def main():
                 "设备与隐私", exact=True
             ).is_visible()
         )
+        report["flow"]["settings_sheet_contains_swipe_sound_toggle"] = (
+            page.locator("[data-action='toggle-swipe-sound']").is_visible()
+            and page.locator("[data-action='toggle-swipe-sound']").get_attribute("aria-pressed") == "true"
+        )
         assert report["flow"]["settings_sheet_contains_device_privacy"]
+        assert report["flow"]["settings_sheet_contains_swipe_sound_toggle"]
         assert_mobile_visual_baseline(
             page, report["visual_baseline"], "profile_settings"
         )

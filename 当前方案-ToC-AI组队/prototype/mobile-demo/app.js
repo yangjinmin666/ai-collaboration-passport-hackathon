@@ -366,6 +366,7 @@ const initialTab = ["discover", "connections", "collaboration", "profile"].inclu
   : "discover";
 const storedAccessToken = localStorage.getItem("rally_access_token");
 const storedSessionExpiry = localStorage.getItem("rally_session_expires_at");
+const storedSwipeSoundEnabled = localStorage.getItem("rally_swipe_sound_enabled") !== "false";
 
 function resolveApiBase() {
   const explicitlyTrustedBase = localStorage.getItem("rally_api_base");
@@ -458,6 +459,7 @@ const state = {
   invited: startsInWorkspace ? ["lin"] : [],
   joined: startsInWorkspace ? ["lin"] : [],
   connectionFilter: "all",
+  swipeSoundEnabled: storedSwipeSoundEnabled,
   discoveryFilters: defaultDiscoveryFilters(),
   discoveryFilterDraft: defaultDiscoveryFilters(),
   platformDrafts: {},
@@ -1706,7 +1708,11 @@ function renderProfileSettingsSheet() {
         <div><p class="micro-label">RALLY SETTINGS</p><h3>设置</h3></div>
       </header>
       <p class="profile-settings-copy">管理设备、隐私和展会账号。这些次级选项不会打断你的协作身份编辑。</p>
-      <div class="profile-settings-list">${settings.map(([id, label, detail, mark]) => `<button data-action="profile-setting-detail" data-setting="${id}" data-label="${label}">
+      <div class="profile-settings-list"><button class="settings-sound-toggle" data-action="toggle-swipe-sound" aria-pressed="${state.swipeSoundEnabled}">
+        <span class="settings-row-mark" aria-hidden="true">SFX</span>
+        <span><strong>滑动声效</strong><small>${state.swipeSoundEnabled ? "左右滑动使用 RALLY 方向声纹" : "已关闭，仅保留视觉反馈"}</small></span>
+        <i class="settings-toggle ${state.swipeSoundEnabled ? "on" : ""}" aria-hidden="true"><b></b></i>
+      </button>${settings.map(([id, label, detail, mark]) => `<button data-action="profile-setting-detail" data-setting="${id}" data-label="${label}">
         <span class="settings-row-mark" aria-hidden="true">${mark}</span>
         <span><strong>${label}</strong><small>${detail}</small></span>
         <b>›</b>
@@ -2080,6 +2086,123 @@ function transitionPersonDetail(expanded) {
   });
 }
 
+const swipeCueProfiles = Object.freeze({
+  left: Object.freeze({ sweepStart: 680, sweepEnd: 430, airStart: 1500, airEnd: 850, settle: 360 }),
+  right: Object.freeze({ sweepStart: 520, sweepEnd: 760, airStart: 950, airEnd: 1600, settle: 1040 }),
+});
+
+let swipeAudioContext = null;
+let swipeNoiseBuffer = null;
+
+function getSwipeAudioContext() {
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass) return null;
+  if (swipeAudioContext && swipeAudioContext.state !== "closed") return swipeAudioContext;
+  swipeAudioContext = null;
+  swipeNoiseBuffer = null;
+  try {
+    swipeAudioContext = new AudioContextClass({ latencyHint: "interactive" });
+  } catch {
+    swipeAudioContext = new AudioContextClass();
+  }
+  return swipeAudioContext;
+}
+
+function disposeSwipeAudio() {
+  const context = swipeAudioContext;
+  swipeAudioContext = null;
+  swipeNoiseBuffer = null;
+  if (!context || context.state === "closed") return;
+  const closing = context.close?.();
+  closing?.catch(() => {});
+}
+
+function suspendSwipeAudio() {
+  if (swipeAudioContext?.state !== "running") return;
+  const suspending = swipeAudioContext.suspend?.();
+  suspending?.catch(() => {});
+}
+
+function primeSwipeAudio() {
+  if (!state.swipeSoundEnabled) return;
+  const context = getSwipeAudioContext();
+  if (context?.state === "suspended") context.resume().catch(() => {});
+}
+
+function getSwipeNoiseBuffer(context) {
+  if (swipeNoiseBuffer) return swipeNoiseBuffer;
+  const frameCount = Math.max(1, Math.floor(context.sampleRate * .12));
+  const buffer = context.createBuffer(1, frameCount, context.sampleRate);
+  const samples = buffer.getChannelData(0);
+  for (let index = 0; index < samples.length; index += 1) {
+    samples[index] = (Math.random() * 2 - 1) * (1 - index / samples.length);
+  }
+  swipeNoiseBuffer = buffer;
+  return buffer;
+}
+
+function scheduleSwipeCue(context, direction) {
+  const profile = swipeCueProfiles[direction];
+  if (!profile) return;
+  const startAt = context.currentTime + .005;
+  const endAt = startAt + .15;
+
+  const master = context.createGain();
+  master.gain.setValueAtTime(.0001, startAt);
+  master.gain.exponentialRampToValueAtTime(.035, startAt + .012);
+  master.gain.exponentialRampToValueAtTime(.0001, endAt);
+  master.connect(context.destination);
+
+  const sweep = context.createOscillator();
+  sweep.type = "sine";
+  sweep.frequency.setValueAtTime(profile.sweepStart, startAt);
+  sweep.frequency.exponentialRampToValueAtTime(profile.sweepEnd, startAt + .115);
+  sweep.connect(master);
+  sweep.start(startAt);
+  sweep.stop(endAt);
+
+  const air = context.createBufferSource();
+  const airFilter = context.createBiquadFilter();
+  const airGain = context.createGain();
+  air.buffer = getSwipeNoiseBuffer(context);
+  airFilter.type = "bandpass";
+  airFilter.Q.setValueAtTime(.8, startAt);
+  airFilter.frequency.setValueAtTime(profile.airStart, startAt);
+  airFilter.frequency.exponentialRampToValueAtTime(profile.airEnd, startAt + .11);
+  airGain.gain.setValueAtTime(.13, startAt);
+  airGain.gain.exponentialRampToValueAtTime(.0001, startAt + .12);
+  air.connect(airFilter);
+  airFilter.connect(airGain);
+  airGain.connect(master);
+  air.start(startAt);
+  air.stop(startAt + .12);
+
+  const settleAt = startAt + .082;
+  const settle = context.createOscillator();
+  const settleGain = context.createGain();
+  settle.type = "sine";
+  settle.frequency.setValueAtTime(profile.settle, settleAt);
+  settle.frequency.exponentialRampToValueAtTime(profile.settle * .92, endAt);
+  settleGain.gain.setValueAtTime(.0001, settleAt);
+  settleGain.gain.exponentialRampToValueAtTime(direction === "right" ? .28 : .18, settleAt + .008);
+  settleGain.gain.exponentialRampToValueAtTime(.0001, endAt);
+  settle.connect(settleGain);
+  settleGain.connect(master);
+  settle.start(settleAt);
+  settle.stop(endAt);
+}
+
+function playSwipeCue(direction) {
+  if (!state.swipeSoundEnabled) return;
+  const context = getSwipeAudioContext();
+  if (!context) return;
+  if (context.state === "suspended") {
+    context.resume().then(() => scheduleSwipeCue(context, direction)).catch(() => {});
+    return;
+  }
+  scheduleSwipeCue(context, direction);
+}
+
 function bindRecommendationSwipe() {
   const card = document.querySelector("[data-swipe-card]");
   if (!card) return;
@@ -2087,6 +2210,7 @@ function bindRecommendationSwipe() {
   let startX = 0;
   let deltaX = 0;
   let dragging = false;
+  let completing = false;
 
   const resetCard = () => {
     card.classList.remove("is-dragging", "is-positive", "is-negative");
@@ -2096,8 +2220,11 @@ function bindRecommendationSwipe() {
   };
 
   const completeSwipe = (direction) => {
+    if (completing) return;
+    completing = true;
     card.classList.remove("is-dragging");
     card.classList.add(direction === "right" ? "is-swiping-right" : "is-swiping-left");
+    playSwipeCue(direction);
     window.setTimeout(() => {
       if (direction === "right") expressRecommendationInterest(card.dataset.personId);
       else dismissRecommendation();
@@ -2106,6 +2233,7 @@ function bindRecommendationSwipe() {
   };
 
   card.addEventListener("pointerdown", (event) => {
+    primeSwipeAudio();
     dragging = true;
     startX = event.clientX;
     deltaX = 0;
@@ -2236,6 +2364,12 @@ function handleAction(action, element) {
   if (action === "close-discovery-filters") state.overlay = null;
   if (action === "open-profile-settings") state.overlay = "profile-settings";
   if (action === "close-profile-settings") state.overlay = null;
+  if (action === "toggle-swipe-sound") {
+    state.swipeSoundEnabled = !state.swipeSoundEnabled;
+    localStorage.setItem("rally_swipe_sound_enabled", String(state.swipeSoundEnabled));
+    if (!state.swipeSoundEnabled) disposeSwipeAudio();
+    showToast(state.swipeSoundEnabled ? "滑动声效已开启" : "滑动声效已关闭");
+  }
   if (action === "open-profile-editor") state.overlay = "profile-editor";
   if (action === "close-profile-editor") state.overlay = null;
   if (action === "profile-setting-detail" || action === "profile-placeholder") {
@@ -3132,11 +3266,13 @@ function syncLivePresenceLifecycle() {
 }
 
 window.addEventListener("pagehide", () => {
+  disposeSwipeAudio();
   stopLivePolling();
   stopLivePresence();
 });
 
 window.addEventListener("beforeunload", () => {
+  disposeSwipeAudio();
   stopLivePolling();
   stopLivePresence();
 });
@@ -3146,6 +3282,7 @@ document.addEventListener("visibilitychange", () => {
     refreshLiveState();
     syncLivePresenceLifecycle();
   } else {
+    suspendSwipeAudio();
     stopLivePresence();
   }
 });

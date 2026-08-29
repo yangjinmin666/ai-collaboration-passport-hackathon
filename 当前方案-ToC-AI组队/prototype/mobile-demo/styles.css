@@ -591,6 +591,11 @@ body[data-flow="onboarding"] .onboarding-shell { background: #fff; background-im
 .profile-settings-list strong { font-size: 13px; }
 .profile-settings-list small { overflow: hidden; color: #778390; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
 .profile-settings-list b { color: #9aa4ae; font-size: 19px; font-weight: 500; }
+.profile-settings-list > button.settings-sound-toggle { grid-template-columns: 42px minmax(0,1fr) 48px; }
+.settings-toggle { width: 46px; height: 28px; display: block; padding: 3px; border-radius: 99px; background: #c9d0d8; }
+.settings-toggle b { width: 22px; height: 22px; display: block; border-radius: 50%; background: #fff; transition: transform .18s ease; }
+.settings-toggle.on { background: var(--guide-blue); }
+.settings-toggle.on b { transform: translateX(18px); }
 .settings-privacy-note { display: grid; gap: 5px; margin-top: 12px; padding: 13px 14px; border-left: 3px solid var(--guide-blue); border-radius: 4px 16px 16px 4px; background: #eaf1fc; }
 .settings-privacy-note b { font-size: 11px; }
 .settings-privacy-note span { color: #637080; font-size: 9px; line-height: 1.55; }
