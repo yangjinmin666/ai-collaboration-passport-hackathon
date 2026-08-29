@@ -1062,15 +1062,19 @@ def main():
             and abs(expanded_geometry["bottom"] - expanded_geometry["viewportBottom"]) <= 1
         )
         assert report["flow"]["person_sheet_swipes_to_full_profile"]
-        detail_module_backgrounds = page.locator(
+        profile_fact_background = page.locator(
+            ".profile-facts article"
+        ).first.evaluate("element => getComputedStyle(element).backgroundColor")
+        detail_surface_backgrounds = page.locator(
             ".collaboration-style, .evidence-section, .ai-reference"
         ).evaluate_all(
             "elements => elements.map(element => getComputedStyle(element).backgroundColor)"
         )
-        report["flow"]["person_detail_modules_share_neutral_surface"] = (
-            detail_module_backgrounds == ["rgb(245, 246, 242)"] * 3
+        report["flow"]["person_detail_surfaces_match_profile_facts"] = (
+            profile_fact_background == "rgb(244, 246, 248)"
+            and detail_surface_backgrounds == [profile_fact_background] * 3
         )
-        assert report["flow"]["person_detail_modules_share_neutral_surface"]
+        assert report["flow"]["person_detail_surfaces_match_profile_facts"]
         page.locator(".person-sheet-content").evaluate(
             """surface => {
                 const box = surface.getBoundingClientRect();
