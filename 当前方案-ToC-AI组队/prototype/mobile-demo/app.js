@@ -3626,7 +3626,7 @@ function handleAction(action, element) {
     return;
   }
   if (action === "sync-live-now") {
-    refreshLiveState();
+    refreshLiveState({ preserveScreenScroll: true });
     return;
   }
   if (action === "open-conversation") {
@@ -5166,8 +5166,12 @@ function localPersonId(userId) {
   return String(userId || "").replace(/^user-/, "");
 }
 
-async function refreshLiveState() {
+async function refreshLiveState({ preserveScreenScroll = false } = {}) {
   if (!state.live.enabled || !state.live.meLoaded || state.live.syncInFlight) return;
+  const activeScreen = preserveScreenScroll ? document.querySelector(".screen") : null;
+  const screenScrollContext = activeScreen
+    ? { screen: activeScreen, tab: state.tab, overlay: state.overlay }
+    : null;
   state.live.syncInFlight = true;
   try {
     const eventId = encodeURIComponent(liveConfig.eventId);
@@ -5223,7 +5227,20 @@ async function refreshLiveState() {
     state.live.syncInFlight = false;
     const composerHasFocus = state.overlay === "conversation"
       && document.activeElement?.closest?.("[data-conversation-form]");
-    if (!composerHasFocus) render();
+    if (!composerHasFocus) {
+      const currentScreen = document.querySelector(".screen");
+      const preservedScrollTop = (
+        screenScrollContext
+        && screenScrollContext.screen === currentScreen
+        && screenScrollContext.tab === state.tab
+        && screenScrollContext.overlay === state.overlay
+      ) ? currentScreen.scrollTop : null;
+      render();
+      if (preservedScrollTop !== null) {
+        const refreshedScreen = document.querySelector(".screen");
+        if (refreshedScreen) refreshedScreen.scrollTop = preservedScrollTop;
+      }
+    }
   }
 }
 
@@ -5235,7 +5252,7 @@ function startLivePolling() {
     if (state.overlay === "conversation" && state.directConversation.connectionId) {
       loadDirectConversation({ silent: true });
     } else {
-      refreshLiveState();
+      refreshLiveState({ preserveScreenScroll: true });
     }
   }, 2500);
 }
@@ -5431,7 +5448,7 @@ window.addEventListener("beforeunload", () => {
 
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") {
-    refreshLiveState();
+    refreshLiveState({ preserveScreenScroll: true });
     syncLivePresenceLifecycle();
   } else {
     suspendSwipeAudio();

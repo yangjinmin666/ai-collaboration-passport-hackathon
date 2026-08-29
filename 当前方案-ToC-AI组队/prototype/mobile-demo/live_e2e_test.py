@@ -241,6 +241,118 @@ def main():
             assert website_row.locator("a").get_attribute("href") == (
                 "https://portfolio.example.com/zhou-wen"
             )
+            page.locator(".screen").evaluate(
+                """screen => {
+                    screen.dataset.profileScrollProbe = "before-poll";
+                    screen.scrollTop = screen.scrollHeight;
+                }"""
+            )
+            page.wait_for_function(
+                "!document.querySelector('.screen').dataset.profileScrollProbe",
+                timeout=5000,
+            )
+
+            cdp = context.new_cdp_session(page)
+            cdp.send("Network.enable")
+            cdp.send(
+                "Network.emulateNetworkConditions",
+                {
+                    "offline": False,
+                    "latency": 600,
+                    "downloadThroughput": -1,
+                    "uploadThroughput": -1,
+                    "connectionType": "wifi",
+                },
+            )
+            discover_request_url = (
+                f"{backend_url}/api/events/hackathon-2026/discover"
+            )
+
+            profile_scroll_before_request = page.locator(".screen").evaluate(
+                """screen => {
+                    const maximum = screen.scrollHeight - screen.clientHeight;
+                    screen.scrollTop = Math.floor(maximum / 3);
+                    screen.dataset.profileScrollProbe = "during-poll";
+                    return { top: screen.scrollTop, maximum };
+                }"""
+            )
+            assert profile_scroll_before_request["maximum"] > 0
+            page.wait_for_event(
+                "request",
+                predicate=lambda request: request.url == discover_request_url,
+                timeout=5000,
+            )
+            profile_scroll_during_request = page.locator(".screen").evaluate(
+                """screen => {
+                    screen.scrollTop = screen.scrollHeight;
+                    return {
+                        top: screen.scrollTop,
+                        maximum: screen.scrollHeight - screen.clientHeight,
+                    };
+                }"""
+            )
+            assert profile_scroll_during_request["top"] > (
+                profile_scroll_before_request["top"] + 100
+            )
+            page.wait_for_function(
+                "!document.querySelector('.screen').dataset.profileScrollProbe",
+                timeout=8000,
+            )
+            profile_scroll_after_request = page.locator(".screen").evaluate(
+                """screen => ({
+                    top: screen.scrollTop,
+                    maximum: screen.scrollHeight - screen.clientHeight,
+                })"""
+            )
+            assert profile_scroll_after_request["top"] >= (
+                profile_scroll_during_request["top"] - 1
+            ), {
+                "before_request": profile_scroll_before_request,
+                "during_request": profile_scroll_during_request,
+                "after_request": profile_scroll_after_request,
+            }
+
+            page.locator(".screen").evaluate(
+                """screen => {
+                    screen.scrollTop = screen.scrollHeight;
+                    screen.dataset.profileScrollProbe = "navigation-origin";
+                }"""
+            )
+            page.wait_for_event(
+                "request",
+                predicate=lambda request: request.url == discover_request_url,
+                timeout=5000,
+            )
+            page.locator('.app-nav [data-tab="connections"]').click()
+            page.locator('.app-nav [data-tab="profile"]').click()
+            profile_scroll_after_navigation = page.locator(".screen").evaluate(
+                """screen => {
+                    screen.dataset.profileScrollProbe = "navigation-return";
+                    return screen.scrollTop;
+                }"""
+            )
+            assert profile_scroll_after_navigation <= 1
+            page.wait_for_function(
+                "!document.querySelector('.screen').dataset.profileScrollProbe",
+                timeout=8000,
+            )
+            profile_scroll_after_navigation_poll = page.locator(
+                ".screen"
+            ).evaluate("screen => screen.scrollTop")
+            assert profile_scroll_after_navigation_poll <= 1, {
+                "after_navigation": profile_scroll_after_navigation,
+                "after_poll": profile_scroll_after_navigation_poll,
+            }
+            cdp.send(
+                "Network.emulateNetworkConditions",
+                {
+                    "offline": False,
+                    "latency": 0,
+                    "downloadThroughput": -1,
+                    "uploadThroughput": -1,
+                    "connectionType": "wifi",
+                },
+            )
 
             page.get_by_role("button", name="添加内容").click()
             block_library = page.locator("[data-profile-block-library]")
@@ -1237,6 +1349,9 @@ def main():
             "platform_link_saved_rendered_and_removed": True,
             "profile_block_builder_saved_and_persisted": True,
             "profile_block_mobile_contract": True,
+            "mobile_profile_scroll_preserved_during_poll": True,
+            "mobile_profile_scroll_tracks_input_during_poll": True,
+            "mobile_profile_navigation_rejects_stale_scroll": True,
             "fake_phone_status_removed": True,
             "live_profile_edit_persisted_after_reload": True,
             "live_profile_xss_blocked": True,
