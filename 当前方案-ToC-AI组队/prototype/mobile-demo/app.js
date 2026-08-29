@@ -1751,6 +1751,14 @@ function renderConnections() {
     if (alignment.status === "pending_partner") return `<button class="primary-button full" data-action="resume-direction" data-person="${person.id}">${state.live.enabled ? "继续项目创建" : "查看方向确认进度"}</button>`;
     return `<button class="primary-button full" data-action="resume-direction" data-person="${person.id}">继续意图澄清</button>`;
   };
+  const conversationEntry = (person) => {
+    const connection = acceptedConnectionForPerson(person);
+    const lastMessage = connection?.last_message?.text || "已经建联，可以从一句具体的话开始";
+    return `<button class="connection-conversation-entry" data-action="open-conversation" data-connection-id="${escapeHtml(connection.connection_id)}" data-person="${person.id}" aria-label="打开与 ${escapeHtml(person.name)} 的对话">
+      <span><small>最近消息</small><strong>${escapeHtml(lastMessage)}</strong></span>
+      <em>继续对话<i aria-hidden="true">→</i></em>
+    </button>`;
+  };
   return `
     <div class="view utility-view">
       ${commonHeader("连接")}
@@ -1766,7 +1774,8 @@ function renderConnections() {
           <article class="connection-card">
             <div class="connection-card-head">${glyph(person, "md")}<div><h4>${person.name}</h4><p>${person.role}</p></div><span class="source-chip">碰卡建联</span></div>
             <div class="connection-context"><span>认识于</span><strong>${currentExhibition?.name || "线下协作现场"}</strong><small>刚刚 · ${person.pairLabel}</small></div>
-            <div class="connection-card-actions"><button class="primary-button" data-action="open-conversation" data-connection-id="demo-${person.id}" data-person="${person.id}">打开对话</button>${connectedAction(person)}</div>
+            ${conversationEntry(person)}
+            <div class="connection-followup-action">${connectedAction(person)}</div>
           </article>
         `).join("")}
         ${visiblePendingPeople.map((person) => `<article class="pending-row">${glyph(person, "sm")}<div><strong>${person.name}</strong><span>招呼已发出 · 等待见面</span></div><em>待回应</em></article>`).join("")}
@@ -1780,6 +1789,32 @@ function renderConnections() {
 
 function uniqueRequestsByCounterpart(requests) {
   return [...new Map(requests.map((item) => [item.counterpartPerson.userId, item])).values()];
+}
+
+function acceptedConnectionForPerson(personOrId) {
+  const person = typeof personOrId === "object"
+    ? personOrId
+    : (state.live.enabled ? livePeople() : people).find((item) => item.id === personOrId);
+  const personId = person?.id || String(personOrId || "");
+  if (!personId) return null;
+  if (!state.live.enabled) {
+    if (!state.connected.includes(personId)) return null;
+    const messages = state.directConversation.demoMessages[personId] || [];
+    return {
+      connection_id: `demo-${personId}`,
+      counterpartPerson: person,
+      last_message: messages.at(-1) || null,
+      unread_count: 0,
+    };
+  }
+  return state.live.connectionRequests.find((request) => (
+    request.status === "ACCEPTED"
+    && request.connection_id
+    && (
+      request.counterpartPerson?.id === personId
+      || (person?.userId && request.counterpartPerson?.userId === person.userId)
+    )
+  )) || null;
 }
 
 function renderLiveConnections() {
@@ -1820,8 +1855,11 @@ function renderLiveConnections() {
         return `<article class="connection-card">
           <div class="connection-card-head">${glyph(person, "md")}<div><h4>${person.name}</h4><p>${person.role}</p></div><span class="source-chip">已建联</span></div>
           <div class="connection-context"><span>认识于</span><strong>${currentExhibition?.name || "COSPAN 现场"}</strong><small>${request.source === "nfc" ? "碰卡建联" : "双方确认"}</small></div>
-          ${request.last_message ? `<p class="connection-message-preview"><span>${escapeHtml(request.last_message.text)}</span>${request.unread_count ? `<b>${request.unread_count} 条新消息</b>` : ""}</p>` : ""}
-          <div class="connection-card-actions"><button class="primary-button" data-action="open-conversation" data-connection-id="${escapeHtml(request.connection_id)}" data-person="${person.id}" aria-label="打开与 ${escapeHtml(person.name)} 的对话${request.unread_count ? `，${request.unread_count} 条未读` : ""}">打开对话${request.unread_count ? `<b>${request.unread_count}</b>` : ""}</button><button class="secondary-button" data-action="resume-direction" data-person="${person.id}">继续项目协作</button></div>
+          <button class="connection-conversation-entry" data-action="open-conversation" data-connection-id="${escapeHtml(request.connection_id)}" data-person="${person.id}" aria-label="打开与 ${escapeHtml(person.name)} 的对话${request.unread_count ? `，${request.unread_count} 条未读` : ""}">
+            <span><small>${request.last_message ? "最近消息" : "现在可以聊天"}</small><strong>${escapeHtml(request.last_message?.text || "已经建联，可以从一句具体的话开始")}</strong></span>
+            <em>${request.unread_count ? `<b>${request.unread_count} 条新消息</b>` : "继续对话"}<i aria-hidden="true">→</i></em>
+          </button>
+          <div class="connection-followup-action"><button class="secondary-button full" data-action="resume-direction" data-person="${person.id}">继续项目协作</button></div>
         </article>`;
       }).join("")}
       ${visibleOutgoing.map((request) => {
@@ -1999,7 +2037,11 @@ function renderLiveDesktopWorkspace(project, room, canGenerate) {
       <header><p class="micro-label">TEAM / LIVE</p><h3>成员与权限</h3><span>来自项目成员关系</span></header>
       <div class="workspace-members">${room.members.map((member) => {
         const person = livePerson({ user_id: member.user_id, display_name: member.display_name, avatar: member.avatar, role: member.profile_role, status: liveMembershipLabel(member.membership_role) });
-        return `<article>${glyph(person, "sm")}<span><strong>${escapeHtml(member.display_name)}</strong><small>${escapeHtml(liveMembershipLabel(member.membership_role))} · ${escapeHtml(member.profile_role || "协作成员")}</small></span><em>${member.user_id === state.live.currentUserId ? "当前账号" : "已加入"}</em></article>`;
+        const connection = member.user_id === state.live.currentUserId ? null : acceptedConnectionForPerson(person);
+        const memberAction = connection
+          ? `<button class="workspace-member-chat" data-action="open-conversation" data-connection-id="${escapeHtml(connection.connection_id)}" data-person="${person.id}" aria-label="私聊 ${escapeHtml(member.display_name)}">私聊</button>`
+          : `<em>${member.user_id === state.live.currentUserId ? "当前账号" : "已加入"}</em>`;
+        return `<article>${glyph(person, "sm")}<span><strong>${escapeHtml(member.display_name)}</strong><small>${escapeHtml(liveMembershipLabel(member.membership_role))} · ${escapeHtml(member.profile_role || "协作成员")}</small></span>${memberAction}</article>`;
       }).join("")}</div>
       <aside class="workspace-governance"><span>权限边界</span><p>只有项目发起人或 Leader 能生成启动计划；任务必须由本人认领，计划必须由全员确认。</p></aside>
       <section class="workspace-handoff"><div><span>真实 Room</span><p>成员、任务、确认进度与活动记录均由后端保存，刷新和跨设备可恢复。</p></div></section>
@@ -2104,7 +2146,10 @@ function renderDesktopWorkspace(joinedPeople, tasks, latestMember) {
         <div class="workspace-members">
           <article>${glyph(currentUser, "sm")}<span><strong>${currentUser.name}</strong><small>项目发起人 · AI / 后端</small></span><em>Coordinator</em></article>
           <article><span class="member-monogram">YK</span><span><strong>一可</strong><small>共同创建者 · 产品验证</small></span><em>可编辑</em></article>
-          ${joinedPeople.map((person) => `<article class="workspace-member-new">${glyph(person, "sm")}<span><strong>${person.name}</strong><small>协作成员 · ${person.teamRole}</small></span><em>可编辑</em></article>`).join("")}
+          ${joinedPeople.map((person) => {
+            const connection = acceptedConnectionForPerson(person);
+            return `<article class="workspace-member-new">${glyph(person, "sm")}<span><strong>${person.name}</strong><small>协作成员 · ${person.teamRole}</small></span>${connection ? `<button class="workspace-member-chat" data-action="open-conversation" data-connection-id="${escapeHtml(connection.connection_id)}" data-person="${person.id}" aria-label="私聊 ${escapeHtml(person.name)}">私聊</button>` : "<em>可编辑</em>"}</article>`;
+          }).join("")}
         </div>
         <aside class="workspace-governance"><span>权限边界</span><p>只有 Coordinator 能发起 Agent 重排；成员可认领和调整自己的任务。</p></aside>
         ${renderToolHandoff()}
@@ -2409,7 +2454,7 @@ function renderAppNav() {
   );
   const connectionCount = state.live.enabled
     ? [...unreadConversationCount.values()].reduce((total, count) => total + count, 0)
-    : (state.connected.length || state.greeted.length);
+    : 0;
   return `<nav class="app-nav" aria-label="主导航">${items.map(([id, label]) => `<button class="${state.tab === id ? "active" : ""}" data-tab="${id}" aria-label="${label}" ${state.tab === id ? 'aria-current="page"' : ""}><span>${renderAppNavIcon(id)}</span><small>${label}</small>${id === "connections" && connectionCount ? `<i>${connectionCount}</i>` : ""}</button>`).join("")}</nav>`;
 }
 
@@ -2731,6 +2776,7 @@ function renderOverlay() {
   const directionAlignment = directionAlignmentFor(person.id);
   if (state.overlay === "person") {
     const greeted = state.greeted.includes(person.id);
+    const acceptedConnection = acceptedConnectionForPerson(person);
     const profile = selectedParticipantProfile(person);
     const expandedClass = state.personDetailExpanded ? "is-expanded" : "is-preview";
     return `<div class="overlay person-overlay ${expandedClass}"><button class="overlay-backdrop" data-action="close-overlay" aria-label="关闭"></button><section class="bottom-sheet person-sheet ${expandedClass}" data-person-sheet-surface aria-label="${person.name} 的个人资料">
@@ -2771,7 +2817,9 @@ function renderOverlay() {
           <article class="ai-reason ai-reference"><p class="micro-label">AGENT REFERENCE</p><h4>系统推荐参考</h4><p>${person.reason}</p><div class="caution"><span>见面前建议确认</span><strong>${person.caution}</strong></div></article>
         </div>
       </div>
-      <div class="sheet-actions person-sheet-actions"><button class="secondary-button" data-action="greet" data-person="${person.id}">${greeted ? "已表达想认识" : "想认识"}</button><button class="primary-button" data-action="direct-tap" data-person="${person.id}">${state.live.enabled ? "等待真实碰卡" : "模拟碰卡直连"}</button></div>
+      <div class="sheet-actions person-sheet-actions">${acceptedConnection
+        ? `<button class="secondary-button" data-action="open-conversation" data-connection-id="${escapeHtml(acceptedConnection.connection_id)}" data-person="${person.id}">发消息</button><button class="primary-button" ${state.joined.includes(person.id) ? 'data-tab="collaboration"' : 'data-action="resume-direction"'} data-person="${person.id}">${state.joined.includes(person.id) ? "进入共同协作" : "继续项目协作"}</button>`
+        : `<button class="secondary-button" data-action="greet" data-person="${person.id}">${greeted ? "已表达想认识" : "想认识"}</button><button class="primary-button" data-action="direct-tap" data-person="${person.id}">${state.live.enabled ? "等待真实碰卡" : "模拟碰卡直连"}</button>`}</div>
     </section></div>`;
   }
   if (state.overlay === "tap") {
@@ -2786,12 +2834,14 @@ function renderOverlay() {
   }
   if (state.overlay === "success") {
     const projectDirectionIsKnown = ["known_project", "confirmed"].includes(directionAlignment.status);
+    const acceptedConnection = acceptedConnectionForPerson(person);
     return `<div class="overlay success-overlay"><section class="success-card">
       <div class="success-mark">✓</div><p class="micro-label">CONNECTION STAMP</p><h3>你和 ${person.name}<br>已经建立协作关系</h3>
       <div class="stamp"><span>CONNECTED</span><strong>${person.pairLabel}</strong><small>HACKATHON 01 · JUST NOW</small></div>
       <p>${projectDirectionIsKnown ? "碰卡只建立关系。当前项目方向已经明确，可以向对方发出独立的入队邀请。" : "碰卡只建立关系。项目方向还未确定，先由你们说清楚想服务谁、解决什么问题。"}</p>
-      <button class="primary-button full" data-action="${projectDirectionIsKnown ? "invite-team" : "enter-intent-clarification"}" data-person="${person.id}">${projectDirectionIsKnown ? "邀请加入「离线会议洞察终端」" : "进入意图澄清"}</button>
-      <button class="secondary-button full" data-action="view-connection">稍后处理</button>
+      ${acceptedConnection ? `<button class="primary-button full" data-action="open-conversation" data-connection-id="${escapeHtml(acceptedConnection.connection_id)}" data-person="${person.id}">先聊一句</button>` : ""}
+      <button class="secondary-button full" data-action="${projectDirectionIsKnown ? "invite-team" : "enter-intent-clarification"}" data-person="${person.id}">${projectDirectionIsKnown ? "邀请加入「离线会议洞察终端」" : "进入意图澄清"}</button>
+      <button class="text-action success-later-action" data-action="view-connection">稍后处理</button>
     </section></div>`;
   }
   if (state.overlay === "intent-clarification") {
@@ -4957,6 +5007,9 @@ async function sendLiveConnectionRequest(person) {
 async function resolveLiveConnectionRequest(requestId, action) {
   if (!requestId || !new Set(["accept", "reject", "cancel", "block"]).has(action)) return;
   if (action === "block" && !window.confirm("拉黑后双方将不能继续发送连接请求，确认拉黑？")) return;
+  const acceptedPerson = action === "accept"
+    ? state.live.connectionRequests.find((request) => request.id === requestId)?.counterpartPerson
+    : null;
   try {
     await runLiveMutation(`connection-request:${requestId}`, () => api.patch(
       `/api/connections/requests/${encodeURIComponent(requestId)}`,
@@ -4965,6 +5018,11 @@ async function resolveLiveConnectionRequest(requestId, action) {
     const labels = { accept: "已接受连接", reject: "已拒绝请求", cancel: "已撤回请求", block: "已拉黑并关闭请求" };
     showToast(labels[action]);
     await refreshLiveState();
+    if (acceptedPerson) {
+      state.selectedId = acceptedPerson.id;
+      state.overlay = "success";
+      writeAppHistory();
+    }
   } catch (error) {
     handleLiveFailure(error, "连接状态更新失败");
     showToast(state.live.error);

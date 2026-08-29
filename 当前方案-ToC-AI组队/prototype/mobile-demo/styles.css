@@ -506,6 +506,17 @@ body[data-flow="onboarding"] .onboarding-shell { background: #fff; background-im
 .connection-message-preview { display: flex; align-items: center; gap: 8px; min-width: 0; margin: -5px 0 13px; color: #687584; font-size: 9px; }
 .connection-message-preview span { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .connection-message-preview b { flex: 0 0 auto; color: var(--brand-deep); font-size: 8px; }
+.connection-conversation-entry { width: 100%; min-height: 64px; display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 12px; padding: 11px 12px; border: 1px solid var(--brand-border); border-radius: 16px; background: var(--brand-soft); color: var(--ink); text-align: left; cursor: pointer; transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease; }
+.connection-conversation-entry:hover { border-color: var(--brand-action); box-shadow: 0 8px 22px rgba(var(--brand-rgb), .10); }
+.connection-conversation-entry:active { transform: scale(.99); }
+.connection-conversation-entry:focus-visible { outline: 3px solid rgba(var(--brand-rgb), .22); outline-offset: 2px; }
+.connection-conversation-entry > span { min-width: 0; display: grid; gap: 4px; }
+.connection-conversation-entry small { color: var(--brand-deep); font-size: 10px; font-weight: 760; }
+.connection-conversation-entry strong { overflow: hidden; font-size: 12px; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
+.connection-conversation-entry > em { display: flex; align-items: center; gap: 7px; color: var(--brand-deep); font-size: 10px; font-style: normal; font-weight: 800; white-space: nowrap; }
+.connection-conversation-entry > em b { min-width: 22px; height: 22px; display: grid; place-items: center; padding: 0 7px; border-radius: 999px; background: var(--brand-action); color: #fff; font-size: 10px; }
+.connection-conversation-entry > em i { font-size: 16px; font-style: normal; }
+.connection-followup-action { margin-top: 8px; }
 .connection-card-actions { display: grid; grid-template-columns: 1fr 1.18fr; gap: 8px; }
 .connection-card-actions button { min-width: 0; width: 100%; }
 .connection-card-actions .primary-button { display: flex; align-items: center; justify-content: center; gap: 6px; }
@@ -595,6 +606,9 @@ body[data-flow="onboarding"] .onboarding-shell { background: #fff; background-im
 .workspace-members strong { font-size: 10px; }.workspace-members small { overflow: hidden; color: #7a8591; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
 .workspace-members em { padding: 4px 6px; border-radius: 8px; background: #f1f3f6; color: #536170; font-size: 7px; font-style: normal; }
 .workspace-members article:first-child em { background: var(--guide-blue-soft); color: var(--guide-blue-deep); }
+.workspace-member-chat { min-width: 48px; min-height: 44px; padding: 0 10px; border: 1px solid var(--brand-border); border-radius: 12px; background: var(--brand-soft); color: var(--brand-deep); font-size: 11px; font-weight: 800; cursor: pointer; }
+.workspace-member-chat:hover { border-color: var(--brand-action); background: #fff; }
+.workspace-member-chat:focus-visible { outline: 3px solid rgba(var(--brand-rgb), .22); outline-offset: 2px; }
 .member-monogram { width: 42px; height: 42px; display: grid; place-items: center; border: 1px solid #d9dfe6; border-radius: 50%; background: #f2f4f7; font-size: 9px; font-weight: 850; }
 .workspace-member-new { background: #fbfdff; }
 
@@ -986,6 +1000,7 @@ body[data-source="android-app"] .direct-conversation-head { padding-top: max(44p
 .handshake-card > .text-action { margin-top: 10px; }
 .success-mark { width: 60px; height: 60px; display: grid; place-items: center; margin: 0 auto 14px; border-radius: 50%; background: var(--signal); font-size: 27px; }
 .stamp { margin: 20px auto; padding: 14px; border: 2px solid var(--cobalt); color: var(--cobalt-deep); transform: rotate(-2deg); display: grid; gap: 4px; font-family: monospace; }.stamp span { font-size: 9px; letter-spacing: .2em; }.stamp strong { font-size: 17px; }.stamp small { font-size: 7px; }.success-card .secondary-button { margin-top: 8px; }
+.success-later-action { width: 100%; min-height: 44px; margin-top: 3px; }
 .team-success .success-mark { background: var(--mist); color: var(--cobalt); }
 .intent-card { max-height: calc(100vh - 40px); overflow-y: auto; text-align: left; }
 .intent-card > h3, .intent-card > .micro-label { text-align: center; }

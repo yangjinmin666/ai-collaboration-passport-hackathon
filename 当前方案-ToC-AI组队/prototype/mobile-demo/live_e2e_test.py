@@ -980,9 +980,27 @@ def main():
             lin_page.get_by_text("想认识你", exact=True).wait_for(timeout=8000)
             lin_page.get_by_role("button", name="接受", exact=True).click()
             lin_page.get_by_text("已接受连接", exact=True).wait_for(timeout=5000)
+            lin_page.get_by_role("button", name="先聊一句", exact=True).wait_for(
+                timeout=8000
+            )
+            assert lin_page.get_by_role(
+                "button", name="先聊一句", exact=True
+            ).get_attribute("data-connection-id")
+            lin_page.get_by_role("button", name="稍后处理", exact=True).click()
 
             zhou_page.locator('.app-nav [data-tab="connections"]').click()
             zhou_page.get_by_text("已建联", exact=True).first.wait_for(timeout=8000)
+            zhou_entry = zhou_page.locator(".connection-conversation-entry")
+            assert zhou_entry.get_attribute("data-person") == "lin"
+            assert zhou_entry.get_attribute("data-connection-id")
+
+            zhou_page.locator('.app-nav [data-tab="discover"]').click()
+            zhou_page.locator('[data-discovery-view="C"]').click()
+            zhou_page.locator('.ledger-person[data-person="lin"]').click()
+            zhou_page.get_by_role("button", name="发消息", exact=True).click()
+            zhou_page.get_by_label("与 林澈 的对话", exact=True).wait_for(timeout=8000)
+            zhou_page.get_by_role("button", name="返回连接列表").click()
+            zhou_page.locator('.app-nav [data-tab="connections"]').click()
             zhou_page.evaluate(
                 """async () => {
                   const { RallyApiClient } = await import('./api-client.js');
@@ -1110,6 +1128,14 @@ def main():
             assert desktop_grid.is_visible()
             assert desktop_grid.get_by_text("周闻", exact=True).first.is_visible()
             assert desktop_grid.get_by_text("林澈", exact=True).first.is_visible()
+            private_chat = desktop_grid.get_by_role(
+                "button", name="私聊 林澈", exact=True
+            )
+            assert private_chat.is_visible()
+            private_chat.click()
+            zhou_page.get_by_label("与 林澈 的对话", exact=True).wait_for(timeout=8000)
+            zhou_page.get_by_role("button", name="返回连接列表").click()
+            desktop_grid.wait_for(timeout=8000)
             assert desktop_grid.locator("[data-live-task-id]").count() == len(
                 room["tasks"]
             )

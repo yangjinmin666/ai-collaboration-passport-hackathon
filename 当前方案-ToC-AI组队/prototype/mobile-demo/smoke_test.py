@@ -710,7 +710,17 @@ def main():
         )
         assert report["flow"]["all_connection_filter_works"]
 
-        page.get_by_role("button", name="打开对话", exact=True).click()
+        primary_conversation_entry = page.locator(".connection-conversation-entry")
+        report["flow"]["connected_person_has_primary_conversation_entry"] = (
+            primary_conversation_entry.count() == 1
+            and primary_conversation_entry.get_by_text(
+                "我想先把现场建联到开工的路径跑通。", exact=True
+            ).is_visible()
+            and primary_conversation_entry.get_attribute("data-connection-id") == "demo-lin"
+        )
+        assert report["flow"]["connected_person_has_primary_conversation_entry"]
+
+        page.get_by_role("button", name="打开与 林澈 的对话", exact=True).click()
         conversation_geometry = page.locator(".direct-conversation").evaluate(
             """conversation => {
                 const box = conversation.getBoundingClientRect();
@@ -750,12 +760,25 @@ def main():
         assert report["flow"]["direct_conversation_fits_mobile_viewport"], conversation_geometry
         page.get_by_label("输入消息").fill("我们先把现场建联到开工的路径跑通。")
         page.get_by_role("button", name="发送消息").click()
-        report["flow"]["direct_conversation_sends_lightweight_message"] = page.get_by_text(
-            "我们先把现场建联到开工的路径跑通。",
-            exact=True,
+        report["flow"]["direct_conversation_sends_lightweight_message"] = page.get_by_label(
+            "与 林澈 的对话", exact=True
+        ).get_by_text(
+            "我们先把现场建联到开工的路径跑通。", exact=True
         ).is_visible()
         assert report["flow"]["direct_conversation_sends_lightweight_message"]
         page.screenshot(path=str(OUTPUT_DIR / "direct-conversation.png"), full_page=True)
+        page.get_by_role("button", name="返回连接列表").click()
+
+        page.locator(".app-nav [data-tab='discover']").click()
+        page.locator("[data-discovery-view='C']").click()
+        page.locator(".ledger-person[data-person='lin']").click()
+        report["flow"]["connected_profile_has_message_entry"] = (
+            page.get_by_role("button", name="发消息", exact=True).is_visible()
+            and page.get_by_role("button", name="想认识", exact=True).count() == 0
+        )
+        assert report["flow"]["connected_profile_has_message_entry"]
+        page.get_by_role("button", name="发消息", exact=True).click()
+        assert page.get_by_label("与 林澈 的对话", exact=True).is_visible()
         page.get_by_role("button", name="返回连接列表").click()
 
         page.goto(f"{BASE_URL}/?variant=C&onboarding=1")
@@ -1085,7 +1108,8 @@ def main():
         page.get_by_role("button", name="模拟双方主动碰卡").click()
         page.screenshot(path=str(OUTPUT_DIR / "step-3-connected.png"), full_page=True)
         report["flow"]["connection_enters_intent_clarification_first"] = (
-            page.get_by_role("button", name="进入意图澄清").is_visible()
+            page.get_by_role("button", name="先聊一句", exact=True).is_visible()
+            and page.get_by_role("button", name="进入意图澄清").is_visible()
             and page.get_by_role("button", name="邀请加入「离线会议洞察终端」").count() == 0
             and page.locator(".task-item").count() == 0
         )
@@ -1403,9 +1427,18 @@ def main():
             workspace_desktop.locator(".workspace-desktop-grid").get_by_role("button", name="飞书").is_visible()
             and workspace_desktop.locator(".workspace-desktop-grid").get_by_role("button", name="GitHub").is_visible()
         )
+        report["flow"]["desktop_connected_member_has_private_chat"] = workspace_desktop.locator(
+            ".workspace-desktop-grid"
+        ).get_by_role("button", name="私聊 林澈", exact=True).is_visible()
         assert report["flow"]["desktop_workspace_is_primary"]
         assert report["flow"]["desktop_workspace_has_three_zones"]
         assert report["flow"]["desktop_workspace_hands_off_to_tools"]
+        assert report["flow"]["desktop_connected_member_has_private_chat"]
+        workspace_desktop.locator(".workspace-desktop-grid").get_by_role(
+            "button", name="私聊 林澈", exact=True
+        ).click()
+        assert workspace_desktop.get_by_label("与 林澈 的对话", exact=True).is_visible()
+        workspace_desktop.get_by_role("button", name="返回连接列表").click()
         workspace_desktop.screenshot(path=str(OUTPUT_DIR / "workspace-desktop.png"), full_page=True)
         workspace_desktop.close()
 
