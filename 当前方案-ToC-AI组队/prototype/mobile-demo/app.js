@@ -4750,8 +4750,12 @@ async function loadDirectConversation({ silent = false } = {}) {
     if (state.directConversation.connectionId === connectionId) {
       state.directConversation.loading = false;
       const composerHasFocus = document.activeElement?.closest?.("[data-conversation-form]");
-      if (!silent || !composerHasFocus || state.directConversation.error) render();
-      else updateFocusedConversationMessages();
+      if (composerHasFocus && !state.directConversation.error) {
+        updateFocusedConversationMessages();
+        document.querySelector(".conversation-loading")?.remove();
+      } else {
+        render();
+      }
     }
   }
 }
