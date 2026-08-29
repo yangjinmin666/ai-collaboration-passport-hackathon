@@ -2909,6 +2909,7 @@ function syncOverlayAccessibility(previousFocus = null) {
   stage.setAttribute("aria-hidden", "true");
   requestAnimationFrame(() => {
     if (!overlay.isConnected) return;
+    if (overlay.contains(document.activeElement)) return;
     const restoresSameOverlay = previousFocus?.overlayClassName === overlay.className;
     const restored = restoresSameOverlay
       ? focusable.find((element) => (
