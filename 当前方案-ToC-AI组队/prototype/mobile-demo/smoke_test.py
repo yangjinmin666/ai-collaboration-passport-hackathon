@@ -375,7 +375,7 @@ def main():
             assert report["variants"][variant]["discovery_tabs"] == 3
             assert report["variants"][variant]["scope"] == "event"
             assert report["variants"][variant]["context_switchers"] == 1
-            assert "AI Hardware Hackathon 2026" in report["variants"][variant]["context_label"]
+            assert "She Nicest 2026" in report["variants"][variant]["context_label"]
             assert page.get_by_text("当前活动 · 2026", exact=True).count() == 0
             assert report["variants"][variant]["prototype_switcher_removed"]
             assert report["variants"][variant]["fake_phone_status_removed"]
@@ -559,7 +559,7 @@ def main():
             assert section_header.get_by_text("COSPAN", exact=True).count() == 0
         page.locator('.app-nav [data-tab="discover"]').click()
         page.get_by_role(
-            "button", name="切换发现范围，当前为 AI Hardware Hackathon 2026"
+            "button", name="切换发现范围，当前为 She Nicest 2026"
         ).click()
         assert page.get_by_role("heading", name="你想在哪里发现人？").is_visible()
         assert page.get_by_text(

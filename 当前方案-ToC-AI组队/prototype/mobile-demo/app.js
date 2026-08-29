@@ -444,7 +444,7 @@ const api = new RallyApiClient({
 const exhibitionCatalog = Object.freeze({
   "hackathon-2026": Object.freeze({
     id: "hackathon-2026",
-    name: "AI Hardware Hackathon 2026",
+    name: "She Nicest 2026",
     directoryEnabled: true,
   }),
 });

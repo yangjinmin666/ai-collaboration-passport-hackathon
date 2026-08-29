@@ -38,7 +38,7 @@ with sync_playwright() as playwright:
     page.goto(f"{BASE_URL}/?live=0&variant=A&splash=0", wait_until="networkidle")
     context_trigger = page.locator(".context-switch-trigger")
     context_trigger.wait_for()
-    assert "AI Hardware Hackathon 2026" in context_trigger.inner_text()
+    assert "She Nicest 2026" in context_trigger.inner_text()
     context_trigger.click()
     page.locator(".context-switcher-sheet").wait_for()
     page.wait_for_timeout(50)
