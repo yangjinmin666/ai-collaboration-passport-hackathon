@@ -410,14 +410,16 @@ def main():
         assert report["flow"]["person_preview_shows_authored_bio_not_agent_summary"]
         assert_mobile_visual_baseline(page, report["visual_baseline"], "person_detail_sheet")
         page.screenshot(path=str(OUTPUT_DIR / "step-1-match-reason.png"), full_page=True)
-        page.locator("[data-person-sheet-drag]").evaluate(
+        expanding_drag_geometry = page.locator("[data-person-sheet-drag]").evaluate(
             """zone => {
                 const box = zone.getBoundingClientRect();
                 const x = box.left + box.width / 2;
                 const startY = box.top + Math.min(box.height / 2, 28);
                 zone.dispatchEvent(new PointerEvent('pointerdown', {bubbles:true, pointerId:9, clientX:x, clientY:startY}));
                 zone.dispatchEvent(new PointerEvent('pointermove', {bubbles:true, pointerId:9, clientX:x, clientY:startY - 80}));
+                const sheetBox = zone.closest('.person-sheet').getBoundingClientRect();
                 zone.dispatchEvent(new PointerEvent('pointerup', {bubbles:true, pointerId:9, clientX:x, clientY:startY - 80}));
+                return {bottom: sheetBox.bottom, viewportBottom: window.innerHeight};
             }"""
         )
         page.locator(".person-sheet.is-expanded").wait_for()
@@ -433,9 +435,26 @@ def main():
             and page.get_by_text("过往项目", exact=True).is_visible()
             and page.get_by_text("协作方式", exact=True).is_visible()
             and page.get_by_text("系统推荐参考", exact=True).count() == 1
+            and page.locator(".person-sheet-nav button").count() == 0
+            and abs(expanding_drag_geometry["bottom"] - expanding_drag_geometry["viewportBottom"]) <= 1
             and abs(expanded_geometry["bottom"] - expanded_geometry["viewportBottom"]) <= 1
         )
         assert report["flow"]["person_sheet_swipes_to_full_profile"]
+        page.locator(".person-sheet-content").evaluate(
+            """surface => {
+                const box = surface.getBoundingClientRect();
+                const startX = box.left + box.width * .72;
+                const y = box.top + Math.min(160, box.height / 2);
+                surface.dispatchEvent(new PointerEvent('pointerdown', {bubbles:true, pointerId:11, clientX:startX, clientY:y}));
+                surface.dispatchEvent(new PointerEvent('pointermove', {bubbles:true, pointerId:11, clientX:startX - 100, clientY:y + 3}));
+                surface.dispatchEvent(new PointerEvent('pointerup', {bubbles:true, pointerId:11, clientX:startX - 100, clientY:y + 3}));
+            }"""
+        )
+        page.locator(".person-sheet.is-preview").wait_for()
+        report["flow"]["full_profile_left_swipe_returns_to_preview"] = True
+        page.locator("[data-action='expand-person']").click()
+        page.locator(".person-sheet.is-expanded").wait_for()
+        page.wait_for_timeout(430)
         profile_scroll = page.locator(".person-sheet-content").evaluate(
             """content => {
                 const before = content.scrollTop;
@@ -448,16 +467,18 @@ def main():
             and profile_scroll["after"] > profile_scroll["before"]
         )
         assert report["flow"]["full_profile_scrolls_independently"], profile_scroll
-        live_radius = page.locator("[data-person-sheet-drag]").evaluate(
+        collapsing_drag_geometry = page.locator("[data-person-sheet-drag]").evaluate(
             """zone => {
                 const box = zone.getBoundingClientRect();
                 const x = box.left + box.width / 2;
                 const startY = box.top + Math.min(box.height / 2, 28);
                 zone.dispatchEvent(new PointerEvent('pointerdown', {bubbles:true, pointerId:10, clientX:x, clientY:startY}));
                 zone.dispatchEvent(new PointerEvent('pointermove', {bubbles:true, pointerId:10, clientX:x, clientY:startY + 90}));
-                const radius = parseFloat(getComputedStyle(zone.closest('.person-sheet')).borderTopLeftRadius);
+                const sheet = zone.closest('.person-sheet');
+                const sheetBox = sheet.getBoundingClientRect();
+                const radius = parseFloat(getComputedStyle(sheet).borderTopLeftRadius);
                 zone.dispatchEvent(new PointerEvent('pointerup', {bubbles:true, pointerId:10, clientX:x, clientY:startY + 90}));
-                return radius;
+                return {radius, bottom: sheetBox.bottom, viewportBottom: window.innerHeight};
             }"""
         )
         page.locator(".person-sheet.is-preview").wait_for()
@@ -470,10 +491,25 @@ def main():
         )
         report["flow"]["full_profile_top_swipe_returns_to_discovery_sheet"] = (
             page.locator(".person-sheet.is-preview").count() == 1
-            and live_radius > 0
+            and collapsing_drag_geometry["radius"] > 0
+            and abs(collapsing_drag_geometry["bottom"] - collapsing_drag_geometry["viewportBottom"]) <= 1
             and abs(preview_geometry["bottom"] - preview_geometry["viewportBottom"]) <= 1
         )
         assert report["flow"]["full_profile_top_swipe_returns_to_discovery_sheet"]
+        page.locator(".person-sheet-content").evaluate(
+            """surface => {
+                const box = surface.getBoundingClientRect();
+                const startX = box.left + box.width * .72;
+                const y = box.top + Math.min(150, box.height / 2);
+                surface.dispatchEvent(new PointerEvent('pointerdown', {bubbles:true, pointerId:12, clientX:startX, clientY:y}));
+                surface.dispatchEvent(new PointerEvent('pointermove', {bubbles:true, pointerId:12, clientX:startX - 100, clientY:y + 2}));
+                surface.dispatchEvent(new PointerEvent('pointerup', {bubbles:true, pointerId:12, clientX:startX - 100, clientY:y + 2}));
+            }"""
+        )
+        page.locator(".person-overlay").wait_for(state="detached")
+        report["flow"]["preview_left_swipe_returns_to_discovery"] = page.locator(".recommendation-card-active").is_visible()
+        assert report["flow"]["preview_left_swipe_returns_to_discovery"]
+        page.locator(".recommendation-card-active").click()
         page.get_by_role("button", name="想认识", exact=True).click()
         page.get_by_role("button", name="模拟碰卡直连").click()
         page.screenshot(path=str(OUTPUT_DIR / "step-2-card-handshake.png"), full_page=True)
