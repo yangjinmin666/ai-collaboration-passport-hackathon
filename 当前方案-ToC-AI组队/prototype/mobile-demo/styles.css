@@ -886,7 +886,7 @@ body[data-flow="onboarding"] .onboarding-shell { background: #fff; background-im
 @keyframes toast-in { from { opacity: 0; transform: translate(-50%, -10px); } }
 
 /* Live account, synchronization and server-backed workspace surfaces. */
-.live-gate { min-height: 100%; display: grid; align-content: center; gap: 20px; padding: 24px 20px max(24px, env(safe-area-inset-bottom)); background: linear-gradient(160deg, var(--brand-soft) 0%, #fff 52%, #f3f6fa 100%); }
+.live-gate { min-height: 100%; display: grid; align-content: center; gap: 20px; padding: max(24px, var(--rally-safe-area-top)) 20px max(24px, var(--rally-safe-area-bottom)); background: linear-gradient(160deg, var(--brand-soft) 0%, #fff 52%, #f3f6fa 100%); }
 .live-gate-brand { display: grid; justify-items: center; gap: 5px; }
 .live-gate-brand strong { font-size: 30px; line-height: 1; letter-spacing: -.06em; }
 .live-gate-brand span { color: #73808d; font-size: 11px; font-weight: 720; letter-spacing: .1em; }
@@ -998,7 +998,7 @@ body[data-flow="onboarding"] .onboarding-shell { background: #fff; background-im
     bottom: max(var(--space-4), var(--rally-safe-area-bottom));
   }
   .screen { padding-bottom: calc(104px + var(--rally-safe-area-bottom)); }
-  .screen:has(> .live-gate) { padding-bottom: 0; }
+  .screen:has(> .live-gate) { padding-top: 0; padding-bottom: 0; }
   .radar-field { width: 286px; height: 286px; margin-top: -2px; }
   .recommendation-deck { height: 408px; }
 

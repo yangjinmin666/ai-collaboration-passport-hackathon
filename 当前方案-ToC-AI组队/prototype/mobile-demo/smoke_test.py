@@ -178,13 +178,16 @@ def main():
         layout_page.wait_for_selector(".screen > .live-gate")
         live_gate_geometry = layout_page.locator(".phone-shell").evaluate(
             """shell => {
+                shell.style.setProperty('--rally-safe-area-top', '47px');
                 shell.style.setProperty('--rally-safe-area-bottom', '27px');
                 const scrollArea = shell.querySelector('.screen');
                 const gate = scrollArea.querySelector(':scope > .live-gate');
                 const screenBox = scrollArea.getBoundingClientRect();
                 const gateBox = gate.getBoundingClientRect();
                 return {
+                    uncoveredTop: gateBox.top - screenBox.top,
                     uncoveredBottom: screenBox.bottom - gateBox.bottom,
+                    gatePaddingTop: parseFloat(getComputedStyle(gate).paddingTop),
                     scrollHeight: scrollArea.scrollHeight,
                     clientHeight: scrollArea.clientHeight,
                 };
@@ -194,7 +197,9 @@ def main():
             **live_gate_geometry,
             "navigationPadding": navigation_padding,
         }
+        assert abs(live_gate_geometry["uncoveredTop"]) <= 1
         assert abs(live_gate_geometry["uncoveredBottom"]) <= 1
+        assert live_gate_geometry["gatePaddingTop"] >= 47
         assert live_gate_geometry["scrollHeight"] <= live_gate_geometry["clientHeight"] + 1
         layout_page.close()
 
