@@ -2331,7 +2331,7 @@ function renderOverlay() {
     return `<div class="overlay person-overlay ${expandedClass}"><button class="overlay-backdrop" data-action="close-overlay" aria-label="关闭"></button><section class="bottom-sheet person-sheet ${expandedClass}" data-person-sheet-surface aria-label="${person.name} 的个人资料">
       <div class="person-sheet-drag-zone" data-person-sheet-drag role="button" tabindex="0" aria-label="${state.personDetailExpanded ? "下滑收起完整资料" : "上滑查看完整资料"}">
         <div class="sheet-handle"></div>
-        ${state.personDetailExpanded ? `<div class="person-sheet-nav"><button data-action="collapse-person" aria-label="返回发现页">↓</button><span>个人资料</span><small>顶部下滑收起</small></div>` : ""}
+        ${state.personDetailExpanded ? `<div class="person-sheet-nav"><span>个人资料</span><small>顶部下滑收起 · 左右滑返回</small></div>` : ""}
       </div>
       <div class="person-sheet-content">
         <div class="person-sheet-head">${glyph(person, "lg")}<div><span class="status-pill">${person.status}</span><h3>${person.name}</h3><p>${person.role} · ${person.proximity}</p></div><strong class="large-fit">${person.fit}<small>${person.fitDetail}</small></strong></div>
@@ -2340,7 +2340,10 @@ function renderOverlay() {
           <header><span>本人简介</span><em>原文</em></header>
           <p>${profile.bio}</p>
         </article>
-        ${state.personDetailExpanded ? `
+        <button class="person-expand-cue" data-action="expand-person">
+          <span>${state.personDetailExpanded ? "完整资料" : "继续上滑"}</span><strong>${state.personDetailExpanded ? "过往项目与协作信息" : "查看过往项目与全部资料"}</strong><i>${state.personDetailExpanded ? "—" : "↑"}</i>
+        </button>
+        <div class="person-full-profile" data-person-full-profile>
           <section class="profile-facts" aria-label="基本信息">
             <article><span>所在地</span><strong>${profile.location}</strong></article>
             <article><span>可投入时间</span><strong>${profile.availability}</strong></article>
@@ -2361,11 +2364,7 @@ function renderOverlay() {
             <strong>${person.evidence}</strong>
           </section>
           <article class="ai-reason ai-reference"><p class="micro-label">AGENT REFERENCE</p><h4>系统推荐参考</h4><p>${person.reason}</p><div class="caution"><span>见面前建议确认</span><strong>${person.caution}</strong></div></article>
-        ` : `
-          <button class="person-expand-cue" data-action="expand-person">
-            <span>继续上滑</span><strong>查看过往项目与全部资料</strong><i>↑</i>
-          </button>
-        `}
+        </div>
       </div>
       <div class="sheet-actions person-sheet-actions"><button class="secondary-button" data-action="greet" data-person="${person.id}">${greeted ? "已表达想认识" : "想认识"}</button><button class="primary-button" data-action="direct-tap" data-person="${person.id}">${state.live.enabled ? "等待真实碰卡" : "模拟碰卡直连"}</button></div>
     </section></div>`;
@@ -2609,29 +2608,45 @@ function bindPersonSheetGesture() {
   if (!dragZone || !sheet) return;
 
   let startY = 0;
+  let startX = 0;
+  let startHeight = 0;
+  let startedFromHandle = false;
   let deltaY = 0;
+  let deltaX = 0;
+  let gestureAxis = null;
   let dragging = false;
 
   const finish = () => {
     if (!dragging) return;
     dragging = false;
     sheet.classList.remove("is-dragging");
-    sheet.style.removeProperty("--sheet-drag-y");
+    if (gestureAxis === "horizontal") {
+      if (Math.abs(deltaX) > 64) {
+        closePersonDetailWithSwipe(sheet, Math.sign(deltaX));
+      } else {
+        settlePersonSheetHorizontal(sheet);
+      }
+      return;
+    }
+    if (gestureAxis !== "vertical") return;
     if (!state.personDetailExpanded && deltaY < -42) {
       transitionPersonDetail(true);
     } else if (state.personDetailExpanded && deltaY > 52) {
       transitionPersonDetail(false);
     } else {
-      sheet.style.removeProperty("--sheet-live-radius");
+      settlePersonSheet(sheet, startHeight, state.personDetailExpanded ? 0 : 32);
     }
   };
 
   const start = (event) => {
-    const startedFromHandle = Boolean(event.target.closest?.("[data-person-sheet-drag]"));
-    if (state.personDetailExpanded && !startedFromHandle) return;
+    startedFromHandle = Boolean(event.target.closest?.("[data-person-sheet-drag]"));
     if (!startedFromHandle && event.target.closest?.("button, a, input, select, textarea")) return;
+    startX = event.clientX;
     startY = event.clientY;
+    startHeight = sheet.getBoundingClientRect().height;
+    deltaX = 0;
     deltaY = 0;
+    gestureAxis = null;
     dragging = true;
     sheet.classList.add("is-dragging");
     try {
@@ -2642,11 +2657,32 @@ function bindPersonSheetGesture() {
   };
   const move = (event) => {
     if (!dragging) return;
+    deltaX = event.clientX - startX;
     deltaY = event.clientY - startY;
-    const resisted = state.personDetailExpanded
-      ? Math.max(-8, Math.min(deltaY * .82, 116))
-      : Math.max(deltaY * .72, -112);
-    sheet.style.setProperty("--sheet-drag-y", `${resisted}px`);
+    if (!gestureAxis && Math.max(Math.abs(deltaX), Math.abs(deltaY)) >= 8) {
+      gestureAxis = Math.abs(deltaX) > Math.abs(deltaY) ? "horizontal" : "vertical";
+      if (gestureAxis === "vertical" && !state.personDetailExpanded) {
+        sheet.classList.add("is-revealing-profile");
+      }
+      if (gestureAxis === "vertical" && state.personDetailExpanded && !startedFromHandle) {
+        dragging = false;
+        sheet.classList.remove("is-dragging");
+        return;
+      }
+    }
+    if (gestureAxis === "horizontal") {
+      sheet.style.setProperty("--sheet-drag-x", `${deltaX}px`);
+      return;
+    }
+    if (gestureAxis !== "vertical") return;
+    const viewportHeight = window.visualViewport?.height || window.innerHeight;
+    const minimumHeight = Math.min(startHeight, Math.max(360, viewportHeight * .48));
+    const targetHeight = Math.max(
+      minimumHeight,
+      Math.min(viewportHeight, startHeight - deltaY),
+    );
+    sheet.style.height = `${targetHeight}px`;
+    sheet.style.maxHeight = `${targetHeight}px`;
     if (state.personDetailExpanded) {
       const radius = Math.max(0, Math.min(deltaY * .32, 32));
       sheet.style.setProperty("--sheet-live-radius", `${radius}px`);
@@ -2666,6 +2702,46 @@ function bindPersonSheetGesture() {
   });
 }
 
+function settlePersonSheetHorizontal(sheet) {
+  const currentX = getComputedStyle(sheet).getPropertyValue("--sheet-drag-x").trim() || "0px";
+  const animation = sheet.animate([
+    { transform: `translate3d(${currentX}, 0, 0)` },
+    { transform: "translate3d(0, 0, 0)" },
+  ], { duration: 180, easing: "cubic-bezier(.2,.85,.25,1)" });
+  animation.finished.finally(() => sheet.style.removeProperty("--sheet-drag-x"));
+}
+
+function closePersonDetailWithSwipe(sheet, direction = -1) {
+  const currentX = getComputedStyle(sheet).getPropertyValue("--sheet-drag-x").trim() || "0px";
+  const animation = sheet.animate([
+    { transform: `translate3d(${currentX}, 0, 0)`, opacity: 1 },
+    { transform: `translate3d(${direction < 0 ? -105 : 105}%, 0, 0)`, opacity: .82 },
+  ], { duration: 220, easing: "cubic-bezier(.4,0,.6,1)" });
+  animation.finished.finally(() => {
+    state.overlay = null;
+    state.personDetailExpanded = false;
+    render();
+  });
+}
+
+function settlePersonSheet(sheet, targetHeight, targetRadius) {
+  const currentHeight = sheet.getBoundingClientRect().height;
+  const currentRadius = parseFloat(getComputedStyle(sheet).borderTopLeftRadius) || 0;
+  const animation = sheet.animate([
+    { height: `${currentHeight}px`, maxHeight: `${currentHeight}px`, borderRadius: `${currentRadius}px ${currentRadius}px 0 0` },
+    { height: `${targetHeight}px`, maxHeight: `${targetHeight}px`, borderRadius: `${targetRadius}px ${targetRadius}px 0 0` },
+  ], {
+    duration: 220,
+    easing: "cubic-bezier(.2,.85,.25,1)",
+  });
+  animation.finished.finally(() => {
+    sheet.classList.remove("is-revealing-profile");
+    sheet.style.removeProperty("height");
+    sheet.style.removeProperty("max-height");
+    sheet.style.removeProperty("--sheet-live-radius");
+  });
+}
+
 function transitionPersonDetail(expanded) {
   const oldSheet = document.querySelector(".person-sheet");
   const oldRect = oldSheet?.getBoundingClientRect();
@@ -2677,17 +2753,18 @@ function transitionPersonDetail(expanded) {
   const nextSheet = document.querySelector(".person-sheet");
   const nextRect = nextSheet?.getBoundingClientRect();
   if (!nextSheet || !nextRect || typeof nextSheet.animate !== "function") return;
-  const translateY = oldRect.top - nextRect.top;
   const startRadius = expanded ? 32 : 0;
   const endRadius = expanded ? 0 : 32;
   nextSheet.animate([
     {
-      transform: `translate3d(0, ${translateY}px, 0)`,
+      height: `${oldRect.height}px`,
+      maxHeight: `${oldRect.height}px`,
       borderRadius: `${startRadius}px ${startRadius}px 0 0`,
       opacity: .96,
     },
     {
-      transform: "translate3d(0, 0, 0)",
+      height: `${nextRect.height}px`,
+      maxHeight: `${nextRect.height}px`,
       borderRadius: `${endRadius}px ${endRadius}px 0 0`,
       opacity: 1,
     },
