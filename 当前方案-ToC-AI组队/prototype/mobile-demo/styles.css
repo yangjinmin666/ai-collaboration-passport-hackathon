@@ -814,6 +814,10 @@ body[data-flow="onboarding"] .onboarding-shell { background: #fff; background-im
 .live-login-card label { display: grid; gap: 6px; color: #4f5d6b; font-size: 12px; font-weight: 750; }
 .live-login-card input { min-height: 50px; padding: 0 14px; border: 1px solid #d8e0e8; border-radius: 14px; outline: 0; background: #f7f9fb; color: #1f2b37; font: inherit; font-size: 15px; }
 .live-login-card input:focus { border-color: #8baded; background: #fff; box-shadow: 0 0 0 3px #edf3ff; }
+.live-login-consent { color: #84909c !important; font-size: 10px !important; line-height: 1.55 !important; }
+.live-otp-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.live-otp-actions button { min-height: 44px; padding: 0 9px; border: 1px solid #dbe2e9; border-radius: 13px; background: #fff; color: #526170; font: inherit; font-size: 11px; font-weight: 730; cursor: pointer; }
+.live-otp-actions button:disabled { cursor: default; opacity: .55; }
 .live-error, .inline-sync-error { padding: 10px 12px; border-radius: 12px; background: #fff1ef; color: #9d3f33; font-size: 12px; line-height: 1.45; }
 .live-retry-card { text-align: center; }
 .live-spinner { width: 34px; height: 34px; justify-self: center; border: 3px solid #dfe8f6; border-top-color: var(--guide-blue); border-radius: 50%; animation: live-spin .8s linear infinite; }

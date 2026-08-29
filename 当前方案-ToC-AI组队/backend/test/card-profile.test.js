@@ -24,6 +24,7 @@ describe("NFC card public profile", () => {
     assert.deepEqual(await response.json(), {
       status: "ok",
       service: "rally-api",
+      sms_login: "disabled",
     });
   });
 

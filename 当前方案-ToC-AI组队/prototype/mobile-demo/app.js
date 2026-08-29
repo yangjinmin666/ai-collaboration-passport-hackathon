@@ -677,6 +677,11 @@ const state = {
     currentProfile: null,
     meLoaded: false,
     meLoading: false,
+    otpChallengeId: null,
+    otpMaskedPhone: "",
+    otpPhone: "",
+    otpDisplayName: "",
+    otpRetryAt: null,
     error: "",
     syncError: "",
     syncInFlight: false,
@@ -1274,18 +1279,34 @@ function liveAppReady() {
 
 function renderLiveGate() {
   if (state.live.authStatus === "required") {
+    const verifyingCode = Boolean(state.live.otpChallengeId);
+    const retrySeconds = otpRetrySeconds();
     return `<div class="live-gate">
-      <div class="live-gate-brand"><strong>RALLY</strong><span>集结 · 受控试用</span></div>
+      <div class="live-gate-brand"><strong>RALLY</strong><span>集结 · 手机号登录</span></div>
       <section class="live-login-card">
-        <p class="micro-label">SECURE SESSION</p>
-        <h2>登录后进入现场</h2>
-        <p>会话只保存在当前设备；过期或退出后，服务端 Token 会失效。</p>
-        <form data-live-login>
-          <label><span>RALLY 账号</span><input name="user-id" required autocomplete="username" placeholder="例如 user-zhou"></label>
-          <label><span>现场访问码</span><input name="access-key" type="password" required autocomplete="current-password" placeholder="由活动管理员提供"></label>
-          <button class="primary-button full" type="submit" ${state.live.meLoading ? "disabled" : ""}>${state.live.meLoading ? "正在登录…" : "登录 RALLY"}</button>
-        </form>
-        ${state.live.error ? `<div class="live-error" role="alert">${state.live.error}</div>` : ""}
+        <p class="micro-label">${verifyingCode ? "SMS VERIFICATION" : "REAL MOBILE SESSION"}</p>
+        <h2>${verifyingCode ? "输入短信验证码" : "用手机号进入现场"}</h2>
+        <p>${verifyingCode
+          ? `验证码已发送至 ${escapeHtml(state.live.otpMaskedPhone)}，5 分钟内有效。`
+          : "未注册手机号验证后会自动创建 RALLY 身份；不需要账号或现场访问码。"}</p>
+        ${verifyingCode ? `
+          <form data-live-otp-verify>
+            <label><span>6 位验证码</span><input name="code" required inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" placeholder="请输入短信验证码"></label>
+            <button class="primary-button full" type="submit" ${state.live.meLoading ? "disabled" : ""}>${state.live.meLoading ? "正在验证…" : "验证并进入 RALLY"}</button>
+          </form>
+          <div class="live-otp-actions">
+            <button type="button" data-action="edit-live-phone">更换手机号</button>
+            <button type="button" data-action="resend-live-otp" ${retrySeconds > 0 || state.live.meLoading ? "disabled" : ""}>${retrySeconds > 0 ? `${retrySeconds} 秒后可重发` : "重新获取验证码"}</button>
+          </div>
+        ` : `
+          <form data-live-otp-request>
+            <label><span>手机号</span><input name="phone" type="tel" required inputmode="tel" autocomplete="tel" placeholder="请输入中国大陆手机号" value="${escapeHtml(state.live.otpPhone)}"></label>
+            <label><span>怎么称呼你</span><input name="display-name" required autocomplete="name" maxlength="40" placeholder="例如 小雨" value="${escapeHtml(state.live.otpDisplayName)}"></label>
+            <button class="primary-button full" type="submit" ${state.live.meLoading ? "disabled" : ""}>${state.live.meLoading ? "正在发送…" : "获取短信验证码"}</button>
+          </form>
+          <p class="live-login-consent">继续即表示你同意本次活动使用手机号完成身份验证；手机号不会出现在公开协作资料中。</p>
+        `}
+        ${state.live.error ? `<div class="live-error" role="alert">${escapeHtml(state.live.error)}</div>` : ""}
       </section>
     </div>`;
   }
@@ -2415,9 +2436,13 @@ function updateProfileBlockPreview(form) {
 }
 
 function bindEvents() {
-  document.querySelector("[data-live-login]")?.addEventListener("submit", (event) => {
+  document.querySelector("[data-live-otp-request]")?.addEventListener("submit", (event) => {
     event.preventDefault();
-    if (event.currentTarget.reportValidity()) loginLive(event.currentTarget);
+    if (event.currentTarget.reportValidity()) requestLiveOtp(event.currentTarget);
+  });
+  document.querySelector("[data-live-otp-verify]")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    if (event.currentTarget.reportValidity()) verifyLiveOtp(event.currentTarget);
   });
   document.querySelector("[data-live-profile-form]")?.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -2805,6 +2830,18 @@ function bindRecommendationSwipe() {
 
 function handleAction(action, element) {
   const navigationBefore = JSON.stringify(appHistoryPayload());
+  if (action === "edit-live-phone") {
+    resetLiveOtpChallenge();
+    render();
+    return;
+  }
+  if (action === "resend-live-otp") {
+    requestLiveOtp(null, {
+      phone: state.live.otpPhone,
+      displayName: state.live.otpDisplayName,
+    });
+    return;
+  }
   if (action === "retry-live") {
     loadLiveMe({ force: true });
     return;
@@ -3202,6 +3239,42 @@ window.addEventListener("keydown", (event) => {
 render();
 writeAppHistory({ replace: true });
 
+function otpRetrySeconds() {
+  if (!state.live.otpRetryAt) return 0;
+  return Math.max(0, Math.ceil((state.live.otpRetryAt - Date.now()) / 1000));
+}
+
+function stopLiveOtpCountdown() {
+  if (liveOtpCountdownTimer) window.clearInterval(liveOtpCountdownTimer);
+  liveOtpCountdownTimer = null;
+}
+
+function startLiveOtpCountdown() {
+  stopLiveOtpCountdown();
+  if (otpRetrySeconds() <= 0) return;
+  liveOtpCountdownTimer = window.setInterval(() => {
+    if (state.live.authStatus !== "required" || !state.live.otpChallengeId) {
+      stopLiveOtpCountdown();
+      return;
+    }
+    render();
+    if (otpRetrySeconds() <= 0) stopLiveOtpCountdown();
+  }, 1000);
+}
+
+function resetLiveOtpChallenge() {
+  stopLiveOtpCountdown();
+  state.live.otpChallengeId = null;
+  state.live.otpMaskedPhone = "";
+  state.live.otpRetryAt = null;
+  state.live.error = "";
+}
+
+function clearLiveOtpIdentity() {
+  state.live.otpPhone = "";
+  state.live.otpDisplayName = "";
+}
+
 function clearLiveSession() {
   liveConfig.accessToken = null;
   localStorage.removeItem("rally_access_token");
@@ -3214,6 +3287,8 @@ function clearLiveSession() {
   state.live.meLoaded = false;
   state.live.currentUserId = null;
   state.live.currentProfile = null;
+  resetLiveOtpChallenge();
+  clearLiveOtpIdentity();
   state.live.discover = [];
   state.live.nearby = [];
   state.live.connectionRequests = [];
@@ -3252,29 +3327,77 @@ function liveBusyAttributes(resourceKey) {
   return state.live.pendingOperations.has(resourceKey) ? 'disabled aria-busy="true"' : "";
 }
 
-async function loginLive(form) {
+async function requestLiveOtp(form, savedValues = null) {
   if (state.live.meLoading) return;
-  const formData = new FormData(form);
-  const userId = String(formData.get("user-id") || "").trim();
-  const accessKey = String(formData.get("access-key") || "");
+  const formData = form ? new FormData(form) : null;
+  const phone = String(savedValues?.phone ?? formData?.get("phone") ?? "").trim();
+  const displayName = String(
+    savedValues?.displayName ?? formData?.get("display-name") ?? "",
+  ).trim();
   state.live.meLoading = true;
   state.live.error = "";
   render();
   try {
-    const payload = await api.post("/api/auth/demo-sessions", { user_id: userId }, {
+    const payload = await api.post("/api/auth/otp/challenges", {
+      phone,
+      display_name: displayName,
+    }, {
       authenticate: false,
-      headers: { "x-demo-access-key": accessKey },
     });
+    state.live.otpChallengeId = payload.challenge_id;
+    state.live.otpMaskedPhone = payload.masked_phone;
+    state.live.otpPhone = phone;
+    state.live.otpDisplayName = displayName;
+    state.live.otpRetryAt = Date.now() + Number(payload.retry_after_seconds || 60) * 1000;
+    startLiveOtpCountdown();
+  } catch (error) {
+    if (error instanceof ApiError && error.code === "OTP_RATE_LIMITED") {
+      state.live.error = "验证码请求太频繁，请稍后再试";
+    } else if (error instanceof ApiError && error.code === "OTP_DELIVERY_FAILED") {
+      state.live.error = "短信暂时没有发送成功，请重新获取";
+    } else if (error instanceof ApiError && error.code === "INVALID_OTP_REQUEST") {
+      state.live.error = "请输入有效的中国大陆手机号和称呼";
+    } else {
+      handleLiveFailure(error, "验证码发送失败，请稍后重试");
+    }
+  } finally {
+    state.live.meLoading = false;
+    render();
+  }
+}
+
+async function verifyLiveOtp(form) {
+  if (state.live.meLoading || !state.live.otpChallengeId) return;
+  const code = String(new FormData(form).get("code") || "").trim();
+  state.live.meLoading = true;
+  state.live.error = "";
+  render();
+  try {
+    const payload = await api.post("/api/auth/otp/sessions", {
+      challenge_id: state.live.otpChallengeId,
+      code,
+    }, { authenticate: false });
     liveConfig.accessToken = payload.access_token;
     state.live.sessionExpiresAt = payload.expires_at;
     state.live.authStatus = "ready";
     localStorage.setItem("rally_access_token", payload.access_token);
     localStorage.setItem("rally_session_expires_at", payload.expires_at);
     localStorage.setItem("rally_api_base", liveConfig.apiBase);
+    resetLiveOtpChallenge();
+    clearLiveOtpIdentity();
     state.live.meLoading = false;
+    if (payload.is_new_user) state.tab = "profile";
     await loadLiveMe({ force: true });
+    if (payload.is_new_user) {
+      state.overlay = "profile-editor";
+      showToast("手机号验证成功，先完善你的协作资料");
+    }
   } catch (error) {
-    handleLiveFailure(error, "登录失败，请检查账号和现场访问码");
+    if (error instanceof ApiError && error.code === "INVALID_OTP") {
+      state.live.error = "验证码错误、已过期或尝试次数已用完";
+    } else {
+      handleLiveFailure(error, "验证码校验失败，请稍后重试");
+    }
   } finally {
     state.live.meLoading = false;
     render();
@@ -3736,6 +3859,7 @@ async function refreshLiveState() {
 }
 
 let livePollTimer = null;
+let liveOtpCountdownTimer = null;
 function startLivePolling() {
   if (livePollTimer || !state.live.meLoaded) return;
   livePollTimer = window.setInterval(() => {

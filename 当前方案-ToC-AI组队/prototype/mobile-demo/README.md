@@ -48,11 +48,11 @@
 
 ## Live 模式
 
-先启动 `../../backend`。受保护的本地现场演示可以配置访问码：
+先启动 `../../backend`。公网 Live 使用腾讯云短信；本地浏览器验收可继续使用后端的测试身份机制：
 
 ```bash
 cd ../../backend
-DEMO_ACCESS_KEY='replace-with-a-private-demo-key' npm start
+ALLOW_INSECURE_DEMO_AUTH=1 npm start
 ```
 
 再启动手机端并打开：
@@ -61,7 +61,7 @@ DEMO_ACCESS_KEY='replace-with-a-private-demo-key' npm start
 http://localhost:4173/?variant=B&live=1&apiBase=http://127.0.0.1:8787
 ```
 
-页面使用 RALLY 账号与现场访问码换取可撤销的 Bearer Session；Token 和到期时间保存在本机，刷新后恢复，会话过期会回到登录页，退出登录同时撤销服务端 Session。`demoUser=user-zhou` 只用于显式开启不安全演示身份的可信本地环境，不能部署到公网。
+页面使用手机号与 6 位短信验证码换取可撤销的 Bearer Session；新手机号首次验证后自动建号，并以隐藏状态加入 2026 AI Hardware Hackathon（`hackathon-2026`）、进入资料完善。Token 和到期时间保存在本机，刷新后恢复，会话过期会回到登录页，退出登录同时撤销服务端 Session。`demoUser=user-zhou` 只用于自动化测试和显式开启不安全演示身份的可信本地环境，不能部署到公网。
 
 Live 模式会读取后端 `/api/me` 的授权资料；手机“我的”可编辑角色、状态、能力、兴趣、投入时间、协作偏好、当前需求和能力证据，并逐字段控制推荐、附近、名册与 NFC/QR 页面的公开范围。只有打开“发现 · 附近”且资料可见时才启用浏览器 Geolocation；切换页面、锁屏、暂停公开或离开应用会立即停止监听并撤销位置。平台资料只保存用户主动提交的 HTTPS 链接；GitHub 可同步公开摘要，其他平台不爬取内容。
 
@@ -83,7 +83,7 @@ Live 数据请求具有有限退避重试，401 与网络故障分开处理；�
 - 卡对卡碰触、QR 扫描和设备挑战仍由按钮或后端契约模拟；
 - AI 推荐理由、风险和任务为预置输出，不向用户显示综合匹配分数；
 - 手机端只展示启动进度、分工确认、关键动态和 SOS；宽屏三栏工作台不包含聊天、在线文档或长期项目管理；
-- 尚未接入正式 OAuth／短信账户体系、真实模型 Agent、BLE、NFC P2P、飞书／GitHub 写入同步与服务器部署；Live 模式使用受保护现场访问码或已有 Bearer Token 接入当前后端；
+- 尚未接入正式 OAuth、真实模型 Agent、BLE、NFC P2P 与飞书／GitHub 写入同步；Live 模式已接腾讯云短信验证码和 Bearer Session，腾讯签名、模板与子用户密钥只保存在服务器；
 - Intent Alignment／Direction Version／Pivot-Fork、Leader 任期与交接、数据库版本化迁移和前后端大文件拆分仍待后续实现。
 
 ## 验收

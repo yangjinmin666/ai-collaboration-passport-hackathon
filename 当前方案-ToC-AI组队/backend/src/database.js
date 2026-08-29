@@ -35,6 +35,9 @@ export function openDatabase(databasePath) {
       phone TEXT
     );
 
+    CREATE UNIQUE INDEX IF NOT EXISTS users_by_phone
+      ON users (phone) WHERE phone IS NOT NULL;
+
     CREATE TABLE IF NOT EXISTS auth_sessions (
       session_id TEXT PRIMARY KEY,
       token_hash TEXT NOT NULL UNIQUE,
@@ -47,6 +50,24 @@ export function openDatabase(databasePath) {
 
     CREATE INDEX IF NOT EXISTS auth_sessions_by_user
       ON auth_sessions (user_id, expires_at);
+
+    CREATE TABLE IF NOT EXISTS otp_challenges (
+      challenge_id TEXT PRIMARY KEY,
+      phone TEXT NOT NULL,
+      display_name TEXT NOT NULL,
+      code_hash TEXT NOT NULL,
+      attempts_remaining INTEGER NOT NULL,
+      request_ip TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      consumed_at TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS otp_challenges_by_phone
+      ON otp_challenges (phone, created_at);
+
+    CREATE INDEX IF NOT EXISTS otp_challenges_by_ip
+      ON otp_challenges (request_ip, created_at);
 
     CREATE TABLE IF NOT EXISTS events (
       event_id TEXT PRIMARY KEY,
@@ -199,6 +220,10 @@ export function openDatabase(databasePath) {
       DEFAULT '[]'
     `);
   }
+  const otpColumns = database.prepare("PRAGMA table_info(otp_challenges)").all();
+  if (!otpColumns.some((column) => column.name === "request_ip")) {
+    database.exec("ALTER TABLE otp_challenges ADD COLUMN request_ip TEXT NOT NULL DEFAULT 'unknown'");
+  }
   const requestColumns = database
     .prepare("PRAGMA table_info(connection_requests)")
     .all();
@@ -273,9 +298,18 @@ export function openDatabase(databasePath) {
   enforceUniqueConnectionPairs(database);
   backfillConnectionRequestConnections(database);
   seedDatabase(database);
+  normalizeStoredPhoneNumbers(database);
   migrateDemoFixtures(database);
   migrateMinimumProfiles(database);
   return database;
+}
+
+function normalizeStoredPhoneNumbers(database) {
+  database.prepare(`
+    UPDATE users
+    SET phone = '+86' || phone
+    WHERE phone GLOB '1[3-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'
+  `).run();
 }
 
 function backfillConnectionRequestConnections(database) {
@@ -479,10 +513,10 @@ export function seedDatabase(database) {
     INSERT OR IGNORE INTO users (user_id, display_name, avatar, email, phone)
     VALUES (?, ?, ?, ?, ?)
   `);
-  insertUser.run("user-zhou", "周闻", "memoji-5", "zhou@example.test", "13800000001");
-  insertUser.run("user-lin", "林澈", "memoji-4", "lin@example.test", "13800000002");
-  insertUser.run("user-su", "苏晴", "memoji-1", "su@example.test", "13800000003");
-  insertUser.run("user-mia", "米娅", "memoji-6", "mia@example.test", "13800000004");
+  insertUser.run("user-zhou", "周闻", "memoji-5", "zhou@example.test", "+8613800000001");
+  insertUser.run("user-lin", "林澈", "memoji-4", "lin@example.test", "+8613800000002");
+  insertUser.run("user-su", "苏晴", "memoji-1", "su@example.test", "+8613800000003");
+  insertUser.run("user-mia", "米娅", "memoji-6", "mia@example.test", "+8613800000004");
 
   const insertProfile = database.prepare(`
     INSERT OR IGNORE INTO profiles (
@@ -700,6 +734,149 @@ export function createAuthSession(database, { userId, now, expiresAt }) {
     expiresAt,
   );
   return { token, expiresAt };
+}
+
+export function createOtpChallenge(
+  database,
+  { challengeId, phone, displayName, codeHash, requestIp, now, expiresAt },
+) {
+  database.prepare(`
+    INSERT INTO otp_challenges (
+      challenge_id, phone, display_name, code_hash, attempts_remaining,
+      request_ip, created_at, expires_at, consumed_at
+    ) VALUES (?, ?, ?, ?, 5, ?, ?, ?, NULL)
+  `).run(challengeId, phone, displayName, codeHash, requestIp, now, expiresAt);
+}
+
+export function deleteOtpChallenge(database, challengeId) {
+  database.prepare(`
+    DELETE FROM otp_challenges WHERE challenge_id = ? AND consumed_at IS NULL
+  `).run(challengeId);
+}
+
+export function findLatestOtpChallengeAt(database, phone) {
+  return database.prepare(`
+    SELECT created_at FROM otp_challenges
+    WHERE phone = ?
+    ORDER BY created_at DESC
+    LIMIT 1
+  `).get(phone)?.created_at ?? null;
+}
+
+export function readOtpPhoneWindow(database, { phone, since }) {
+  const row = database.prepare(`
+    SELECT count(*) AS challenge_count, min(created_at) AS oldest_created_at
+    FROM otp_challenges
+    WHERE phone = ? AND created_at > ?
+  `).get(phone, since);
+  return {
+    count: Number(row.challenge_count),
+    oldestCreatedAt: row.oldest_created_at ?? null,
+  };
+}
+
+export function readOtpIpWindow(database, { requestIp, since }) {
+  const row = database.prepare(`
+    SELECT count(*) AS challenge_count, min(created_at) AS oldest_created_at
+    FROM otp_challenges
+    WHERE request_ip = ? AND created_at > ?
+  `).get(requestIp, since);
+  return {
+    count: Number(row.challenge_count),
+    oldestCreatedAt: row.oldest_created_at ?? null,
+  };
+}
+
+export function findOtpChallenge(database, challengeId) {
+  const row = database.prepare(`
+    SELECT * FROM otp_challenges WHERE challenge_id = ?
+  `).get(challengeId);
+  if (!row) return null;
+  return {
+    id: row.challenge_id,
+    phone: row.phone,
+    displayName: row.display_name,
+    codeHash: row.code_hash,
+    attemptsRemaining: row.attempts_remaining,
+    createdAt: row.created_at,
+    expiresAt: row.expires_at,
+    consumedAt: row.consumed_at,
+  };
+}
+
+export function consumeOtpChallenge(database, { challengeId, now }) {
+  return database.prepare(`
+    UPDATE otp_challenges
+    SET consumed_at = ?
+    WHERE challenge_id = ?
+      AND consumed_at IS NULL
+      AND expires_at > ?
+      AND attempts_remaining > 0
+  `).run(now, challengeId, now).changes > 0;
+}
+
+export function recordOtpFailure(database, { challengeId, now }) {
+  database.prepare(`
+    UPDATE otp_challenges
+    SET attempts_remaining = attempts_remaining - 1
+    WHERE challenge_id = ?
+      AND consumed_at IS NULL
+      AND expires_at > ?
+      AND attempts_remaining > 0
+  `).run(challengeId, now);
+}
+
+export function findOrCreateOtpUser(
+  database,
+  { phone, displayName, eventId, now },
+) {
+  let row = database.prepare(`
+    SELECT user_id FROM users WHERE phone = ?
+  `).get(phone);
+  const isNewUser = !row;
+  if (!row) {
+    const userId = `user_${randomUUID()}`;
+    const avatarNumber = 1 + (
+      Number.parseInt(createHash("sha256").update(phone).digest("hex").slice(0, 2), 16) % 10
+    );
+    database.prepare(`
+      INSERT INTO users (user_id, display_name, avatar, email, phone)
+      VALUES (?, ?, ?, NULL, ?)
+    `).run(userId, displayName, `memoji-${avatarNumber}`, phone);
+    row = { user_id: userId };
+  }
+
+  const event = database.prepare(`
+    SELECT ends_at FROM events WHERE event_id = ? AND ends_at > ?
+  `).get(eventId, now);
+  if (event) {
+    const insertedProfile = database.prepare(`
+      INSERT OR IGNORE INTO profiles (
+        user_id, event_id, role, status, skills_json, interests_json,
+        availability, collaboration_preferences_json, collaboration_need,
+        evidence_json
+      ) VALUES (?, ?, '待完善协作资料', '未组队', '[]', '[]', '待补充', '[]', '', '[]')
+    `).run(row.user_id, eventId);
+    database.prepare(`
+      INSERT OR IGNORE INTO visibility_grants (
+        user_id, event_id, state, public_fields_json, starts_at, expires_at
+      ) VALUES (?, ?, 'HIDDEN', '[]', ?, ?)
+    `).run(row.user_id, eventId, now, event.ends_at);
+    if (insertedProfile.changes > 0) {
+      appendEventLog(database, {
+        eventId,
+        actorId: row.user_id,
+        type: "event_joined",
+        objectType: "profile",
+        objectId: row.user_id,
+        source: "mobile",
+        payload: { event_id: eventId },
+        createdAt: now,
+      });
+    }
+  }
+
+  return { userId: row.user_id, isNewUser };
 }
 
 export function findSessionUserId(database, { token, now }) {

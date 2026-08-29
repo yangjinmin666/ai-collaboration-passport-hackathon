@@ -5,6 +5,9 @@ ARCHIVE="${ARCHIVE:-/home/ubuntu/rally-deploy.tar.gz}"
 RELEASE_ID="${RELEASE_ID:-$(date -u +%Y%m%d%H%M%S)}"
 RELEASE_DIR="/opt/rally/releases/${RELEASE_ID}"
 NODE_BIN="$(command -v node)"
+PUBLIC_IP="${PUBLIC_IP:-49.233.197.225}"
+CERT_DIR="${CERT_DIR:-/etc/letsencrypt/live/${PUBLIC_IP}}"
+NGINX_SITE="/etc/nginx/sites-available/rally"
 
 test -r "${ARCHIVE}"
 test -x "${NODE_BIN}"
@@ -24,7 +27,6 @@ test -f "${RELEASE_DIR}/prototype/mobile-demo/index.html"
 
 chown -R root:root "${RELEASE_DIR}"
 chmod -R a+rX "${RELEASE_DIR}"
-ln -sfn "${RELEASE_DIR}" /opt/rally/current
 
 if ! id -u rally >/dev/null 2>&1; then
   useradd --system --home-dir /nonexistent --shell /usr/sbin/nologin rally
@@ -34,6 +36,7 @@ install -d -m 0755 /etc/rally
 if [[ ! -f /etc/rally/rally.env ]]; then
   DEMO_ACCESS_KEY="$(openssl rand -hex 32)"
   TOUCH_DEVICE_ACCESS_KEY="$(openssl rand -hex 32)"
+  AUTH_OTP_SECRET="$(openssl rand -hex 32)"
   umask 077
   printf '%s\n' \
     'PORT=8787' \
@@ -46,10 +49,68 @@ if [[ ! -f /etc/rally/rally.env ]]; then
     'PAID_AID_ENABLED=1' \
     "DEMO_ACCESS_KEY=${DEMO_ACCESS_KEY}" \
     "TOUCH_DEVICE_ACCESS_KEY=${TOUCH_DEVICE_ACCESS_KEY}" \
+    "AUTH_OTP_SECRET=${AUTH_OTP_SECRET}" \
+    'TENCENT_SMS_SDK_APP_ID=1401184659' \
+    'TENCENT_SMS_REGION=ap-guangzhou' \
     > /etc/rally/rally.env
 fi
+
+ensure_env_default() {
+  local key="$1"
+  local value="$2"
+  if ! grep -q "^${key}=" /etc/rally/rally.env; then
+    printf '%s=%s\n' "${key}" "${value}" >> /etc/rally/rally.env
+  fi
+}
+
+append_secret_from_environment() {
+  local key="$1"
+  local value="${!key-}"
+  if [[ -n "${value}" && "${value}" != *$'\n'* ]] && ! grep -q "^${key}=" /etc/rally/rally.env; then
+    printf '%s=%s\n' "${key}" "${value}" >> /etc/rally/rally.env
+  fi
+}
+
+if ! grep -q '^AUTH_OTP_SECRET=' /etc/rally/rally.env; then
+  ensure_env_default AUTH_OTP_SECRET "$(openssl rand -hex 32)"
+fi
+ensure_env_default TENCENT_SMS_SDK_APP_ID 1401184659
+ensure_env_default TENCENT_SMS_REGION ap-guangzhou
+for sms_secret in \
+  TENCENT_SMS_SECRET_ID \
+  TENCENT_SMS_SECRET_KEY \
+  TENCENT_SMS_SIGN_NAME \
+  TENCENT_SMS_TEMPLATE_ID
+do
+  append_secret_from_environment "${sms_secret}"
+done
 chown root:root /etc/rally/rally.env
 chmod 0600 /etc/rally/rally.env
+
+missing_sms_settings=()
+for sms_setting in \
+  AUTH_OTP_SECRET \
+  TENCENT_SMS_SECRET_ID \
+  TENCENT_SMS_SECRET_KEY \
+  TENCENT_SMS_SDK_APP_ID \
+  TENCENT_SMS_SIGN_NAME \
+  TENCENT_SMS_TEMPLATE_ID \
+  TENCENT_SMS_REGION
+do
+  if ! grep -Eq "^${sms_setting}=.+$" /etc/rally/rally.env; then
+    missing_sms_settings+=("${sms_setting}")
+  fi
+done
+if (( ${#missing_sms_settings[@]} > 0 )); then
+  printf 'SMS login configuration is incomplete: %s\n' "${missing_sms_settings[*]}" >&2
+  exit 1
+fi
+
+if [[ ! -s "${CERT_DIR}/fullchain.pem" || ! -s "${CERT_DIR}/privkey.pem" ]]; then
+  printf 'Trusted HTTPS certificate for %s is missing under %s. Run deploy/enable-ip-https.sh first.\n' \
+    "${PUBLIC_IP}" "${CERT_DIR}" >&2
+  exit 1
+fi
 
 install -m 0644 /dev/stdin /etc/systemd/system/rally.service <<EOF
 [Unit]
@@ -91,12 +152,53 @@ install -d -m 0755 /var/www/rally
 cp -a "${RELEASE_DIR}/prototype/mobile-demo/." /var/www/rally/
 chown -R root:root /var/www/rally
 chmod -R a+rX /var/www/rally
+ln -sfn "${RELEASE_DIR}" /opt/rally/current
 
-install -m 0644 /dev/stdin /etc/nginx/sites-available/rally <<'EOF'
+NGINX_BACKUP=""
+if [[ -f "${NGINX_SITE}" ]]; then
+  install -d -m 0700 /etc/nginx/rally-backups
+  NGINX_BACKUP="/etc/nginx/rally-backups/rally.$(date -u +%Y%m%dT%H%M%SZ).conf"
+  install -m 0600 "${NGINX_SITE}" "${NGINX_BACKUP}"
+fi
+
+rollback_nginx() {
+  if [[ -n "${NGINX_BACKUP}" && -f "${NGINX_BACKUP}" ]]; then
+    printf 'Deployment failed; restoring Nginx configuration from %s.\n' "${NGINX_BACKUP}" >&2
+    install -m 0644 "${NGINX_BACKUP}" "${NGINX_SITE}"
+    nginx -t && systemctl reload nginx.service
+  fi
+}
+trap rollback_nginx ERR
+
+install -m 0644 /dev/stdin "${NGINX_SITE}" <<EOF
 server {
     listen 80 default_server;
     listen [::]:80 default_server;
-    server_name _;
+    server_name ${PUBLIC_IP};
+
+    root /var/www/rally;
+    server_tokens off;
+
+    location ^~ /.well-known/acme-challenge/ {
+        default_type text/plain;
+        try_files \$uri =404;
+    }
+
+    location / {
+        return 308 https://\$host\$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl http2 default_server;
+    listen [::]:443 ssl http2 default_server;
+    server_name ${PUBLIC_IP};
+
+    ssl_certificate ${CERT_DIR}/fullchain.pem;
+    ssl_certificate_key ${CERT_DIR}/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_session_cache shared:RALLY_SSL:10m;
+    ssl_session_timeout 1d;
 
     root /var/www/rally;
     index index.html;
@@ -109,32 +211,32 @@ server {
     location = /health {
         proxy_pass http://127.0.0.1:8787/health;
         proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
     }
 
     location /api/ {
         proxy_pass http://127.0.0.1:8787;
         proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
     }
 
     location /c/ {
         proxy_pass http://127.0.0.1:8787;
         proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
     }
 
     location / {
-        try_files $uri $uri/ /index.html;
+        try_files \$uri \$uri/ /index.html;
     }
 }
 EOF
@@ -151,19 +253,25 @@ systemctl reload nginx.service
 
 if command -v ufw >/dev/null && ufw status | grep -q '^Status: active'; then
   ufw allow 80/tcp >/dev/null
+  ufw allow 443/tcp >/dev/null
 fi
 
 for _ in $(seq 1 60); do
-  if curl -fsS http://127.0.0.1:8787/health | grep -q '"status":"ok"'; then
+  if curl -fsS http://127.0.0.1:8787/health | grep -Eq '"status":"ok".*"sms_login":"ready"'; then
     break
   fi
   sleep 1
 done
 
-curl -fsS http://127.0.0.1:8787/health | grep -q '"status":"ok"'
-curl -fsS http://127.0.0.1/health | grep -q '"status":"ok"'
+curl -fsS http://127.0.0.1:8787/health | grep -Eq '"status":"ok".*"sms_login":"ready"'
+curl -fsS "https://${PUBLIC_IP}/health" | grep -Eq '"status":"ok".*"sms_login":"ready"'
+curl -fsSI "http://${PUBLIC_IP}/" | grep -Eq '^HTTP/[^ ]+ 30(1|7|8)'
+openssl s_client -connect "${PUBLIC_IP}:443" -verify_ip "${PUBLIC_IP}" </dev/null 2>/dev/null \
+  | grep -q 'Verification: OK'
 test "$(systemctl is-active rally.service)" = "active"
 test "$(systemctl is-active nginx.service)" = "active"
+
+trap - ERR
 
 rm -f /tmp/rally-upload.b64
 install -d -m 0755 /tmp/RALLY_INSTALL_OK

@@ -18,7 +18,8 @@ RALLY 的 96 小时黑客松后端已经跑通一条完整、可复位的协作�
 | 项目与团队 | 创建项目与角色缺口、仅邀请已建联对象、受邀者确认入队、事务保护容量 |
 | RALLY Room | 三任务模板启动包、成员主动认领、任务状态机、全员确认后启动、项目动态 |
 | 项目 SOS | 结构化求助、活动内响应、四类回报表达、活动级 SOS／外援／付费意向开关、支援者带原因退出、发布者解决／关闭／重开；不自动入队、不处理支付 |
-| 演示可靠性 | 确定性种子数据、受保护 Demo Reset、53 个 HTTP 契约测试、真实浏览器端到端测试 |
+| 手机号身份 | 腾讯云短信验证码、首次自动建号、活动隐藏资料、Bearer Session、5 分钟有效期、5 次错误锁定、手机号/IP 限频 |
+| 演示可靠性 | 确定性种子数据、受保护 Demo Reset、HTTP 契约测试、真实浏览器端到端测试 |
 
 完整接口见 [openapi.yaml](./openapi.yaml)。
 
@@ -38,7 +39,13 @@ npm start
 PORT=8788 \
 HOST=127.0.0.1 \
 DATABASE_PATH=:memory: \
-DEMO_ACCESS_KEY='replace-with-a-private-demo-key' \
+AUTH_OTP_SECRET='replace-with-a-long-random-secret' \
+TENCENT_SMS_SECRET_ID='rally-sms-sub-user-secret-id' \
+TENCENT_SMS_SECRET_KEY='rally-sms-sub-user-secret-key' \
+TENCENT_SMS_SDK_APP_ID='1401184659' \
+TENCENT_SMS_SIGN_NAME='approved-sign-name' \
+TENCENT_SMS_TEMPLATE_ID='approved-template-id' \
+TENCENT_SMS_REGION='ap-guangzhou' \
 TOUCH_DEVICE_ACCESS_KEY='replace-with-a-separate-device-key' \
 SOS_ENABLED=1 \
 EXTERNAL_AID_ENABLED=1 \
@@ -69,15 +76,37 @@ http://localhost:4173/?variant=B&live=1&apiBase=http://127.0.0.1:8787&demoUser=u
 
 进入“发现 → 附近”后，浏览器会请求真实定位；切走发现页、暂停公开、锁页或关闭页面时会撤销心跳。浏览器定位要求 `localhost` 或 HTTPS 安全上下文。真机联调时，前后端都应使用同一局域网可访问地址；正式公网必须使用 HTTPS。
 
-`demoUser` 只在 `ALLOW_INSECURE_DEMO_AUTH=1` 时有效。这个开关允许任意客户端模拟预置账号，只能用于可信本地环境，不得部署到公网。
+`demoUser` 只在 `ALLOW_INSECURE_DEMO_AUTH=1` 时有效。这个开关允许任意客户端模拟预置账号，只能用于可信本地自动化测试，不得部署到公网。真实用户入口不读取它。
 
 `SOS_ENABLED`、`EXTERNAL_AID_ENABLED` 和 `PAID_AID_ENABLED` 可按活动关闭整个 SOS、外部支援或有偿悬赏意向。关闭有偿援助后，已有有偿 SOS 也会停止接受新响应。有偿字段只记录 `NOT_PROCESSED` 意向，必须包含金额、币种、交付标准和付款说明；RALLY 不托管、不代收、不担保。双卡握手使用独立的 `TOUCH_DEVICE_ACCESS_KEY`，不能与演示登录密钥复用，也不能写进公开手机前端；新建 Connection 会持久化 `consent_mode=physical_mutual`，与普通请求接受后的 `recipient_confirmed` 区分。
 
 生产接入使用 `localStorage.rally_access_token` 的 Bearer Token。此时手机端会忽略 URL 查询参数中的 `apiBase` 并默认只访问同源 API，避免恶意分享链接把凭证转发到任意域名。若生产环境前后端确实分域，受信任的登录初始化代码必须先写入 `localStorage.rally_api_base`；不要通过分享 URL 配置带凭证的 API 地址。
 
-## 身份与演示账号
+## 手机号短信登录
 
-生产请求应使用 Bearer Token。预置演示账号通过受保护入口创建可撤销会话，数据库只保存 Token 哈希：
+公网入口只需要“手机号＋称呼 → 6 位验证码”。`POST /api/auth/otp/challenges` 创建 5 分钟挑战并调用腾讯云 `SendSms 2021-01-11`，`POST /api/auth/otp/sessions` 一次性消费验证码并签发 Bearer Session。新手机号会自动创建身份和 2026 AI Hardware Hackathon（`hackathon-2026`）的隐藏资料，随后由用户主动完善和公开。
+
+腾讯云验证码模板必须使用两个变量，顺序固定为 `{1}=6 位验证码`、`{2}=有效分钟数（5）`，例如：
+
+```text
+您的 RALLY 验证码是{1}，{2}分钟内有效。请勿泄露给他人。
+```
+
+签名和模板必须是腾讯云已审核状态；短信 API 子用户只授予发送所需的最小权限。`TENCENT_SMS_SECRET_ID`、`TENCENT_SMS_SECRET_KEY` 和 `AUTH_OTP_SECRET` 只写入服务器 `/etc/rally/rally.env`，不要放进前端、APK、Git 或聊天记录。发送限制为同手机号 60 秒冷却、每小时 5 条，同客户端地址每小时 20 条；每个验证码最多错误 5 次。
+
+```bash
+curl -X POST http://127.0.0.1:8787/api/auth/otp/challenges \
+  -H 'content-type: application/json' \
+  -d '{"phone":"13800138000","display_name":"小雨"}'
+
+curl -X POST http://127.0.0.1:8787/api/auth/otp/sessions \
+  -H 'content-type: application/json' \
+  -d '{"challenge_id":"otp_...","code":"123456"}'
+```
+
+## 本地演示账号
+
+预置演示账号只供自动化和可信本地联调；公网用户不可见这个入口。数据库只保存 Session Token 哈希：
 
 ```bash
 curl -X POST http://127.0.0.1:8787/api/auth/demo-sessions \

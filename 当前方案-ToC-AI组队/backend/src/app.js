@@ -9,6 +9,8 @@ import {
   cancelConnectionRequest,
   countRecentConnectionRequests,
   createAuthSession,
+  createOtpChallenge,
+  deleteOtpChallenge,
   createConnectionRequest,
   expireConnectionRequests,
   findActiveConnectionRequest,
@@ -17,17 +19,32 @@ import {
   findConnectionRequestById,
   findEventEndsAt,
   findLatestConnectionRequest,
+  findLatestOtpChallengeAt,
+  findOtpChallenge,
   findPublicCardProfile,
   findSessionUserId,
   findUserIdentity,
+  findOrCreateOtpUser,
   isParticipantVisible,
   isConnectionBlocked,
   listConnectionRequests,
   openDatabase,
   rejectConnectionRequest,
+  recordOtpFailure,
+  readOtpPhoneWindow,
+  readOtpIpWindow,
   revokeAuthSession,
+  consumeOtpChallenge,
   userExists,
 } from "./database.js";
+import {
+  createOtpChallengeId,
+  createOtpCode,
+  hashOtpCode,
+  maskChinaMobile,
+  normalizeChinaMobile,
+  otpCodeHashesEqual,
+} from "./otp-auth.js";
 
 const SOURCES = new Set(["nfc", "qr", "link"]);
 const CONNECTION_REQUEST_STATUSES = new Set([
@@ -138,6 +155,16 @@ function readBearerToken(request) {
   return authorization.match(/^Bearer ([A-Za-z0-9_-]+)$/)?.[1] ?? null;
 }
 
+function readClientIp(request) {
+  const nginxAddress = request.headers["x-real-ip"];
+  if (
+    typeof nginxAddress === "string"
+    && nginxAddress.length <= 64
+    && !/[\s,]/.test(nginxAddress)
+  ) return nginxAddress;
+  return request.socket.remoteAddress ?? "unknown";
+}
+
 function resolveActorId(database, request, now, allowInsecureDemoAuth) {
   if (request.headers.authorization !== undefined) {
     const token = readBearerToken(request);
@@ -162,7 +189,14 @@ export function createApi({
   presenceTtlMs = 2 * 60 * 1000,
   platformMetadataFetcher,
   eventPolicyOverrides,
+  otpSecret = null,
+  otpSender = null,
+  otpEventId = "hackathon-2026",
+  otpCodeGenerator = createOtpCode,
 }) {
+  const smsLoginConfigured = typeof otpSecret === "string"
+    && otpSecret.length > 0
+    && typeof otpSender === "function";
   const database = openDatabase(databasePath);
   const productModule = createProductModule(database, {
     clock,
@@ -182,6 +216,186 @@ export function createApi({
       sendJson(response, 200, {
         status: "ok",
         service: "rally-api",
+        sms_login: smsLoginConfigured ? "ready" : "disabled",
+      });
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/auth/otp/challenges") {
+      if (!smsLoginConfigured) {
+        sendError(response, 503, "OTP_UNAVAILABLE", "SMS login is temporarily unavailable.");
+        return;
+      }
+      const parsedBody = await readJsonBody(request, response);
+      if (!parsedBody.ok) return;
+      const phone = normalizeChinaMobile(parsedBody.value?.phone);
+      const displayName = typeof parsedBody.value?.display_name === "string"
+        ? parsedBody.value.display_name.trim()
+        : "";
+      if (!phone || !displayName || displayName.length > 40) {
+        sendError(
+          response,
+          400,
+          "INVALID_OTP_REQUEST",
+          "A valid mainland China mobile number and display name are required.",
+        );
+        return;
+      }
+      const nowDate = clock();
+      const now = nowDate.toISOString();
+      const oneHourAgo = new Date(nowDate.getTime() - 60 * 60 * 1000).toISOString();
+      const requestIp = readClientIp(request);
+      const ipWindow = readOtpIpWindow(database, { requestIp, since: oneHourAgo });
+      if (ipWindow.count >= 20) {
+        const retryAfterSeconds = Math.max(1, Math.ceil(
+          (new Date(ipWindow.oldestCreatedAt).getTime() + 60 * 60 * 1000 - nowDate.getTime()) / 1000,
+        ));
+        sendError(
+          response,
+          429,
+          "OTP_RATE_LIMITED",
+          "Too many verification codes were requested. Please try again later.",
+          { "retry-after": String(retryAfterSeconds) },
+        );
+        return;
+      }
+      const phoneWindow = readOtpPhoneWindow(database, {
+        phone,
+        since: oneHourAgo,
+      });
+      if (phoneWindow.count >= 5) {
+        const retryAfterSeconds = Math.max(1, Math.ceil(
+          (new Date(phoneWindow.oldestCreatedAt).getTime() + 60 * 60 * 1000 - nowDate.getTime()) / 1000,
+        ));
+        sendError(
+          response,
+          429,
+          "OTP_RATE_LIMITED",
+          "Too many verification codes were requested. Please try again later.",
+          { "retry-after": String(retryAfterSeconds) },
+        );
+        return;
+      }
+      const latestChallengeAt = findLatestOtpChallengeAt(database, phone);
+      if (latestChallengeAt) {
+        const elapsedMs = nowDate.getTime() - new Date(latestChallengeAt).getTime();
+        if (elapsedMs < 60_000) {
+          const retryAfterSeconds = Math.ceil((60_000 - elapsedMs) / 1000);
+          sendError(
+            response,
+            429,
+            "OTP_RATE_LIMITED",
+            "Please wait before requesting another verification code.",
+            { "retry-after": String(retryAfterSeconds) },
+          );
+          return;
+        }
+      }
+      const expiresAt = new Date(nowDate.getTime() + 5 * 60 * 1000).toISOString();
+      const challengeId = createOtpChallengeId();
+      const code = otpCodeGenerator();
+      createOtpChallenge(database, {
+        challengeId,
+        phone,
+        displayName,
+        codeHash: hashOtpCode({ secret: otpSecret, challengeId, code }),
+        requestIp,
+        now,
+        expiresAt,
+      });
+      try {
+        await otpSender({ phone, code });
+      } catch {
+        deleteOtpChallenge(database, challengeId);
+        sendError(
+          response,
+          502,
+          "OTP_DELIVERY_FAILED",
+          "The verification code could not be delivered. Please try again.",
+        );
+        return;
+      }
+      sendJson(response, 201, {
+        challenge_id: challengeId,
+        masked_phone: maskChinaMobile(phone),
+        expires_at: expiresAt,
+        retry_after_seconds: 60,
+      });
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/auth/otp/sessions") {
+      if (typeof otpSecret !== "string" || !otpSecret) {
+        sendError(response, 503, "OTP_UNAVAILABLE", "SMS login is temporarily unavailable.");
+        return;
+      }
+      const parsedBody = await readJsonBody(request, response);
+      if (!parsedBody.ok) return;
+      const challengeId = parsedBody.value?.challenge_id;
+      const code = parsedBody.value?.code;
+      if (
+        typeof challengeId !== "string"
+        || !/^otp_[0-9a-f-]+$/.test(challengeId)
+        || typeof code !== "string"
+        || !/^\d{6}$/.test(code)
+      ) {
+        sendError(response, 400, "INVALID_OTP", "The verification code is invalid or expired.");
+        return;
+      }
+      const nowDate = clock();
+      const now = nowDate.toISOString();
+      const challenge = findOtpChallenge(database, challengeId);
+      const suppliedHash = hashOtpCode({ secret: otpSecret, challengeId, code });
+      if (
+        challenge
+        && !challenge.consumedAt
+        && challenge.expiresAt > now
+        && challenge.attemptsRemaining > 0
+        && !otpCodeHashesEqual(challenge.codeHash, suppliedHash)
+      ) {
+        recordOtpFailure(database, { challengeId, now });
+        sendError(response, 400, "INVALID_OTP", "The verification code is invalid or expired.");
+        return;
+      }
+      if (
+        !challenge
+        || challenge.consumedAt
+        || challenge.expiresAt <= now
+        || challenge.attemptsRemaining <= 0
+        || !otpCodeHashesEqual(challenge.codeHash, suppliedHash)
+      ) {
+        sendError(response, 400, "INVALID_OTP", "The verification code is invalid or expired.");
+        return;
+      }
+      const expiresAt = new Date(nowDate.getTime() + sessionTtlMs).toISOString();
+      let userId;
+      let isNewUser;
+      let session;
+      database.exec("BEGIN IMMEDIATE");
+      try {
+        if (!consumeOtpChallenge(database, { challengeId, now })) {
+          database.exec("ROLLBACK");
+          sendError(response, 400, "INVALID_OTP", "The verification code is invalid or expired.");
+          return;
+        }
+        ({ userId, isNewUser } = findOrCreateOtpUser(database, {
+          phone: challenge.phone,
+          displayName: challenge.displayName,
+          eventId: otpEventId,
+          now,
+        }));
+        session = createAuthSession(database, { userId, now, expiresAt });
+        database.exec("COMMIT");
+      } catch (error) {
+        database.exec("ROLLBACK");
+        throw error;
+      }
+      sendJson(response, 201, {
+        access_token: session.token,
+        token_type: "Bearer",
+        expires_at: session.expiresAt,
+        is_new_user: isNewUser,
+        user: findUserIdentity(database, userId),
       });
       return;
     }

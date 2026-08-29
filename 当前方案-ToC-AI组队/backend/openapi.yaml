@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: RALLY API
-  version: 0.7.0
+  version: 0.8.0
   description: >-
     HTTP/JSON contract for activity-scoped identity, authorized external
     evidence, short-lived nearby presence, NFC/QR connections, confirmed team
@@ -23,7 +23,11 @@ paths:
       tags: [System]
       summary: Check service readiness
       responses:
-        "200": { description: Service is ready }
+        "200":
+          description: API status and whether the public SMS login flow is configured for sending
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HealthResponse" }
   /api/auth/demo-sessions:
     post:
       tags: [System]
@@ -42,6 +46,60 @@ paths:
         "201": { description: Bearer session issued }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
+  /api/auth/otp/challenges:
+    post:
+      tags: [Identity]
+      summary: Send a one-time verification code to a mainland China mobile number
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phone, display_name]
+              properties:
+                phone: { type: string, examples: ["13800138000"] }
+                display_name: { type: string, minLength: 1, maxLength: 40 }
+      responses:
+        "201":
+          description: Verification challenge created and SMS accepted for delivery
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OtpChallengeResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "502": { description: SMS provider rejected or could not deliver the request }
+        "503": { description: SMS login is not configured }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
+  /api/auth/otp/sessions:
+    post:
+      tags: [Identity]
+      summary: Verify a one-time code and issue a revocable Bearer session
+      description: >-
+        The first successful verification for a phone creates a RALLY identity and
+        a hidden minimum profile in 2026 AI Hardware Hackathon (`hackathon-2026`). Challenges expire
+        after five minutes, allow five failed attempts, and are consumed once.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [challenge_id, code]
+              properties:
+                challenge_id: { $ref: "#/components/schemas/OtpChallengeId" }
+                code: { type: string, pattern: "^[0-9]{6}$" }
+      responses:
+        "201":
+          description: Bearer session issued
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OtpSessionResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "503": { description: SMS login is not configured }
         "413": { $ref: "#/components/responses/PayloadTooLarge" }
   /api/auth/session:
     delete:
@@ -743,6 +801,40 @@ components:
         type: string
         enum: [github, website, xiaohongshu, douyin, jike, linkedin, other]
   schemas:
+    HealthResponse:
+      type: object
+      required: [status, service, sms_login]
+      properties:
+        status: { type: string, const: ok }
+        service: { type: string, const: rally-api }
+        sms_login: { type: string, enum: [ready, disabled] }
+    UserIdentity:
+      type: object
+      required: [id, display_name, avatar]
+      properties:
+        id: { type: string }
+        display_name: { type: string, minLength: 1, maxLength: 40 }
+        avatar: { type: string }
+    OtpChallengeId:
+      type: string
+      pattern: "^otp_[0-9a-f-]+$"
+    OtpChallengeResponse:
+      type: object
+      required: [challenge_id, masked_phone, expires_at, retry_after_seconds]
+      properties:
+        challenge_id: { $ref: "#/components/schemas/OtpChallengeId" }
+        masked_phone: { type: string, pattern: "^[0-9]{3}\\*{4}[0-9]{4}$" }
+        expires_at: { type: string, format: date-time }
+        retry_after_seconds: { type: integer, minimum: 1 }
+    OtpSessionResponse:
+      type: object
+      required: [access_token, token_type, expires_at, is_new_user, user]
+      properties:
+        access_token: { type: string, minLength: 40 }
+        token_type: { type: string, const: Bearer }
+        expires_at: { type: string, format: date-time }
+        is_new_user: { type: boolean }
+        user: { $ref: "#/components/schemas/UserIdentity" }
     ProfileInput:
       type: object
       required: [role, status, skills, interests, availability, collaboration_preferences, collaboration_need, evidence]
@@ -864,6 +956,14 @@ components:
           schema: { $ref: "#/components/schemas/Error" }
     Conflict:
       description: The state transition conflicts with current state
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    TooManyRequests:
+      description: The verification-code sending limit has been reached
+      headers:
+        Retry-After:
+          schema: { type: integer, minimum: 1 }
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }

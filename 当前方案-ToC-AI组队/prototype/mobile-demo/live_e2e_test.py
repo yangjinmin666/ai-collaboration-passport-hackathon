@@ -144,6 +144,9 @@ def main():
         "DATABASE_PATH": ":memory:",
         "ALLOW_INSECURE_DEMO_AUTH": "1",
         "DEMO_ACCESS_KEY": "browser-demo-access-key",
+        "NODE_ENV": "test",
+        "AUTH_OTP_SECRET": "browser-otp-secret",
+        "AUTH_OTP_TEST_CODE": "246810",
     }
     backend = subprocess.Popen(
         ["node", "src/server.js"],
@@ -565,16 +568,16 @@ def main():
             untrusted_page.on(
                 "request",
                 lambda request: login_requests.append(request.url)
-                if "/api/auth/demo-sessions" in request.url
+                if "/api/auth/otp/challenges" in request.url
                 else None,
             )
             untrusted_page.goto(
                 f"{frontend_url}/?variant=A&live=1"
                 "&apiBase=https://attacker.invalid/collect",
             )
-            untrusted_page.get_by_label("RALLY 账号").fill("user-zhou")
-            untrusted_page.get_by_label("现场访问码").fill("must-not-leak")
-            untrusted_page.get_by_role("button", name="登录 RALLY").click()
+            untrusted_page.get_by_label("手机号").fill("13800000001")
+            untrusted_page.get_by_label("怎么称呼你").fill("周闻")
+            untrusted_page.get_by_role("button", name="获取短信验证码").click()
             untrusted_page.wait_for_timeout(500)
             assert login_requests
             assert all(url.startswith(frontend_url) for url in login_requests)
@@ -689,7 +692,7 @@ def main():
                     }),
                 ),
             )
-            expiry_page.get_by_text("登录后进入现场", exact=True).wait_for(
+            expiry_page.get_by_text("用手机号进入现场", exact=True).wait_for(
                 timeout=6000
             )
             assert expiry_page.locator(".overlay").count() == 0
@@ -728,14 +731,59 @@ def main():
             assert sync_page.get_by_role("button", name="重新连接").is_visible()
             sync_context.close()
 
+            first_time_context = browser.new_context(
+                viewport={"width": 390, "height": 844},
+                is_mobile=True,
+                has_touch=True,
+            )
+            first_time_page = first_time_context.new_page()
+            first_time_page.goto(
+                f"{frontend_url}/?variant=A&live=1"
+                f"&apiBase={urllib.parse.quote(backend_url, safe=':/')}",
+            )
+            first_time_page.get_by_label("手机号").fill("13300133000")
+            first_time_page.get_by_label("怎么称呼你").fill("小雨")
+            first_time_page.get_by_role(
+                "button", name="获取短信验证码"
+            ).click()
+            first_time_page.get_by_label("6 位验证码").fill("000000")
+            first_time_page.get_by_role(
+                "button", name="验证并进入 RALLY"
+            ).click()
+            first_time_page.get_by_text(
+                "验证码错误、已过期或尝试次数已用完", exact=True
+            ).wait_for(timeout=5000)
+            first_time_page.get_by_label("6 位验证码").fill("246810")
+            first_time_page.get_by_role(
+                "button", name="验证并进入 RALLY"
+            ).click()
+            first_time_profile = first_time_page.locator(
+                "[data-live-profile-form]"
+            )
+            first_time_profile.wait_for(timeout=8000)
+            assert first_time_page.get_by_text("小雨", exact=True).first.is_visible()
+            assert first_time_profile.locator(
+                'input[name="role"]'
+            ).input_value() == "待完善协作资料"
+            first_time_context.close()
+
             def login_live(live_page, user_id):
+                identities = {
+                    "user-zhou": ("13800000001", "周闻"),
+                    "user-lin": ("13800000002", "林澈"),
+                }
+                phone, display_name = identities[user_id]
                 live_page.goto(
                     f"{frontend_url}/?variant=A&live=1"
                     f"&apiBase={urllib.parse.quote(backend_url, safe=':/')}",
                 )
-                live_page.get_by_label("RALLY 账号").fill(user_id)
-                live_page.get_by_label("现场访问码").fill("browser-demo-access-key")
-                live_page.get_by_role("button", name="登录 RALLY").click()
+                live_page.get_by_label("手机号").fill(phone)
+                live_page.get_by_label("怎么称呼你").fill(display_name)
+                live_page.get_by_role("button", name="获取短信验证码").click()
+                live_page.get_by_label("6 位验证码").fill("246810")
+                live_page.get_by_role(
+                    "button", name="验证并进入 RALLY"
+                ).click()
                 live_page.locator(".app-nav").wait_for(timeout=8000)
 
             zhou_context = browser.new_context(
@@ -829,10 +877,11 @@ def main():
             "live_profile_edit_persisted_after_reload": True,
             "live_profile_xss_blocked": True,
             "bearer_api_base_query_ignored": True,
-            "access_code_api_base_query_ignored": True,
+            "sms_login_api_base_query_ignored": True,
             "live_inbox_xss_blocked": True,
             "expired_session_overlay_cleared": True,
             "discover_sync_error_visible": True,
+            "first_time_phone_user_profile_ready": True,
             "two_device_main_flow_persisted": True,
             "browser_errors": errors,
         }, ensure_ascii=False, indent=2))
