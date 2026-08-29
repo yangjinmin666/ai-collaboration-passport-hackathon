@@ -9,7 +9,7 @@ test("the Tencent sender calls SendSms with the configured COSPAN application an
     secretId: "AKIDEXAMPLE",
     secretKey: "example-secret-key",
     sdkAppId: "1401184659",
-    signName: "COSPAN共域",
+    signName: "COSPAN合拍",
     templateId: "24681012",
     region: "ap-guangzhou",
   }, {
@@ -40,7 +40,7 @@ test("the Tencent sender calls SendSms with the configured COSPAN application an
   assert.deepEqual(JSON.parse(captured.options.body), {
     PhoneNumberSet: ["+8613800138000"],
     SmsSdkAppId: "1401184659",
-    SignName: "COSPAN共域",
+    SignName: "COSPAN合拍",
     TemplateId: "24681012",
     TemplateParamSet: ["123456", "5"],
   });

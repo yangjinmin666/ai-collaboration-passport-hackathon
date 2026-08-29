@@ -5,15 +5,15 @@
     android:viewportWidth="512"
     android:viewportHeight="512">
     <path
-        android:fillColor="#FFF7F4"
-        android:strokeColor="#F5C3B6"
+        android:fillColor="#F7F9FC"
+        android:strokeColor="#DCE8F8"
         android:strokeWidth="8"
         android:pathData="M120,4h272c64,0 116,52 116,116v272c0,64 -52,116 -116,116h-272c-64,0 -116,-52 -116,-116v-272c0,-64 52,-116 116,-116z" />
     <path
-        android:fillColor="#D83C24"
+        android:fillColor="#347CF8"
         android:pathData="M256,70l35,68 65,-41 6,77 77,-6 -41,65 68,35 -68,35 41,65 -77,-6 -6,77 -65,-41 -35,68 -35,-68 -65,41 -6,-77 -77,6 41,-65 -68,-35 68,-35 -41,-65 77,6 6,-77 65,41z" />
     <path
-        android:fillColor="#FF7A5A"
+        android:fillColor="#245FC8"
         android:pathData="M256,156l22,50 47,-26 -2,54 54,4 -42,34 34,42 -54,4 2,54 -47,-26 -22,50 -28,-46 -44,31 4,-54 -53,2 38,-38 -38,-38 53,2 -4,-54 44,31z" />
     <group
         android:translateX="56"

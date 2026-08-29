@@ -983,14 +983,44 @@ def main():
 
             zhou_page.locator('.app-nav [data-tab="connections"]').click()
             zhou_page.get_by_text("已建联", exact=True).first.wait_for(timeout=8000)
+            zhou_page.get_by_role(
+                "button", name="打开与 林澈 的对话", exact=True
+            ).click()
+            zhou_page.get_by_label("输入消息").fill(
+                "我们先聊清楚想服务哪类参展者？"
+            )
+            zhou_page.get_by_role("button", name="发送消息").click()
+            zhou_page.get_by_text(
+                "我们先聊清楚想服务哪类参展者？", exact=True
+            ).wait_for(timeout=5000)
+
+            lin_page.get_by_text("1 条新消息", exact=True).wait_for(timeout=8000)
+            lin_page.get_by_role(
+                "button", name="打开与 周闻 的对话，1 条未读", exact=True
+            ).click()
+            lin_page.get_by_text(
+                "我们先聊清楚想服务哪类参展者？", exact=True
+            ).wait_for(timeout=5000)
+            lin_page.get_by_label("输入消息").fill(
+                "可以，我更想服务第一次参加黑客松的人。"
+            )
+            lin_page.get_by_role("button", name="发送消息").click()
+            zhou_page.get_by_text(
+                "可以，我更想服务第一次参加黑客松的人。", exact=True
+            ).wait_for(timeout=8000)
+            lin_page.get_by_role("button", name="返回连接列表").click()
+            zhou_page.get_by_role("button", name="返回连接列表").click()
             zhou_page.get_by_role("button", name="继续项目协作").click()
             zhou_page.get_by_role("button", name="共同填写方向草案").click()
+            zhou_page.get_by_label("项目名称").fill("现场协作实验")
             zhou_page.locator('input[name="audience"]').fill("线下黑客松参与者")
             zhou_page.locator('input[name="problem"]').fill("现场协作难以继续")
             zhou_page.locator('input[name="outcome"]').fill("让真实交流进入启动流程")
             zhou_page.get_by_role("button", name="确认我的方向草案").click()
-            zhou_page.get_by_role("button", name="模拟林澈确认方向").click()
-            zhou_page.get_by_role("button", name="创建项目并邀请入队").click()
+            assert zhou_page.get_by_role("button", name="模拟林澈确认方向").count() == 0
+            zhou_page.get_by_role(
+                "button", name="使用此方向创建项目并邀请"
+            ).click()
             zhou_page.get_by_role("heading", name="已邀请 林澈 加入项目").wait_for(
                 timeout=8000
             )
@@ -1000,7 +1030,7 @@ def main():
             lin_page.get_by_text("入队邀请", exact=True).wait_for(timeout=8000)
             lin_page.get_by_role("button", name="确认入队").click()
             lin_page.get_by_text("已确认入队", exact=False).wait_for(timeout=5000)
-            lin_page.get_by_text("离线会议洞察终端", exact=True).wait_for(timeout=8000)
+            lin_page.get_by_text("现场协作实验", exact=True).wait_for(timeout=8000)
 
             zhou_page.locator('.app-nav [data-tab="collaboration"]').click()
             zhou_page.get_by_role("button", name="生成启动计划").wait_for(timeout=8000)
@@ -1026,12 +1056,12 @@ def main():
             zhou_page.reload()
             zhou_page.locator('.app-nav [data-tab="collaboration"]').wait_for(timeout=8000)
             zhou_page.locator('.app-nav [data-tab="collaboration"]').click()
-            zhou_page.get_by_text("离线会议洞察终端", exact=True).wait_for(timeout=8000)
+            zhou_page.get_by_text("现场协作实验", exact=True).wait_for(timeout=8000)
             assert zhou_page.locator(".live-login-card").count() == 0
             lin_page.reload()
             lin_page.locator('.app-nav [data-tab="collaboration"]').wait_for(timeout=8000)
             lin_page.locator('.app-nav [data-tab="collaboration"]').click()
-            lin_page.get_by_text("离线会议洞察终端", exact=True).wait_for(timeout=8000)
+            lin_page.get_by_text("现场协作实验", exact=True).wait_for(timeout=8000)
             assert lin_page.locator(".live-login-card").count() == 0
 
             zhou_page.set_viewport_size({"width": 1440, "height": 900})
@@ -1157,6 +1187,7 @@ def main():
             "expired_session_overlay_cleared": True,
             "discover_sync_error_visible": True,
             "first_time_phone_user_profile_ready": True,
+            "two_device_direct_conversation_persisted": True,
             "two_device_main_flow_persisted": True,
             "live_desktop_workspace_connected": True,
             "browser_errors": errors,

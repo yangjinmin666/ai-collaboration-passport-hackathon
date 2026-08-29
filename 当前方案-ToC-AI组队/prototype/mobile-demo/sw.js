@@ -1,4 +1,4 @@
-const CACHE_NAME = "cospan-shell-v10";
+const CACHE_NAME = "cospan-shell-v11";
 const SHELL_ASSETS = [
   "./",
   "./index.html",

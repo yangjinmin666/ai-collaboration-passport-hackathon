@@ -344,8 +344,9 @@ const defaultDiscoveryFilters = () => ({
   distance: "event",
   evidenceRequired: false,
 });
-const emptyDirectionDraft = () => ({ audience: "", problem: "", outcome: "" });
+const emptyDirectionDraft = () => ({ projectTitle: "", audience: "", problem: "", outcome: "" });
 const confirmedProjectDirection = () => ({
+  projectTitle: "离线会议洞察终端",
   audience: "线下黑客松参与者",
   problem: "现场协作信息难以沉淀和继续",
   outcome: "让一次真实交流进入可确认的协作启动流程",
@@ -394,6 +395,16 @@ const packagedAppOrigin = (() => {
     return null;
   }
 })();
+const hostedLiveDefault = document.querySelector('meta[name="cospan-live-default"]')?.content.trim() === "1";
+
+function shouldUseLiveMode() {
+  if (initialParams.get("live") === "0") return false;
+  if (initialParams.get("live") === "1" || packagedApiBase) return true;
+  const loopbackNames = new Set(["127.0.0.1", "::1", "localhost"]);
+  return hostedLiveDefault
+    && location.protocol === "https:"
+    && !loopbackNames.has(location.hostname.toLowerCase());
+}
 
 function resolveApiBase() {
   const explicitlyTrustedBase = packagedApiBase || localStorage.getItem("rally_api_base");
@@ -419,7 +430,7 @@ function resolveApiBase() {
 }
 
 const liveConfig = {
-  enabled: initialParams.get("live") === "1" || Boolean(packagedApiBase),
+  enabled: shouldUseLiveMode(),
   apiBase: resolveApiBase(),
   eventId: initialParams.get("event") || "hackathon-2026",
   demoUserId: initialParams.get("demoUser") || null,
@@ -438,6 +449,12 @@ const exhibitionCatalog = Object.freeze({
   }),
 });
 const currentExhibition = exhibitionCatalog[liveConfig.eventId] || null;
+const discoveryContextStorageKey = "cospan_discovery_context";
+const requestedDiscoveryScope = initialParams.get("scope");
+const storedDiscoveryScope = localStorage.getItem(discoveryContextStorageKey);
+const initialDiscoveryScope = currentExhibition
+  ? ([requestedDiscoveryScope, storedDiscoveryScope].find((scope) => ["event", "nearby"].includes(scope)) || "event")
+  : "nearby";
 const platformCatalog = {
   xiaohongshu: { label: "小红书", hint: "粘贴小红书主页链接", mark: "小红书", tone: "red" },
   jike: { label: "即刻", hint: "粘贴即刻主页链接", mark: "J", tone: "jike" },
@@ -667,7 +684,8 @@ function createOnboardingDraft() {
 let liveOtpCountdownTimer = null;
 
 const state = {
-  variant: readVariant(),
+  variant: readVariant(initialDiscoveryScope),
+  discoveryContext: initialDiscoveryScope,
   onboarding: startsInOnboarding,
   onboardingStep: 0,
   collaborationStatus: "IDEA_RECRUITING",
@@ -777,9 +795,12 @@ const state = {
 
 const app = document.querySelector("#app");
 
-function readVariant() {
+function readVariant(discoveryScope = state.discoveryContext) {
   const key = new URLSearchParams(location.search).get("variant")?.toUpperCase();
-  return availableDiscoveryVariants().includes(key) ? key : "A";
+  const availableVariants = discoveryScope === "event" && currentExhibition?.directoryEnabled
+    ? ["A", "B", "C"]
+    : ["A", "B"];
+  return availableVariants.includes(key) ? key : "A";
 }
 
 function setVariant(key) {
@@ -792,8 +813,10 @@ function setVariant(key) {
 function appHistoryPayload() {
   return {
     variant: state.variant,
+    discoveryScope: state.discoveryContext,
     tab: state.tab,
     overlay: state.overlay,
+    conversationId: state.directConversation.connectionId,
     profileBlockType: state.profileBlockDraft?.type || null,
   };
 }
@@ -801,10 +824,16 @@ function appHistoryPayload() {
 function writeAppHistory({ replace = false } = {}) {
   const url = new URL(location.href);
   url.searchParams.set("variant", state.variant);
+  url.searchParams.set("scope", state.discoveryContext);
   if (state.tab === "discover") url.searchParams.delete("view");
   else url.searchParams.set("view", state.tab);
   if (state.overlay) url.searchParams.set("overlay", state.overlay);
   else url.searchParams.delete("overlay");
+  if (state.overlay === "conversation" && state.directConversation.connectionId) {
+    url.searchParams.set("conversation", state.directConversation.connectionId);
+  } else {
+    url.searchParams.delete("conversation");
+  }
   if (state.overlay === "profile-block-editor" && state.profileBlockDraft?.type) {
     url.searchParams.set("block", state.profileBlockDraft.type);
   } else {
@@ -814,8 +843,12 @@ function writeAppHistory({ replace = false } = {}) {
   history[method]({ rally: appHistoryPayload() }, "", url);
 }
 
+function activeExhibition() {
+  return state.discoveryContext === "event" ? currentExhibition : null;
+}
+
 function hasExhibitionDirectory() {
-  return Boolean(currentExhibition?.directoryEnabled);
+  return Boolean(activeExhibition()?.directoryEnabled);
 }
 
 function availableDiscoveryVariants() {
@@ -823,17 +856,17 @@ function availableDiscoveryVariants() {
 }
 
 function visibilityScopeLabel() {
-  return currentExhibition ? "展会内可见" : "附近可见";
+  return activeExhibition() ? "展会内可见" : "附近可见";
 }
 
 function visibilityScopeDescription() {
-  return currentExhibition
+  return activeExhibition()
     ? "只展示你主动选择的公开字段，展会结束后自动隐藏。"
     : "只在你主动开启附近发现时展示公开字段，关闭后立即隐藏。";
 }
 
 function visibilityRestoredMessage() {
-  return currentExhibition ? "已恢复展会内可见" : "已恢复附近可见";
+  return activeExhibition() ? "已恢复展会内可见" : "已恢复附近可见";
 }
 
 function selectedPerson() {
@@ -1196,8 +1229,10 @@ function signalBars(level) {
 function render() {
   const showsOnboarding = state.onboarding && liveAppReady();
   document.body.dataset.variant = state.variant;
+  document.body.dataset.scope = state.discoveryContext;
   document.body.dataset.flow = showsOnboarding ? "onboarding" : "product";
   document.body.dataset.tab = state.tab;
+  document.body.dataset.source = initialParams.get("source") === "android-app" ? "android-app" : "web";
   const phone = `
     <main class="prototype-stage">
       <section class="phone-shell" aria-label="COSPAN 合拍手机端原型">
@@ -1425,9 +1460,11 @@ function renderLiveGate() {
 
 function commonHeader(title = "发现", utility = null) {
   const filterCount = activeDiscoveryFilterCount();
-  const exhibitionContext = currentExhibition
-    ? `<span class="event-context" title="当前展会：${currentExhibition.name}"><i></i>${currentExhibition.name}</span>`
-    : "";
+  const activeContext = activeExhibition();
+  const contextLabel = activeContext?.name || "日常附近";
+  const contextSwitcher = `<button class="context-switch-trigger is-${activeContext ? "event" : "nearby"}" data-action="open-context-switcher" aria-label="切换发现范围，当前为 ${contextLabel}" title="当前范围：${contextLabel}">
+    <span class="context-switch-glyph" aria-hidden="true"><i></i><b></b></span>
+  </button>`;
   const utilityButton = utility === "filters"
     ? `<button class="discovery-filter-trigger ${filterCount ? "is-filtered" : ""}" data-action="open-discovery-filters" aria-label="设置筛选偏好${filterCount ? `，已启用 ${filterCount} 项` : ""}">
         <span aria-hidden="true"><i></i><i></i><i></i></span>${filterCount ? `<b>${filterCount}</b>` : ""}
@@ -1440,9 +1477,39 @@ function commonHeader(title = "发现", utility = null) {
   return `
     <header class="app-header">
       <div class="app-header-start">${utilityButton}<div class="app-brand"><strong>COSPAN</strong><span>合拍 · ${title}</span></div></div>
-      ${exhibitionContext}
+      ${contextSwitcher}
     </header>
   `;
+}
+
+function renderContextSwitcherSheet() {
+  const activeContext = activeExhibition();
+  const eventName = currentExhibition?.name || "尚未加入活动";
+  const eventDisabled = !currentExhibition;
+  return `<div class="overlay context-switcher-overlay">
+    <button class="overlay-backdrop" data-action="close-context-switcher" aria-label="关闭发现范围选择"></button>
+    <section class="bottom-sheet context-switcher-sheet" role="dialog" aria-modal="true" aria-label="管理当前发现范围">
+      <header class="context-switcher-head">
+        <button data-action="close-context-switcher" aria-label="返回当前页面">←</button>
+        <div><p class="micro-label">DISCOVERY CONTEXT</p><h3>选择你现在所在的范围</h3></div>
+      </header>
+      <p class="context-switcher-copy">范围只决定你在哪里发现人。你的协作护照、已建联关系和项目不会因切换而消失。</p>
+      <div class="context-options">
+        <button class="context-option ${activeContext ? "selected" : ""}" data-action="select-discovery-context" data-context-scope="event" aria-pressed="${Boolean(activeContext)}" ${eventDisabled ? "disabled" : ""}>
+          <span class="context-option-mark is-event" aria-hidden="true"><i></i><b></b></span>
+          <span><strong>${escapeHtml(eventName)}</strong><small>查看本场推荐、附近和授权名册</small></span>
+          <em>${activeContext ? "当前" : "进入"}</em>
+        </button>
+        <button class="context-option ${activeContext ? "" : "selected"}" data-action="select-discovery-context" data-context-scope="nearby" aria-pressed="${!activeContext}">
+          <span class="context-option-mark is-nearby" aria-hidden="true"><i></i><b></b></span>
+          <span><strong>退出活动视图 · 日常附近</strong><small>在正常生活状态下，筛选身边主动开启发现的人</small></span>
+          <em>${activeContext ? "切换" : "当前"}</em>
+        </button>
+      </div>
+      <aside class="context-boundary-note"><b>不会退出成员关系</b><span>“退出活动视图”只是回到日常附近；本场活动、队伍和协作记录仍然保留。</span></aside>
+      <button class="context-manage-button" data-action="manage-context-visibility">管理${activeContext ? "本场活动" : "日常附近"}的公开状态</button>
+    </section>
+  </div>`;
 }
 
 function renderDiscoveryTabs() {
@@ -1677,7 +1744,7 @@ function renderConnections() {
     const alignment = directionAlignmentFor(person.id);
     if (alignment.status === "known_project") return `<button class="primary-button full" data-action="resume-project-invite" data-person="${person.id}">邀请加入现有项目</button>`;
     if (alignment.status === "confirmed") return `<button class="primary-button full" data-action="resume-project-creation" data-person="${person.id}">创建项目并邀请入队</button>`;
-    if (alignment.status === "pending_partner") return `<button class="primary-button full" data-action="resume-direction" data-person="${person.id}">查看方向确认进度</button>`;
+    if (alignment.status === "pending_partner") return `<button class="primary-button full" data-action="resume-direction" data-person="${person.id}">${state.live.enabled ? "继续项目创建" : "查看方向确认进度"}</button>`;
     return `<button class="primary-button full" data-action="resume-direction" data-person="${person.id}">继续意图澄清</button>`;
   };
   return `
@@ -2210,7 +2277,7 @@ function renderPublicProfileCard() {
     <div class="public-profile-identity">
       ${glyph(currentUser, "md")}
       <div><strong>${escapeHtml(currentUser.name)}</strong><span>${escapeHtml(currentUser.role)}</span></div>
-      <em>${state.visible ? (currentExhibition ? "本场展会公开" : "附近公开") : "当前暂停"}</em>
+      <em>${state.visible ? (activeExhibition() ? "本场展会公开" : "附近公开") : "当前暂停"}</em>
     </div>
     <div class="public-profile-blocks">
       ${items.length
@@ -2400,10 +2467,11 @@ function renderDiscoveryFilterSheet() {
 }
 
 function renderProfileSettingsSheet() {
+  const activeContext = activeExhibition();
   const settings = [
     ["device", "设备与隐私", "1 台 AI Passport 已连接", "⌁"],
     ["authorization", "数据与授权", "管理公开字段和平台链接权限", "◎"],
-    ["activity", "展会与账号", currentExhibition?.name || "当前未加入展会", "R"],
+    ["activity", "展会与账号", activeContext?.name || "当前为日常附近", "R"],
   ];
   return `<div class="overlay profile-settings-overlay">
     <button class="overlay-backdrop" data-action="close-profile-settings" aria-label="关闭设置"></button>
@@ -2422,7 +2490,7 @@ function renderProfileSettingsSheet() {
         <span><strong>${label}</strong><small>${detail}</small></span>
         <b>›</b>
       </button>`).join("")}</div>
-      <aside class="settings-privacy-note"><b>默认最小公开</b><span>${currentExhibition ? "COSPAN 只展示你在本场展会主动授权的字段，展会结束后自动隐藏。" : "COSPAN 只在你主动开启附近发现时展示授权字段，关闭后立即隐藏。"}</span></aside>
+      <aside class="settings-privacy-note"><b>默认最小公开</b><span>${activeContext ? "COSPAN 只展示你在本场展会主动授权的字段，展会结束后自动隐藏。" : "COSPAN 只在你主动开启附近发现时展示授权字段，关闭后立即隐藏。"}</span></aside>
     </section>
   </div>`;
 }
@@ -2534,17 +2602,98 @@ function renderLiveProfileEditor() {
 }
 
 function renderDirectionSummary() {
-  const { audience, problem, outcome } = directionAlignmentFor().draft;
-  return `<dl class="direction-summary"><div><dt>服务谁</dt><dd>${escapeHtml(audience)}</dd></div><div><dt>解决什么</dt><dd>${escapeHtml(problem)}</dd></div><div><dt>验证结果</dt><dd>${escapeHtml(outcome)}</dd></div></dl>`;
+  const { projectTitle, audience, problem, outcome } = directionAlignmentFor().draft;
+  return `<dl class="direction-summary">${projectTitle ? `<div><dt>项目名称</dt><dd>${escapeHtml(projectTitle)}</dd></div>` : ""}<div><dt>服务谁</dt><dd>${escapeHtml(audience)}</dd></div><div><dt>解决什么</dt><dd>${escapeHtml(problem)}</dd></div><div><dt>验证结果</dt><dd>${escapeHtml(outcome)}</dd></div></dl>`;
+}
+
+function directConversationTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "刚刚";
+  return date.toLocaleTimeString("zh-CN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
+function directConversationSourceLabel(context) {
+  if (context?.consent_mode === "physical_mutual") return "双方碰卡确认";
+  return ({ nfc: "碰卡建联", qr: "扫码建联", link: "双方在线确认" })[context?.source]
+    || "双方确认建联";
+}
+
+function directConversationPerson(conversation = state.directConversation.data) {
+  if (!state.live.enabled) return selectedPerson();
+  const counterpart = conversation?.counterpart;
+  if (!counterpart) return selectedPerson();
+  return livePerson({
+    user_id: counterpart.id,
+    display_name: counterpart.display_name,
+    avatar: counterpart.avatar,
+    role: counterpart.role,
+    status: "已建联",
+  });
+}
+
+function renderDirectConversation() {
+  const direct = state.directConversation;
+  const conversation = direct.data;
+  const person = directConversationPerson(conversation);
+  if (!person) return "";
+  const context = conversation?.context || {
+    event_name: currentExhibition?.name || "线下协作现场",
+    source: "nfc",
+    consent_mode: "physical_mutual",
+    connected_at: new Date().toISOString(),
+  };
+  const messages = conversation?.messages || [];
+  const currentUserId = state.live.currentUserId || "user-zhou";
+  const collaborationAction = state.joined.includes(person.id)
+    ? `<button class="secondary-button" data-tab="collaboration">进入共同协作</button>`
+    : `<button class="secondary-button" data-action="conversation-intent" data-person="${person.id}">澄清合作意图</button>`;
+  return `<div class="overlay direct-conversation-overlay">
+    <section class="direct-conversation" aria-label="与 ${escapeHtml(person.name)} 的对话">
+      <header class="direct-conversation-head">
+        <button data-action="close-conversation" aria-label="返回连接列表">←</button>
+        ${glyph(person, "sm")}
+        <div><strong>${escapeHtml(person.name)}</strong><span>${escapeHtml(person.role || "已建立协作连接")}</span></div>
+        <em><i></i>已建联</em>
+      </header>
+      <div class="direct-conversation-scroll" data-conversation-scroll>
+        <section class="conversation-context-rail">
+          <i aria-hidden="true"></i>
+          <div><span>CONNECTED AT</span><strong>${escapeHtml(context.event_name)}</strong><small>${directConversationSourceLabel(context)} · ${directConversationTime(context.connected_at)}</small></div>
+        </section>
+        <aside class="conversation-next-step">
+          <div><span>下一步由你们决定</span><strong>先聊清楚，再决定要不要开工。</strong></div>
+          ${collaborationAction}
+        </aside>
+        ${direct.loading && !conversation ? `<div class="conversation-loading"><i></i><span>正在恢复对话…</span></div>` : ""}
+        ${direct.error ? `<div class="conversation-error" role="alert"><span>${escapeHtml(direct.error)}</span><button data-action="retry-conversation">重试</button></div>` : ""}
+        <section class="conversation-message-list" aria-live="polite">
+          ${messages.length ? messages.map((message) => {
+            const mine = message.sender_id === currentUserId;
+            return `<article class="conversation-message ${mine ? "is-mine" : "is-theirs"}" data-message-id="${escapeHtml(message.id)}"><span>${mine ? "我" : escapeHtml(person.name)} · ${directConversationTime(message.created_at)}</span><p>${escapeHtml(message.text)}</p></article>`;
+          }).join("") : direct.loading ? "" : `<div class="conversation-empty"><span>·</span><strong>从一句具体的话开始</strong><p>可以先问对方想验证什么。发消息不会自动创建项目或分配任务。</p></div>`}
+        </section>
+      </div>
+      <form class="direct-conversation-composer" data-conversation-form>
+        <textarea name="message" rows="1" maxlength="1000" placeholder="聊聊你们想解决的问题…" aria-label="输入消息" ${direct.sending ? "disabled" : ""}>${escapeHtml(direct.draft)}</textarea>
+        <button type="submit" aria-label="发送消息" ${direct.sending ? "disabled" : ""}>${direct.sending ? "…" : "↑"}</button>
+      </form>
+    </section>
+  </div>`;
 }
 
 function renderOverlay() {
   if (!state.overlay) return "";
+  if (state.overlay === "context-switcher") return renderContextSwitcherSheet();
   if (state.overlay === "filters") return renderDiscoveryFilterSheet();
   if (state.overlay === "profile-settings") return renderProfileSettingsSheet();
   if (state.overlay === "profile-editor") return renderLiveProfileEditor();
   if (state.overlay === "profile-block-library") return renderProfileBlockLibrary();
   if (state.overlay === "profile-block-editor") return renderProfileBlockEditor();
+  if (state.overlay === "conversation") return renderDirectConversation();
   const person = selectedPerson();
   if (!person) return "";
   const directionAlignment = directionAlignmentFor(person.id);
@@ -2630,6 +2779,7 @@ function renderOverlay() {
       <p class="micro-label">DIRECTION DRAFT</p><h3>由人写下<br>共同想验证的方向</h3>
       <p>这不是 AI 生成的项目结论。三个字段都由你们讨论后填写，确认前不会创建项目或任务。</p>
       <form class="direction-form" data-direction-form>
+        ${state.live.enabled ? `<label><span>项目名称</span><input name="projectTitle" required maxlength="80" value="${escapeHtml(directionAlignment.draft.projectTitle)}" placeholder="例如：现场协作实验"></label>` : ""}
         <label><span>服务谁</span><input name="audience" required value="${escapeHtml(directionAlignment.draft.audience)}" placeholder="例如：线下黑客松参与者"></label>
         <label><span>解决什么问题</span><input name="problem" required value="${escapeHtml(directionAlignment.draft.problem)}" placeholder="例如：现场组队方向难收敛"></label>
         <label><span>验证什么结果</span><input name="outcome" required value="${escapeHtml(directionAlignment.draft.outcome)}" placeholder="例如：15 分钟内确认方向"></label>
@@ -2639,6 +2789,16 @@ function renderOverlay() {
     </section></div>`;
   }
   if (state.overlay === "direction-review") {
+    if (state.live.enabled) {
+      return `<div class="overlay success-overlay"><section class="success-card intent-card direction-card">
+        <p class="micro-label">PROJECT DIRECTION</p><h3>用这份方向<br>发起真实项目</h3>
+        ${renderDirectionSummary()}
+        <div class="direction-confirmations"><span>${escapeHtml(currentUser.name)} · 已填写</span><span>${person.name} · 通过入队邀请确认</span></div>
+        <p>项目与邀请将写入服务器；对方只有在自己的设备确认入队后，才会成为项目成员。</p>
+        <button class="primary-button full" data-action="invite-team" data-person="${person.id}">使用此方向创建项目并邀请</button>
+        <button class="secondary-button full" data-action="view-connection">稍后继续</button>
+      </section></div>`;
+    }
     return `<div class="overlay success-overlay"><section class="success-card intent-card direction-card">
       <p class="micro-label">WAITING FOR BOTH</p><h3>方向草案等待<br>${person.name} 确认</h3>
       ${renderDirectionSummary()}
@@ -2856,6 +3016,9 @@ function bindEvents() {
       if (!form.reportValidity()) return;
       const formData = new FormData(form);
       const draft = {
+        projectTitle: state.live.enabled
+          ? String(formData.get("projectTitle") || "").trim()
+          : (directionAlignmentFor(state.selectedId).draft.projectTitle || "离线会议洞察终端"),
         audience: String(formData.get("audience") || "").trim(),
         problem: String(formData.get("problem") || "").trim(),
         outcome: String(formData.get("outcome") || "").trim(),
@@ -3264,6 +3427,29 @@ function bindRecommendationSwipe() {
 
 function handleAction(action, element) {
   const navigationBefore = JSON.stringify(appHistoryPayload());
+  if (action === "open-context-switcher") state.overlay = "context-switcher";
+  if (action === "close-context-switcher") state.overlay = null;
+  if (action === "select-discovery-context") {
+    const requestedScope = element.dataset.contextScope;
+    if (!["event", "nearby"].includes(requestedScope)) return;
+    if (requestedScope === "event" && !currentExhibition) {
+      showToast("当前没有可进入的活动");
+      return;
+    }
+    state.discoveryContext = requestedScope;
+    localStorage.setItem(discoveryContextStorageKey, requestedScope);
+    if (requestedScope === "nearby" && state.variant === "C") state.variant = "B";
+    state.recommendationIndex = 0;
+    state.overlay = null;
+    showToast(requestedScope === "event"
+      ? `已进入 ${currentExhibition.name}`
+      : "已回到日常附近 · 活动身份仍保留");
+  }
+  if (action === "manage-context-visibility") {
+    state.tab = "profile";
+    state.overlay = null;
+    showToast(`在这里管理${activeExhibition() ? "本场活动" : "日常附近"}的公开状态`);
+  }
   if (action === "edit-live-phone") {
     resetLiveOtpChallenge();
     render();
@@ -3569,7 +3755,9 @@ function handleAction(action, element) {
   }
   if (action === "invite-team") {
     const id = element.dataset.person;
-    if (!["known_project", "confirmed"].includes(directionAlignmentFor(id).status)) {
+    const directionStatus = directionAlignmentFor(id).status;
+    const liveDraftIsReady = state.live.enabled && directionStatus === "pending_partner";
+    if (!liveDraftIsReady && !["known_project", "confirmed"].includes(directionStatus)) {
       showToast("先由双方确认项目方向");
       return;
     }
@@ -3853,6 +4041,10 @@ window.RallyApp = Object.freeze({ handleBack: handlePlatformBack });
 
 window.addEventListener("popstate", (event) => {
   const snapshot = event.state?.rally;
+  const urlScope = new URL(location.href).searchParams.get("scope");
+  const historyScope = [snapshot?.discoveryScope, urlScope]
+    .find((scope) => ["event", "nearby"].includes(scope));
+  state.discoveryContext = currentExhibition && historyScope === "event" ? "event" : "nearby";
   state.variant = availableDiscoveryVariants().includes(snapshot?.variant)
     ? snapshot.variant
     : readVariant();
@@ -4658,7 +4850,7 @@ async function createAndInviteLiveProject(person) {
       const created = await runLiveMutation("project:create", () => api.post("/api/projects", {
         event_id: liveConfig.eventId,
         ...(originConnectionId ? { origin_connection_id: originConnectionId } : {}),
-        title: "离线会议洞察终端",
+        title: cleanProfileBlockField(direction.projectTitle, 80) || "现场协作项目",
         summary: hasDirection
           ? `为${direction.audience}解决${direction.problem}，验证${direction.outcome}`
           : "把线下讨论自动沉淀为可执行任务",

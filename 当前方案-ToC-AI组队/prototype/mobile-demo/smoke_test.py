@@ -10,7 +10,26 @@ from playwright.sync_api import sync_playwright
 
 
 BASE_URL = "http://127.0.0.1:4173"
+HOSTED_LIVE_ORIGIN = "https://cospan-live.test"
 OUTPUT_DIR = Path(__file__).with_name("artifacts")
+
+
+def fulfill_hosted_live_request(route):
+    """Serve the product shell on a production-like HTTPS origin."""
+    parsed = urllib.parse.urlparse(route.request.url)
+    if parsed.path == "/api/auth/oauth/providers":
+        route.fulfill(
+            status=200,
+            content_type="application/json",
+            body='{"providers":{"google":{"enabled":false,"android_enabled":false},"wechat":{"enabled":false,"android_enabled":false}}}',
+        )
+        return
+    relative_path = urllib.parse.unquote(parsed.path.lstrip("/")) or "index.html"
+    target = (Path(__file__).parent / relative_path).resolve()
+    if target.is_file() and Path(__file__).parent.resolve() in target.parents:
+        route.fulfill(path=target)
+        return
+    route.fulfill(status=404, body="not found")
 
 
 def mobile_visual_baseline(page) -> dict:
@@ -197,6 +216,20 @@ def main():
             is_mobile=True,
             has_touch=True,
         )
+        hosted_context = browser.new_context(
+            viewport={"width": 390, "height": 844},
+            device_scale_factor=1,
+            is_mobile=True,
+            has_touch=True,
+            ignore_https_errors=True,
+        )
+        hosted_page = hosted_context.new_page()
+        hosted_page.route(f"{HOSTED_LIVE_ORIGIN}/**", fulfill_hosted_live_request)
+        hosted_page.goto(f"{HOSTED_LIVE_ORIGIN}/?splash=0")
+        hosted_page.get_by_role("heading", name="手机号登录").wait_for(timeout=3000)
+        report["flow"]["hosted_entry_defaults_to_live"] = True
+        hosted_context.close()
+
         layout_page = context.new_page()
         layout_page.goto(f"{BASE_URL}/?variant=A&splash=0")
         layout_page.wait_for_load_state("networkidle")
@@ -239,6 +272,37 @@ def main():
         assert abs(live_gate_geometry["uncoveredBottom"]) <= 1
         assert live_gate_geometry["gatePaddingTop"] >= 47
         assert live_gate_geometry["scrollHeight"] <= live_gate_geometry["clientHeight"] + 1
+        toast_geometry = layout_page.evaluate(
+            """() => {
+                document.body.dataset.source = 'android-app';
+                const toast = document.createElement('div');
+                toast.className = 'toast';
+                toast.textContent = '招呼已存在，等待对方回应';
+                document.body.append(toast);
+                const animation = toast.getAnimations()[0];
+                animation.pause();
+                animation.currentTime = 0;
+                const enteringBox = toast.getBoundingClientRect();
+                animation.currentTime = animation.effect.getTiming().duration;
+                const settledBox = toast.getBoundingClientRect();
+                const style = getComputedStyle(toast);
+                const geometry = {
+                    enteringTop: enteringBox.top,
+                    settledTop: settledBox.top,
+                    clientWidth: toast.clientWidth,
+                    scrollWidth: toast.scrollWidth,
+                    whiteSpace: style.whiteSpace,
+                    text: toast.textContent,
+                };
+                toast.remove();
+                return geometry;
+            }"""
+        )
+        report["visual_baseline"]["android_toast_avoids_camera_cutout"] = toast_geometry
+        assert toast_geometry["enteringTop"] >= 44, toast_geometry
+        assert toast_geometry["settledTop"] >= 44, toast_geometry
+        assert toast_geometry["whiteSpace"] == "nowrap", toast_geometry
+        assert toast_geometry["scrollWidth"] <= toast_geometry["clientWidth"], toast_geometry
         layout_page.close()
 
         short_layout_page = context.new_page()
@@ -277,9 +341,11 @@ def main():
             report["variants"][variant] = {
                 "title": page.title(),
                 "variant": page.locator("body").get_attribute("data-variant"),
+                "scope": page.locator("body").get_attribute("data-scope"),
                 "nav_buttons": page.locator(".app-nav button").count(),
                 "discovery_tabs": page.locator(".discovery-tabs button").count(),
-                "exhibition_context": page.locator(".event-context").inner_text(),
+                "context_switchers": page.locator(".context-switch-trigger").count(),
+                "context_label": page.locator(".context-switch-trigger").get_attribute("aria-label"),
                 "prototype_switcher_removed": page.locator(".prototype-switcher").count() == 0,
                 "fake_phone_status_removed": page.locator(".phone-status, .phone-island").count() == 0,
                 "top_safe_area_reserved": page.locator(".screen").evaluate(
@@ -300,7 +366,9 @@ def main():
             }
             assert report["variants"][variant]["nav_buttons"] == 4
             assert report["variants"][variant]["discovery_tabs"] == 3
-            assert report["variants"][variant]["exhibition_context"] == "AI Hardware Hackathon 2026"
+            assert report["variants"][variant]["scope"] == "event"
+            assert report["variants"][variant]["context_switchers"] == 1
+            assert "AI Hardware Hackathon 2026" in report["variants"][variant]["context_label"]
             assert page.get_by_text("当前活动 · 2026", exact=True).count() == 0
             assert report["variants"][variant]["prototype_switcher_removed"]
             assert report["variants"][variant]["fake_phone_status_removed"]
@@ -441,6 +509,25 @@ def main():
                     for horizontal, vertical in avatar_offsets.values()
                 )
                 assert report["variants"][variant]["avatar_subjects_are_centered"], avatar_offsets
+
+        page.goto(f"{BASE_URL}/?variant=A")
+        page.get_by_role(
+            "button", name="切换发现范围，当前为 AI Hardware Hackathon 2026"
+        ).click()
+        assert page.get_by_role("heading", name="选择你现在所在的范围").is_visible()
+        assert page.get_by_text("不会退出成员关系", exact=True).is_visible()
+        assert_mobile_visual_baseline(page, report["visual_baseline"], "context_switcher")
+        page.locator('[data-context-scope="nearby"]').click()
+        assert page.locator('body[data-scope="nearby"]').count() == 1
+        assert page.locator("[data-discovery-view='C']").count() == 0
+        assert urllib.parse.parse_qs(urllib.parse.urlparse(page.url).query)["scope"] == ["nearby"]
+        assert page.evaluate("localStorage.getItem('cospan_discovery_context')") == "nearby"
+        page.get_by_role("button", name="切换发现范围，当前为 日常附近").click()
+        page.locator('[data-context-scope="event"]').click()
+        assert page.locator('body[data-scope="event"]').count() == 1
+        assert page.locator("[data-discovery-view='C']").count() == 1
+        assert page.evaluate("localStorage.getItem('cospan_discovery_context')") == "event"
+        report["flow"]["context_switcher_preserves_identity_across_scopes"] = True
 
         page.goto(f"{BASE_URL}/?variant=A")
         page.locator(".recommendation-card-active").click()
