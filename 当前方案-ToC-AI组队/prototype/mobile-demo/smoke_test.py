@@ -421,11 +421,19 @@ def main():
             }"""
         )
         page.locator(".person-sheet.is-expanded").wait_for()
+        page.wait_for_timeout(430)
+        expanded_geometry = page.locator(".person-sheet.is-expanded").evaluate(
+            """sheet => {
+                const box = sheet.getBoundingClientRect();
+                return {bottom: box.bottom, viewportBottom: window.innerHeight};
+            }"""
+        )
         report["flow"]["person_sheet_swipes_to_full_profile"] = (
             page.locator(".person-sheet.is-expanded").count() == 1
             and page.get_by_text("过往项目", exact=True).is_visible()
             and page.get_by_text("协作方式", exact=True).is_visible()
             and page.get_by_text("系统推荐参考", exact=True).count() == 1
+            and abs(expanded_geometry["bottom"] - expanded_geometry["viewportBottom"]) <= 1
         )
         assert report["flow"]["person_sheet_swipes_to_full_profile"]
         profile_scroll = page.locator(".person-sheet-content").evaluate(
@@ -440,19 +448,30 @@ def main():
             and profile_scroll["after"] > profile_scroll["before"]
         )
         assert report["flow"]["full_profile_scrolls_independently"], profile_scroll
-        page.locator("[data-person-sheet-drag]").evaluate(
+        live_radius = page.locator("[data-person-sheet-drag]").evaluate(
             """zone => {
                 const box = zone.getBoundingClientRect();
                 const x = box.left + box.width / 2;
                 const startY = box.top + Math.min(box.height / 2, 28);
                 zone.dispatchEvent(new PointerEvent('pointerdown', {bubbles:true, pointerId:10, clientX:x, clientY:startY}));
                 zone.dispatchEvent(new PointerEvent('pointermove', {bubbles:true, pointerId:10, clientX:x, clientY:startY + 90}));
+                const radius = parseFloat(getComputedStyle(zone.closest('.person-sheet')).borderTopLeftRadius);
                 zone.dispatchEvent(new PointerEvent('pointerup', {bubbles:true, pointerId:10, clientX:x, clientY:startY + 90}));
+                return radius;
             }"""
         )
         page.locator(".person-sheet.is-preview").wait_for()
+        page.wait_for_timeout(380)
+        preview_geometry = page.locator(".person-sheet.is-preview").evaluate(
+            """sheet => {
+                const box = sheet.getBoundingClientRect();
+                return {bottom: box.bottom, viewportBottom: window.innerHeight};
+            }"""
+        )
         report["flow"]["full_profile_top_swipe_returns_to_discovery_sheet"] = (
             page.locator(".person-sheet.is-preview").count() == 1
+            and live_radius > 0
+            and abs(preview_geometry["bottom"] - preview_geometry["viewportBottom"]) <= 1
         )
         assert report["flow"]["full_profile_top_swipe_returns_to_discovery_sheet"]
         page.get_by_role("button", name="想认识", exact=True).click()

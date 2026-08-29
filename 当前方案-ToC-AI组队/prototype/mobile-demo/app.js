@@ -1466,6 +1466,8 @@ function bindPersonSheetGesture() {
       transitionPersonDetail(true);
     } else if (state.personDetailExpanded && deltaY > 52) {
       transitionPersonDetail(false);
+    } else {
+      sheet.style.removeProperty("--sheet-live-radius");
     }
   };
 
@@ -1490,6 +1492,10 @@ function bindPersonSheetGesture() {
       ? Math.max(-8, Math.min(deltaY * .82, 116))
       : Math.max(deltaY * .72, -112);
     sheet.style.setProperty("--sheet-drag-y", `${resisted}px`);
+    if (state.personDetailExpanded) {
+      const radius = Math.max(0, Math.min(deltaY * .32, 32));
+      sheet.style.setProperty("--sheet-live-radius", `${radius}px`);
+    }
   };
   sheet.addEventListener("pointerdown", start);
   sheet.addEventListener("pointermove", move);
@@ -1506,19 +1512,33 @@ function bindPersonSheetGesture() {
 }
 
 function transitionPersonDetail(expanded) {
-  const update = () => {
-    state.personDetailExpanded = expanded;
-    render();
-  };
+  const oldSheet = document.querySelector(".person-sheet");
+  const oldRect = oldSheet?.getBoundingClientRect();
   const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-  if (!document.startViewTransition || reducedMotion) {
-    update();
-    return;
-  }
-  document.documentElement.dataset.personTransition = expanded ? "expanding" : "collapsing";
-  const transition = document.startViewTransition(update);
-  transition.finished.finally(() => {
-    delete document.documentElement.dataset.personTransition;
+  state.personDetailExpanded = expanded;
+  render();
+  if (!oldRect || reducedMotion) return;
+
+  const nextSheet = document.querySelector(".person-sheet");
+  const nextRect = nextSheet?.getBoundingClientRect();
+  if (!nextSheet || !nextRect || typeof nextSheet.animate !== "function") return;
+  const translateY = oldRect.top - nextRect.top;
+  const startRadius = expanded ? 32 : 0;
+  const endRadius = expanded ? 0 : 32;
+  nextSheet.animate([
+    {
+      transform: `translate3d(0, ${translateY}px, 0)`,
+      borderRadius: `${startRadius}px ${startRadius}px 0 0`,
+      opacity: .96,
+    },
+    {
+      transform: "translate3d(0, 0, 0)",
+      borderRadius: `${endRadius}px ${endRadius}px 0 0`,
+      opacity: 1,
+    },
+  ], {
+    duration: expanded ? 390 : 340,
+    easing: "cubic-bezier(.2,.9,.22,1)",
   });
 }
 

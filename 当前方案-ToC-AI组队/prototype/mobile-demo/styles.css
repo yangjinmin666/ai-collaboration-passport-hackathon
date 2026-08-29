@@ -553,10 +553,10 @@ body[data-flow="onboarding"] .onboarding-shell { background: #fff; background-im
 .overlay { position: fixed; z-index: 80; inset: 0; display: grid; place-items: end center; background: rgba(21,27,25,.42); backdrop-filter: blur(6px); }
 .overlay-backdrop { position: absolute; inset: 0; border: 0; background: transparent; }
 .bottom-sheet { position: relative; z-index: 2; width: min(410px, 100%); max-height: 89vh; overflow-y: auto; padding: 10px 20px calc(22px + env(safe-area-inset-bottom)); border-radius: 32px 32px 0 0; background: var(--white); box-shadow: 0 -20px 60px rgba(20,30,26,.2); }
-.person-overlay { view-transition-name: person-overlay; transition: background .3s ease, backdrop-filter .3s ease; }
-.person-sheet { --sheet-drag-y: 0px; view-transition-name: person-sheet; contain: layout paint; display: flex; flex-direction: column; overflow: hidden; transform: translate3d(0, var(--sheet-drag-y), 0); transition: max-height .42s cubic-bezier(.2,.88,.24,1), border-radius .32s ease, transform .34s cubic-bezier(.2,.88,.24,1); will-change: transform, max-height; }
+.person-overlay { transition: background .3s ease, backdrop-filter .3s ease; }
+.person-sheet { --sheet-drag-y: 0px; --sheet-live-radius: 0px; contain: layout paint; display: flex; flex-direction: column; overflow: hidden; transform: translate3d(0, var(--sheet-drag-y), 0); transition: max-height .42s cubic-bezier(.2,.88,.24,1), border-radius .32s ease, transform .34s cubic-bezier(.2,.88,.24,1); will-change: transform, max-height, border-radius; }
 .person-sheet.is-preview { max-height: min(76vh, 680px); }
-.person-sheet.is-expanded { width: min(430px, 100%); height: 100dvh; max-height: 100dvh; padding-top: max(8px, env(safe-area-inset-top)); border-radius: 0; }
+.person-sheet.is-expanded { width: min(430px, 100%); height: 100dvh; max-height: 100dvh; padding-top: max(8px, env(safe-area-inset-top)); border-radius: var(--sheet-live-radius) var(--sheet-live-radius) 0 0; }
 .person-sheet.is-dragging { transition: none; }
 .person-sheet-content { min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
 .person-sheet-content::-webkit-scrollbar { display: none; }
@@ -648,13 +648,6 @@ body[data-flow="onboarding"] .onboarding-shell { background: #fff; background-im
 .person-sheet-actions { flex: 0 0 auto; margin: 14px -2px 0; padding-top: 10px; border-top: 1px solid #edf0f2; background: rgba(255,255,255,.97); }
 .person-sheet.is-expanded .person-sheet-actions { margin: 10px -20px calc(-1 * (22px + env(safe-area-inset-bottom))); padding: 11px 20px calc(14px + env(safe-area-inset-bottom)); box-shadow: 0 -10px 30px rgba(22,31,40,.07); }
 
-::view-transition-group(person-sheet) { animation-duration: .44s; animation-timing-function: cubic-bezier(.18,.9,.22,1); }
-::view-transition-old(person-sheet), ::view-transition-new(person-sheet) { mix-blend-mode: normal; }
-::view-transition-old(person-sheet) { animation: person-content-out .16s ease both; }
-::view-transition-new(person-sheet) { animation: person-content-in .3s .08s ease both; }
-::view-transition-group(person-overlay) { animation-duration: .32s; animation-timing-function: ease; }
-@keyframes person-content-out { to { opacity: .72; } }
-@keyframes person-content-in { from { opacity: .72; } }
 
 .handshake-overlay, .success-overlay { place-items: center; padding: 20px; }
 .handshake-card, .success-card { position: relative; width: min(370px, 100%); padding: 24px; border-radius: 30px; background: var(--white); text-align: center; box-shadow: var(--shadow); }
