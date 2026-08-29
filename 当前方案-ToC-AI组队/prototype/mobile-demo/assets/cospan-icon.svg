@@ -1,6 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="COSPAN">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="COSPAN 合拍">
+  <title>COSPAN 合拍：双拍合流标志</title>
   <rect width="512" height="512" rx="116" fill="#347CF8"/>
-  <path d="M236 128h-42c-67 0-106 53-106 128s39 128 106 128h42" fill="none" stroke="#fff" stroke-width="36" stroke-linecap="round"/>
-  <path d="M276 128h42c67 0 106 53 106 128s-39 128-106 128h-42" fill="none" stroke="#fff" stroke-width="36" stroke-linecap="round"/>
-  <path d="m256 210 46 46-46 46-46-46z" fill="#ff735f"/>
+  <path d="M88 288h60l56-98 52 98" fill="none" stroke="#fff" stroke-width="38" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M424 288h-60l-56-98-52 98" fill="none" stroke="#fff" stroke-width="38" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="256" cy="288" r="30" fill="#FF735F"/>
 </svg>

@@ -56,6 +56,9 @@ def main():
         assert page.get_by_text("Build together.", exact=True).is_visible()
         assert splash.get_by_text("合拍", exact=True).is_visible()
         assert splash.get_by_text("共域", exact=True).count() == 0
+        logo = splash.locator('img[src="./assets/cospan-icon.svg"]')
+        assert logo.is_visible()
+        assert logo.evaluate("image => image.complete && image.naturalWidth > 0")
         assert splash.locator(".rally-splash-person").count() == 2
         assert splash.locator(".rally-room-line").count() == 2
         assert splash.evaluate("element => getComputedStyle(element).position") == "fixed"
