@@ -303,7 +303,7 @@ def main():
             block_form.get_by_label("公开链接").fill(
                 "https://rally.example/demo"
             )
-            block_form.locator("[data-preview-url]").wait_for(state="visible")
+            block_form.locator("[data-preview-link]").wait_for(state="visible")
             block_form_mobile_metrics = mobile_sheet_metrics(block_form)
             assert block_form_mobile_metrics["minimumFontSize"] >= 10, (
                 block_form_mobile_metrics
