@@ -404,6 +404,7 @@ body[data-flow="onboarding"] .screen { padding-bottom: 0; background: #fff; }
 .onboarding-footer .text-action { color: var(--guide-blue); }
 .onboarding-footer .primary-button { border-color: var(--brand-action); background: var(--brand-action); box-shadow: 0 10px 24px rgba(var(--brand-rgb), .22); }
 
+body[data-tab="discover"][data-variant="B"] .screen,
 .view-b { background: var(--paper); }
 .mobile-discovery-note { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 10px; padding: 8px 10px; border-radius: 12px; background: var(--brand-soft); color: var(--brand-deep); }
 .mobile-discovery-note span { font-size: 8px; font-weight: 800; }

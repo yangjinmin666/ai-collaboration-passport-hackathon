@@ -299,6 +299,22 @@ def main():
                 assert report["variants"][variant]["recommendation_card_has_safe_bottom_inset"], card_geometry
                 assert report["variants"][variant]["table_like_lists_removed"]
             if variant == "B":
+                discovery_backgrounds = page.locator(".phone-shell").evaluate(
+                    """shell => {
+                        shell.style.setProperty('--rally-safe-area-top', '47px');
+                        shell.style.setProperty('--rally-safe-area-bottom', '27px');
+                        const screen = shell.querySelector('.screen');
+                        const view = screen.querySelector(':scope > .view-b');
+                        return {
+                            screen: getComputedStyle(screen).backgroundColor,
+                            view: getComputedStyle(view).backgroundColor,
+                        };
+                    }"""
+                )
+                report["variants"][variant]["safe_areas_match_discovery_background"] = (
+                    discovery_backgrounds["screen"] == discovery_backgrounds["view"]
+                )
+                assert report["variants"][variant]["safe_areas_match_discovery_background"], discovery_backgrounds
                 report["variants"][variant]["radar_people_count"] = page.locator(".radar-person").count()
                 assert report["variants"][variant]["radar_people_count"] == 11
                 avatar_subject_ratios = [
