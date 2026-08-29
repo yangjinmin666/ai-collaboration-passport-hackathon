@@ -5130,7 +5130,9 @@ async function refreshLiveState() {
     else state.live.syncError = safeLiveText(error?.message, "同步暂时中断", 160);
   } finally {
     state.live.syncInFlight = false;
-    render();
+    const composerHasFocus = state.overlay === "conversation"
+      && document.activeElement?.closest?.("[data-conversation-form]");
+    if (!composerHasFocus) render();
   }
 }
 

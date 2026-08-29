@@ -983,18 +983,42 @@ def main():
 
             zhou_page.locator('.app-nav [data-tab="connections"]').click()
             zhou_page.get_by_text("已建联", exact=True).first.wait_for(timeout=8000)
+            zhou_page.evaluate(
+                """async () => {
+                  const { RallyApiClient } = await import('./api-client.js');
+                  const originalRequest = RallyApiClient.prototype.request;
+                  window.__focusRaceApiPrototype = RallyApiClient.prototype;
+                  window.__focusRaceOriginalRequest = originalRequest;
+                  window.__focusRaceDiscoverStarted = false;
+                  window.__focusRaceDelayed = false;
+                  RallyApiClient.prototype.request = async function(path, options) {
+                    if (String(path).includes('/discover') && !window.__focusRaceDelayed) {
+                      window.__focusRaceDelayed = true;
+                      window.__focusRaceDiscoverStarted = true;
+                      await new Promise(resolve => setTimeout(resolve, 1200));
+                    }
+                    return originalRequest.call(this, path, options);
+                  };
+                }"""
+            )
+            zhou_page.wait_for_function(
+                "window.__focusRaceDiscoverStarted === true", timeout=4000
+            )
             zhou_page.get_by_role(
                 "button", name="打开与 林澈 的对话", exact=True
             ).click()
             zhou_page.get_by_label("输入消息").fill(
                 "我们先聊清楚想服务哪类参展者？"
             )
-            zhou_page.wait_for_timeout(2800)
+            zhou_page.wait_for_timeout(1800)
             assert zhou_page.get_by_label("输入消息").evaluate(
                 "element => document.activeElement === element"
             )
             assert zhou_page.get_by_label("输入消息").input_value() == (
                 "我们先聊清楚想服务哪类参展者？"
+            )
+            zhou_page.evaluate(
+                "() => { window.__focusRaceApiPrototype.request = window.__focusRaceOriginalRequest; }"
             )
             zhou_page.get_by_role("button", name="发送消息").click()
             zhou_page.get_by_text(
@@ -1005,7 +1029,9 @@ def main():
             lin_page.get_by_role(
                 "button", name="打开与 周闻 的对话，1 条未读", exact=True
             ).click()
-            lin_page.get_by_text(
+            lin_page.get_by_label(
+                "与 周闻 的对话", exact=True
+            ).get_by_text(
                 "我们先聊清楚想服务哪类参展者？", exact=True
             ).wait_for(timeout=5000)
             lin_page.get_by_label("输入消息").fill(
