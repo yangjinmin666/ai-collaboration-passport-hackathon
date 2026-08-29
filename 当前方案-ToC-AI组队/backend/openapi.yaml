@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: RALLY API
-  version: 0.6.0
+  version: 0.7.0
   description: >-
     HTTP/JSON contract for activity-scoped identity, authorized external
     evidence, short-lived nearby presence, NFC/QR connections, confirmed team
@@ -393,6 +393,19 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
   /api/projects:
+    get:
+      tags: [Projects]
+      summary: List projects the current user has joined for one event
+      security: [{ BearerAuth: [] }, { DemoHeader: [] }]
+      parameters:
+        - in: query
+          name: event_id
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Projects with current membership, role needs, and members }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
     post:
       tags: [Projects]
       summary: Create a project, its originator membership, and first role need
@@ -443,6 +456,28 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "409": { $ref: "#/components/responses/Conflict" }
+  /api/team-invitations:
+    get:
+      tags: [Projects]
+      summary: Poll incoming or outgoing project invitations
+      security: [{ BearerAuth: [] }, { DemoHeader: [] }]
+      parameters:
+        - in: query
+          name: event_id
+          required: true
+          schema: { type: string }
+        - in: query
+          name: direction
+          required: false
+          schema: { type: string, enum: [incoming, outgoing], default: incoming }
+        - in: query
+          name: status
+          required: false
+          schema: { type: string, enum: [PENDING, ACCEPTED, DECLINED, CANCELLED, EXPIRED] }
+      responses:
+        "200": { description: Invitations with project, counterpart, and role context }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
   /api/team-invitations/{invitationId}:
     patch:
       tags: [Projects]

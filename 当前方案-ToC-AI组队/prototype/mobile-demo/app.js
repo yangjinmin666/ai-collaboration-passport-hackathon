@@ -3,6 +3,8 @@
  * Three variants of the nearby-discovery experience, switchable via ?variant=.
  */
 
+import { ApiError, RallyApiClient } from "./api-client.js";
+
 const currentUser = {
   id: "zhou",
   name: "周闻",
@@ -358,16 +360,30 @@ const variantNames = {
 const initialParams = new URLSearchParams(location.search);
 const startsInOnboarding = initialParams.get("onboarding") === "1";
 const startsInWorkspace = initialParams.get("workspace") === "1" && !startsInOnboarding;
+const requestedInitialTab = initialParams.get("view");
+const initialTab = ["discover", "connections", "collaboration", "profile"].includes(requestedInitialTab)
+  ? requestedInitialTab
+  : "discover";
 const storedAccessToken = localStorage.getItem("rally_access_token");
+const storedSessionExpiry = localStorage.getItem("rally_session_expires_at");
 
 function resolveApiBase() {
   const explicitlyTrustedBase = localStorage.getItem("rally_api_base");
+  const requestedBase = initialParams.get("apiBase");
   const candidate = storedAccessToken
     ? (explicitlyTrustedBase || location.origin)
-    : (initialParams.get("apiBase") || "http://127.0.0.1:8787");
+    : (explicitlyTrustedBase || requestedBase || location.origin);
   try {
     const url = new URL(candidate, location.href);
     if (!["http:", "https:"].includes(url.protocol)) return location.origin;
+    if (!storedAccessToken && !explicitlyTrustedBase && requestedBase) {
+      const pageUrl = new URL(location.href);
+      const loopbackNames = new Set(["127.0.0.1", "::1", "localhost"]);
+      const sameHost = url.hostname === pageUrl.hostname;
+      const bothLoopback = loopbackNames.has(url.hostname) && loopbackNames.has(pageUrl.hostname);
+      const secureEnough = pageUrl.protocol !== "https:" || url.protocol === "https:";
+      if ((!sameHost && !bothLoopback) || !secureEnough) return location.origin;
+    }
     return url.href.replace(/\/$/, "");
   } catch {
     return location.origin;
@@ -378,9 +394,14 @@ const liveConfig = {
   enabled: initialParams.get("live") === "1",
   apiBase: resolveApiBase(),
   eventId: initialParams.get("event") || "hackathon-2026",
-  demoUserId: initialParams.get("demoUser") || "user-zhou",
+  demoUserId: initialParams.get("demoUser") || null,
   accessToken: storedAccessToken,
 };
+const api = new RallyApiClient({
+  baseUrl: liveConfig.apiBase,
+  getAccessToken: () => liveConfig.accessToken,
+  demoUserId: liveConfig.demoUserId,
+});
 const exhibitionCatalog = Object.freeze({
   "hackathon-2026": Object.freeze({
     id: "hackathon-2026",
@@ -398,6 +419,19 @@ const platformCatalog = {
   website: { label: "作品链接", hint: "粘贴作品或项目链接", mark: "↗", tone: "website" },
   other: { label: "其他链接", hint: "粘贴其他公开资料链接", mark: "+", tone: "other" },
 };
+const publicFieldCatalog = {
+  display_name: "姓名",
+  avatar: "头像",
+  role: "当前角色",
+  status: "协作状态",
+  skills: "能力标签",
+  interests: "兴趣方向",
+  availability: "可投入时间",
+  collaboration_preferences: "协作偏好",
+  collaboration_need: "当前需求",
+  evidence: "能力证据",
+  platform_links: "外部平台链接",
+};
 
 const state = {
   variant: readVariant(),
@@ -412,7 +446,7 @@ const state = {
   workspaceStarted: false,
   workspaceSos: false,
   assignmentOverrides: {},
-  tab: startsInWorkspace ? "collaboration" : "discover",
+  tab: startsInWorkspace ? "collaboration" : initialTab,
   selectedId: "lin",
   visible: liveConfig.enabled ? false : !startsInOnboarding,
   stage: "browse",
@@ -430,15 +464,30 @@ const state = {
   acceptedTasks: [],
   live: {
     enabled: liveConfig.enabled,
+    authStatus: storedAccessToken || liveConfig.demoUserId ? "ready" : "required",
+    sessionExpiresAt: storedSessionExpiry,
+    currentUserId: null,
     started: false,
     watcherId: null,
+    presenceGeneration: 0,
+    presenceController: null,
     requestInFlight: false,
     status: liveConfig.enabled ? "idle" : "demo",
     nearby: [],
+    discover: [],
+    connectionRequests: [],
+    teamInvitations: [],
+    projects: [],
+    activeProject: null,
+    room: null,
     platformLinks: [],
+    currentProfile: null,
     meLoaded: false,
     meLoading: false,
     error: "",
+    syncError: "",
+    syncInFlight: false,
+    pendingOperations: new Set(),
     lastUpdatedAt: null,
   },
   toast: "",
@@ -456,10 +505,27 @@ function readVariant() {
 function setVariant(key) {
   if (!availableDiscoveryVariants().includes(key)) return;
   state.variant = key;
-  const url = new URL(location.href);
-  url.searchParams.set("variant", key);
-  history.replaceState({}, "", url);
+  writeAppHistory();
   render();
+}
+
+function appHistoryPayload() {
+  return {
+    variant: state.variant,
+    tab: state.tab,
+    overlay: state.overlay,
+  };
+}
+
+function writeAppHistory({ replace = false } = {}) {
+  const url = new URL(location.href);
+  url.searchParams.set("variant", state.variant);
+  if (state.tab === "discover") url.searchParams.delete("view");
+  else url.searchParams.set("view", state.tab);
+  if (state.overlay) url.searchParams.set("overlay", state.overlay);
+  else url.searchParams.delete("overlay");
+  const method = replace ? "replaceState" : "pushState";
+  history[method]({ rally: appHistoryPayload() }, "", url);
 }
 
 function hasExhibitionDirectory() {
@@ -485,12 +551,25 @@ function visibilityRestoredMessage() {
 }
 
 function selectedPerson() {
+  if (state.live.enabled) {
+    return livePeople().find((person) => person.id === state.selectedId)
+      || livePeople()[0]
+      || null;
+  }
   return people.find((person) => person.id === state.selectedId)
-    || state.live?.nearby.find((person) => person.id === state.selectedId)
     || people[0];
 }
 
 function selectedParticipantProfile(person = selectedPerson()) {
+  if (state.live.enabled) {
+    return person?.participantProfile || {
+      bio: "这位参与者没有授权公开个人简介。",
+      location: "本场展会",
+      availability: "投入时间未公开",
+      collaboration: "协作偏好未公开",
+      projects: [],
+    };
+  }
   return participantProfiles[person.id] || {
     bio: "这位参与者还没有填写公开的个人简介。",
     location: "本场展会",
@@ -532,10 +611,28 @@ function safeLiveText(value, fallback, maximumLength = 160) {
 
 function activeRadarPeople() {
   if (!state.live.enabled) return radarPeople;
-  if (state.live.status === "connected" || state.live.status === "requesting") {
-    return state.live.nearby;
-  }
-  return radarPeople;
+  return state.live.nearby;
+}
+
+function discoveryPeople() {
+  return state.live.enabled ? state.live.discover : rankedPeople;
+}
+
+function livePeople() {
+  const candidates = [
+    ...state.live.discover,
+    ...state.live.nearby,
+    ...state.live.connectionRequests.map((item) => item.counterpartPerson).filter(Boolean),
+    ...state.live.teamInvitations.map((item) => item.counterpartPerson).filter(Boolean),
+    ...state.live.projects.flatMap((project) => project.members || []).map((member) => livePerson({
+      user_id: member.user_id,
+      display_name: member.display_name,
+      avatar: member.avatar,
+      role: member.profile_role,
+      status: "已加入项目",
+    })),
+  ];
+  return [...new Map(candidates.map((person) => [person.userId, person])).values()];
 }
 
 function roleFilterFor(person) {
@@ -619,6 +716,7 @@ function livePerson(person) {
       : 1;
   return {
     id: preset?.id || localId,
+    userId: String(person.user_id || `user-${localId}`),
     name: displayName,
     monogram: displayName.slice(0, 2).toUpperCase(),
     glyph: preset?.glyph || "glyph-orbit",
@@ -630,13 +728,34 @@ function livePerson(person) {
     proximity: safeLiveText(person.distance?.label, "展会现场", 40),
     evidence: evidenceItems[0] || "展会内授权公开资料",
     hasPublicEvidence: evidenceItems.length > 0 || platformLinks.length > 0,
-    reason: "对方正在同一展会现场，可以直接当面确认协作意图。",
-    caution: "具体投入时间和分工仍需当面确认",
-    fit: "同场协作",
-    fitDetail: "真实定位",
+    reason: safeLiveText(
+      person.recommendation?.reasons?.join("；"),
+      "对方正在同一展会现场，可以直接当面确认协作意图。",
+      240,
+    ),
+    caution: safeLiveText(
+      person.recommendation?.needs_confirmation,
+      "具体投入时间和分工仍需当面确认",
+      180,
+    ),
+    fit: safeLiveText(person.recommendation?.ranking_factors?.[0], "同场协作", 40),
+    fitDetail: person.recommendation?.generated_by === "RULE_FALLBACK" ? "规则推荐" : "真实资料",
     pairLabel: "RALLY × LIVE",
     teamRole: role,
     signal,
+    participantProfile: {
+      bio: safeLiveText(person.collaboration_need, "这位参与者没有授权公开个人简介。", 240),
+      location: "本场展会",
+      availability: safeLiveText(person.availability, "投入时间未公开", 120),
+      collaboration: Array.isArray(person.collaboration_preferences) && person.collaboration_preferences.length
+        ? person.collaboration_preferences.map((item) => safeLiveText(item, "", 60)).filter(Boolean).join("、")
+        : "协作偏好未公开",
+      projects: evidenceItems.map((item, index) => ({
+        title: `公开证据 ${index + 1}`,
+        detail: item,
+        tags: skills.slice(0, 3),
+      })),
+    },
   };
 }
 
@@ -658,11 +777,10 @@ function render() {
   const phone = `
     <main class="prototype-stage">
       <section class="phone-shell" aria-label="RALLY 集结手机端原型">
-        <div class="phone-status"><span>09:41</span><span class="phone-island"></span><span>5G&nbsp;&nbsp;●</span></div>
         <div class="screen">
           ${state.onboarding ? renderOnboarding() : renderCurrentView()}
         </div>
-        ${state.onboarding ? "" : renderAppNav()}
+        ${state.onboarding || !liveAppReady() ? "" : renderAppNav()}
       </section>
       <aside class="prototype-notes">
         <p class="eyebrow">${state.onboarding ? "RALLY / PASSPORT ASSEMBLY" : `RALLY / MOBILE / ${state.variant}`}</p>
@@ -805,12 +923,46 @@ function renderOnboardingFooter(primaryLabel, secondaryLabel = "稍后设置") {
 }
 
 function renderCurrentView() {
+  if (!liveAppReady()) return renderLiveGate();
   if (state.tab === "connections") return renderConnections();
   if (state.tab === "collaboration") return renderCollaboration();
   if (state.tab === "profile") return renderProfile();
   if (state.variant === "B") return renderVariantB();
   if (state.variant === "C" && hasExhibitionDirectory()) return renderVariantC();
   return renderVariantA();
+}
+
+function liveAppReady() {
+  return !state.live.enabled || (state.live.authStatus === "ready" && state.live.meLoaded);
+}
+
+function renderLiveGate() {
+  if (state.live.authStatus === "required") {
+    return `<div class="live-gate">
+      <div class="live-gate-brand"><strong>RALLY</strong><span>集结 · 受控试用</span></div>
+      <section class="live-login-card">
+        <p class="micro-label">SECURE SESSION</p>
+        <h2>登录后进入现场</h2>
+        <p>会话只保存在当前设备；过期或退出后，服务端 Token 会失效。</p>
+        <form data-live-login>
+          <label><span>RALLY 账号</span><input name="user-id" required autocomplete="username" placeholder="例如 user-zhou"></label>
+          <label><span>现场访问码</span><input name="access-key" type="password" required autocomplete="current-password" placeholder="由活动管理员提供"></label>
+          <button class="primary-button full" type="submit" ${state.live.meLoading ? "disabled" : ""}>${state.live.meLoading ? "正在登录…" : "登录 RALLY"}</button>
+        </form>
+        ${state.live.error ? `<div class="live-error" role="alert">${state.live.error}</div>` : ""}
+      </section>
+    </div>`;
+  }
+  return `<div class="live-gate">
+    <div class="live-gate-brand"><strong>RALLY</strong><span>集结 · Live</span></div>
+    <section class="live-login-card live-retry-card">
+      <p class="micro-label">${state.live.meLoading ? "CONNECTING" : "CONNECTION ERROR"}</p>
+      <h2>${state.live.meLoading ? "正在恢复现场状态" : "暂时无法连接"}</h2>
+      <p>${state.live.meLoading ? "正在读取账号、公开授权与协作进度。" : state.live.error || "网络暂时不可用，请稍后重试。"}</p>
+      ${state.live.meLoading ? `<span class="live-spinner" aria-label="加载中"></span>` : `<button class="primary-button full" data-action="retry-live">重新连接</button>`}
+      ${liveConfig.accessToken ? `<button class="text-action" data-action="logout-live">退出当前账号</button>` : ""}
+    </section>
+  </div>`;
 }
 
 function commonHeader(title = "发现", utility = null) {
@@ -846,7 +998,7 @@ function renderDiscoveryTabs() {
 }
 
 function renderVariantA() {
-  const recommendationPool = filterDiscoveryPeople(rankedPeople);
+  const recommendationPool = filterDiscoveryPeople(discoveryPeople());
   const person = recommendedPerson(recommendationPool);
   if (!person) return renderDiscoveryEmpty("推荐");
   const currentIndex = state.recommendationIndex % recommendationPool.length;
@@ -895,6 +1047,19 @@ function renderVariantA() {
 }
 
 function renderDiscoveryEmpty(mode) {
+  if (state.live.enabled && state.live.syncError) {
+    return `<div class="view view-${state.variant.toLowerCase()}">
+      ${commonHeader("发现", "filters")}
+      ${renderDiscoveryTabs()}
+      <section class="discovery-filter-empty" role="alert">
+        <span class="empty-symbol">!</span>
+        <p class="micro-label">LIVE SYNC INTERRUPTED</p>
+        <h3>现场成员暂时无法同步</h3>
+        <p>${state.live.syncError}</p>
+        <button class="primary-button" data-action="sync-live-now">重新连接</button>
+      </section>
+    </div>`;
+  }
   return `<div class="view view-${state.variant.toLowerCase()}">
     ${commonHeader("发现", "filters")}
     ${renderDiscoveryTabs()}
@@ -908,20 +1073,24 @@ function renderDiscoveryEmpty(mode) {
   </div>`;
 }
 
-function recommendedPerson(pool = filterDiscoveryPeople(rankedPeople)) {
+function recommendedPerson(pool = filterDiscoveryPeople(discoveryPeople())) {
   if (!pool.length) return null;
   return pool[state.recommendationIndex % pool.length];
 }
 
-function advanceRecommendation(pool = filterDiscoveryPeople(rankedPeople)) {
+function advanceRecommendation(pool = filterDiscoveryPeople(discoveryPeople())) {
   if (!pool.length) return;
   state.recommendationIndex = (state.recommendationIndex + 1) % pool.length;
   state.selectedId = recommendedPerson(pool).id;
 }
 
 function expressRecommendationInterest(personId) {
-  const person = people.find((item) => item.id === personId) || recommendedPerson();
+  const person = (state.live.enabled ? livePeople() : people).find((item) => item.id === personId) || recommendedPerson();
   if (!person) return;
+  if (state.live.enabled) {
+    sendLiveConnectionRequest(person);
+    return;
+  }
   if (!state.greeted.includes(person.id)) state.greeted.push(person.id);
   showToast(`已向 ${person.name} 表达“想认识”`);
   advanceRecommendation();
@@ -955,7 +1124,7 @@ function renderVariantB() {
     : state.live.status === "requesting"
       ? ["○ 正在请求定位", "请允许浏览器使用当前位置"]
       : state.live.status === "error"
-        ? ["○ 已使用演示数据", state.live.error || "真实定位暂不可用"]
+        ? ["○ 真实定位暂不可用", state.live.error || "请检查定位权限或稍后重试"]
         : ["● 手机前台发现", "仅在打开本页时更新，离开后停止"];
   return `
     <div class="view view-b">
@@ -995,7 +1164,7 @@ function renderVariantB() {
 
 function renderVariantC() {
   if (!hasExhibitionDirectory()) return renderVariantA();
-  const directoryPeople = filterDiscoveryPeople(people);
+  const directoryPeople = filterDiscoveryPeople(discoveryPeople());
   if (!directoryPeople.length) return renderDiscoveryEmpty("名册");
   return `
     <div class="view view-c">
@@ -1027,6 +1196,7 @@ function renderVariantC() {
 }
 
 function renderConnections() {
+  if (state.live.enabled) return renderLiveConnections();
   const connectedPeople = people.filter((person) => state.connected.includes(person.id));
   const pendingPeople = people.filter((person) => state.greeted.includes(person.id) && !state.connected.includes(person.id));
   const visibleConnectedPeople = state.connectionFilter === "pending" ? [] : connectedPeople;
@@ -1077,10 +1247,111 @@ function renderConnections() {
   `;
 }
 
+function uniqueRequestsByCounterpart(requests) {
+  return [...new Map(requests.map((item) => [item.counterpartPerson.userId, item])).values()];
+}
+
+function renderLiveConnections() {
+  const accepted = uniqueRequestsByCounterpart(
+    state.live.connectionRequests.filter((item) => item.status === "ACCEPTED" && item.connection_id),
+  );
+  const incoming = state.live.connectionRequests.filter(
+    (item) => item.status === "REQUESTED" && item.direction === "incoming",
+  );
+  const outgoing = state.live.connectionRequests.filter(
+    (item) => item.status === "REQUESTED" && item.direction === "outgoing",
+  );
+  const visibleAccepted = state.connectionFilter === "pending" ? [] : accepted;
+  const visibleIncoming = state.connectionFilter === "connected" ? [] : incoming;
+  const visibleOutgoing = state.connectionFilter === "connected" ? [] : outgoing;
+  const filters = [["all", "全部"], ["pending", "待回应"], ["connected", "已建联"]];
+  return `<div class="view utility-view">
+    ${commonHeader("连接")}
+    <section class="connection-hero">
+      <div class="connection-summary"><strong>${accepted.length}</strong><span>位已建联</span>${incoming.length ? `<em>${incoming.length} 个待你回应</em>` : ""}</div>
+      <p>请求与连接状态来自服务端；回到前台会立即刷新，弱网恢复后不会重复建联。</p>
+      ${state.live.syncError ? `<div class="inline-sync-error" role="alert"><span>${state.live.syncError}</span><button data-action="sync-live-now">重试</button></div>` : ""}
+    </section>
+    <div class="filter-row" role="group" aria-label="连接状态筛选">
+      ${filters.map(([id, label]) => `<button class="${state.connectionFilter === id ? "active" : ""}" data-action="filter-connections" data-filter="${id}" aria-pressed="${state.connectionFilter === id}">${label}</button>`).join("")}
+    </div>
+    <section class="connection-list">
+      ${visibleIncoming.map((request) => {
+        const person = request.counterpartPerson;
+        return `<article class="connection-card incoming-request-card">
+          <div class="connection-card-head">${glyph(person, "md")}<div><h4>${person.name}</h4><p>${person.role}</p></div><span class="source-chip">想认识你</span></div>
+          <div class="connection-context"><span>来自</span><strong>${currentExhibition?.name || "RALLY 现场"}</strong><small>${safeLiveText(request.message, "对方希望和你聊聊协作可能", 180)}</small></div>
+          <div class="request-actions"><button class="primary-button" data-action="resolve-connection" data-request-id="${request.id}" data-resolution="accept" ${liveBusyAttributes(`connection-request:${request.id}`)}>接受</button><button class="secondary-button" data-action="resolve-connection" data-request-id="${request.id}" data-resolution="reject" ${liveBusyAttributes(`connection-request:${request.id}`)}>拒绝</button><button class="text-action" data-action="resolve-connection" data-request-id="${request.id}" data-resolution="block" ${liveBusyAttributes(`connection-request:${request.id}`)}>拉黑</button></div>
+        </article>`;
+      }).join("")}
+      ${visibleAccepted.map((request) => {
+        const person = request.counterpartPerson;
+        return `<article class="connection-card">
+          <div class="connection-card-head">${glyph(person, "md")}<div><h4>${person.name}</h4><p>${person.role}</p></div><span class="source-chip">已建联</span></div>
+          <div class="connection-context"><span>认识于</span><strong>${currentExhibition?.name || "RALLY 现场"}</strong><small>${request.source === "nfc" ? "碰卡建联" : "双方确认"}</small></div>
+          <button class="primary-button full" data-action="resume-direction" data-person="${person.id}">继续项目协作</button>
+        </article>`;
+      }).join("")}
+      ${visibleOutgoing.map((request) => {
+        const person = request.counterpartPerson;
+        return `<article class="pending-row">${glyph(person, "sm")}<div><strong>${person.name}</strong><span>招呼已发出 · 等待回应</span></div><button class="text-action" data-action="resolve-connection" data-request-id="${request.id}" data-resolution="cancel" ${liveBusyAttributes(`connection-request:${request.id}`)}>撤回</button></article>`;
+      }).join("")}
+      ${visibleIncoming.length || visibleAccepted.length || visibleOutgoing.length ? "" : `<div class="empty-state"><span class="empty-symbol">◎</span><h4>当前没有连接记录</h4><p>在发现页表达“想认识”，或在线下通过受信设备碰卡建联。</p><button class="primary-button" data-tab="discover">去发现</button></div>`}
+    </section>
+  </div>`;
+}
+
 function renderCollaboration() {
+  if (state.live.enabled) return renderLiveCollaboration();
   const joinedPeople = people.filter((person) => state.joined.includes(person.id));
   if (!joinedPeople.length) return renderCollaborationLobby();
   return renderWorkspace(joinedPeople);
+}
+
+function renderLiveCollaboration() {
+  const project = state.live.activeProject;
+  const pendingInvitations = state.live.teamInvitations.filter(
+    (item) => item.direction === "incoming" && item.status === "PENDING",
+  );
+  if (!project) {
+    return `<div class="view utility-view collaboration-lobby">
+      ${commonHeader("协作")}
+      ${pendingInvitations.length ? `<section class="collaboration-inbox"><div><p class="micro-label">TEAM INVITATIONS</p><h3>入队邀请</h3></div>${pendingInvitations.map((invitation) => `<article class="team-invitation-row">${glyph(invitation.counterpartPerson, "sm")}<span><strong>${safeLiveText(invitation.project?.title, "未命名项目", 100)}</strong><small>${safeLiveText(invitation.counterpart?.display_name, "展会成员", 40)} 邀请你担任${safeLiveText(invitation.role_need?.title, "协作成员", 80)}</small></span><div><button class="primary-button" data-action="resolve-team-invitation" data-invitation-id="${invitation.id}" data-resolution="accept" ${liveBusyAttributes(`team-invitation:${invitation.id}`)}>确认入队</button><button class="text-action" data-action="resolve-team-invitation" data-invitation-id="${invitation.id}" data-resolution="decline" ${liveBusyAttributes(`team-invitation:${invitation.id}`)}>拒绝</button></div></article>`).join("")}</section>` : ""}
+      <section class="collaboration-empty">
+        <span class="collaboration-empty-mark">＋</span><p class="micro-label">RALLY ROOM</p>
+        <h3>${pendingInvitations.length ? "先处理入队邀请" : "还没有进行中的项目启动舱"}</h3>
+        <p>项目与成员状态来自服务端。完成连接、方向确认与入队后，两台设备都能恢复同一个启动舱。</p>
+        <button class="primary-button" data-tab="connections">查看连接</button>
+      </section>
+    </div>`;
+  }
+
+  const room = state.live.room;
+  const pack = room?.starter_pack;
+  const tasks = room?.tasks || [];
+  const canGenerate = new Set(["ORIGINATOR", "LEADER"]).has(project.my_membership?.membership_role);
+  const memberName = (userId) => room?.members.find((member) => member.user_id === userId)?.display_name || "待认领";
+  return `<div class="view utility-view live-workspace-view">
+    ${commonHeader("协作")}
+    <section class="project-card live-project-summary">
+      <p class="micro-label">RALLY ROOM / LIVE</p><h3>${escapeHtml(project.title)}</h3><p>${escapeHtml(project.summary)}</p>
+      <div class="live-member-list">${project.members.map((member) => `<span>${escapeHtml(member.display_name)}<small>${escapeHtml(member.profile_role || member.membership_role)}</small></span>`).join("")}</div>
+      ${state.live.syncError ? `<div class="inline-sync-error"><span>${state.live.syncError}</span><button data-action="sync-live-now">重试</button></div>` : ""}
+    </section>
+      ${!pack ? `<section class="launch-pack live-empty-pack"><p class="micro-label">STARTER PACK</p><h3>${project.members.length < 2 ? "等待成员确认入队" : "团队已就绪，可以生成启动计划"}</h3><p>${project.members.length < 2 ? "邀请已发出，对方确认前不会成为成员或被分配任务。" : "Agent 先生成可修改的模板建议；任务仍需成员主动认领并由全员确认。"}</p>${canGenerate && project.members.length >= 2 ? `<button class="primary-button full" data-action="generate-live-pack" ${liveBusyAttributes(`starter-pack:${project.id}`)}>生成启动计划</button>` : ""}</section>` : `<section class="launch-pack live-task-pack">
+      <header><div><p class="micro-label">PLAN BASELINE V${pack.version}</p><h3>人机协作启动计划</h3></div><span class="source-chip">${pack.generated_by === "TEMPLATE_FALLBACK" ? "模板降级" : "模型生成"}</span></header>
+      <aside class="workspace-risk"><span>先确认的风险</span><strong>${escapeHtml(pack.risk.summary)}</strong></aside>
+      <div class="live-task-list">${tasks.map((task, index) => {
+        const mine = task.confirmed_owner_id === state.live.currentUserId;
+        const action = !task.confirmed_owner_id ? ["claim", "我来负责"]
+          : mine && task.status === "ACCEPTED" ? ["start", "开始任务"]
+            : mine && task.status === "IN_PROGRESS" ? ["complete", "标记完成"]
+              : null;
+        return `<article><b>${String(index + 1).padStart(2, "0")}</b><span><strong>${escapeHtml(task.title)}</strong><small>${escapeHtml(task.acceptance_criteria)}</small><em>负责人：${escapeHtml(memberName(task.confirmed_owner_id))} · ${task.status}</em></span>${action ? `<button data-action="live-task-action" data-task-id="${task.id}" data-resolution="${action[0]}" ${liveBusyAttributes(`task:${task.id}`)}>${action[1]}</button>` : ""}</article>`;
+      }).join("")}</div>
+      <footer class="live-plan-confirmation"><span>全员确认 ${room.confirmation_progress.confirmed}/${room.confirmation_progress.required}</span><button class="primary-button" data-action="confirm-live-plan" ${pack.status === "CONFIRMED" ? "disabled" : liveBusyAttributes(`plan-confirmation:${project.id}`)}>${pack.status === "CONFIRMED" ? "计划已确认" : "确认当前计划"}</button></footer>
+    </section>`}
+  </div>`;
 }
 
 function renderCollaborationLobby() {
@@ -1319,7 +1590,7 @@ function renderProfile() {
       </section>
       <section class="visibility-panel">
         <div><p class="micro-label">DISCOVERABILITY</p><h3>${state.visible ? visibilityScopeLabel() : "已暂停展示"}</h3><p>${visibilityScopeDescription()}</p></div>
-        <button class="toggle ${state.visible ? "on" : ""}" data-action="toggle-visible" aria-pressed="${state.visible}"><i></i></button>
+        <button class="toggle ${state.visible ? "on" : ""}" data-action="toggle-visible" aria-pressed="${state.visible}" ${state.live.enabled ? liveBusyAttributes("visibility") : ""}><i></i></button>
       </section>
       <section class="device-preview">
         <div class="device-preview-head"><div><p class="micro-label">AI PASSPORT / E-INK</p><h3>墨水屏公开面</h3></div><span class="sync-chip">● 已同步</span></div>
@@ -1337,7 +1608,8 @@ function renderProfile() {
         <p>粘贴公开主页或作品链接。GitHub 可同步公开摘要，其他平台只保存你主动提交的地址。</p>
         <div class="platform-connect-list">${Object.entries(platformCatalog).map(([platform, item]) => renderPlatformConnectRow(platform, item, linkedPlatforms)).join("")}</div>
       </section>
-      <section class="profile-fields"><button data-action="restart-onboarding"><span>重新组装协作护照</span><b>4 步 ›</b></button><button data-action="profile-placeholder" data-label="能力与项目证据"><span>能力与项目证据</span><b>5 项 ›</b></button></section>
+      <section class="profile-fields"><button data-action="restart-onboarding"><span>重新组装协作护照</span><b>4 步 ›</b></button><button data-action="${state.live.enabled ? "open-profile-editor" : "profile-placeholder"}" data-label="能力与项目证据"><span>能力与项目证据</span><b>${state.live.enabled ? "编辑 ›" : "5 项 ›"}</b></button></section>
+      ${state.live.enabled && liveConfig.accessToken ? `<button class="profile-logout-button" data-action="logout-live">退出当前账号</button>` : ""}
     </div>
   `;
 }
@@ -1361,7 +1633,8 @@ function renderDiscoveryFilterChip(group, value, label) {
 
 function renderDiscoveryFilterSheet() {
   const draft = state.discoveryFilterDraft;
-  const previewCount = filterDiscoveryPeople(rankedPeople, draft).length;
+  const sourcePeople = discoveryPeople();
+  const previewCount = filterDiscoveryPeople(sourcePeople, draft).length;
   const activeCount = activeDiscoveryFilterCount(draft);
   const statusOptions = [
     ["seeking", "正在找队伍"],
@@ -1388,7 +1661,7 @@ function renderDiscoveryFilterSheet() {
       </header>
       <section class="filter-impact" aria-live="polite">
         <span>本场公开成员</span>
-        <div><strong>${rankedPeople.length}</strong><i>→</i><strong>${previewCount}</strong><em>人符合</em></div>
+        <div><strong>${sourcePeople.length}</strong><i>→</i><strong>${previewCount}</strong><em>人符合</em></div>
         <p>${activeCount ? `已启用 ${activeCount} 类筛选条件，需同时满足才会出现。` : "尚未设置筛选条件，当前展示全部授权成员。"}</p>
       </section>
       <section class="filter-setting-block">
@@ -1443,6 +1716,32 @@ function renderProfileSettingsSheet() {
   </div>`;
 }
 
+function renderLiveProfileEditor() {
+  const profile = state.live.currentProfile;
+  if (!profile) return "";
+  const selectedFields = new Set(profile.visibility?.public_fields || []);
+  const arrayValue = (value) => escapeHtml((value || []).join("，"));
+  return `<div class="overlay profile-settings-overlay">
+    <button class="overlay-backdrop" data-action="close-profile-editor" aria-label="关闭资料编辑"></button>
+    <section class="bottom-sheet live-profile-editor" aria-label="编辑公开协作资料">
+      <header class="profile-settings-head"><button data-action="close-profile-editor" aria-label="返回我的页面">←</button><div><p class="micro-label">PROFILE / AUTHORIZATION</p><h3>编辑协作资料</h3></div></header>
+      <form data-live-profile-form>
+        <label><span>当前角色</span><input name="role" required maxlength="80" value="${escapeHtml(profile.role)}"></label>
+        <label><span>协作状态</span><select name="status">${["未组队", "有 Idea 找人", "团队缺人", "已组队但可交流"].map((status) => `<option ${profile.status === status ? "selected" : ""}>${status}</option>`).join("")}</select></label>
+        <label><span>能力标签（3–5 项，用逗号分隔）</span><input name="skills" required value="${arrayValue(profile.skills)}"></label>
+        <label><span>兴趣方向</span><input name="interests" required value="${arrayValue(profile.interests)}"></label>
+        <label><span>可投入时间</span><input name="availability" required maxlength="120" value="${escapeHtml(profile.availability)}"></label>
+        <label><span>协作偏好</span><input name="preferences" required value="${arrayValue(profile.collaboration_preferences)}"></label>
+        <label><span>当前协作需求</span><textarea name="need" maxlength="160">${escapeHtml(profile.collaboration_need)}</textarea></label>
+        <label><span>能力与项目证据（每行一项）</span><textarea name="evidence">${escapeHtml((profile.evidence || []).join("\n"))}</textarea></label>
+        <fieldset><legend>对外公开字段</legend><p>未勾选字段不会出现在推荐、附近、名册或 NFC/QR 页面。</p><div class="public-field-grid">${Object.entries(publicFieldCatalog).map(([field, label]) => `<label><input type="checkbox" name="public-fields" value="${field}" ${selectedFields.has(field) ? "checked" : ""}><span>${label}</span></label>`).join("")}</div></fieldset>
+        <aside class="settings-privacy-note"><b>实际公开预览</b><span data-public-fields-preview>${[...selectedFields].map((field) => publicFieldCatalog[field]).filter(Boolean).join("、") || "当前没有公开字段"}</span></aside>
+        <button class="primary-button full" type="submit" ${liveBusyAttributes("profile:update")}>保存资料与公开范围</button>
+      </form>
+    </section>
+  </div>`;
+}
+
 function renderDirectionSummary() {
   const { audience, problem, outcome } = directionAlignmentFor().draft;
   return `<dl class="direction-summary"><div><dt>服务谁</dt><dd>${escapeHtml(audience)}</dd></div><div><dt>解决什么</dt><dd>${escapeHtml(problem)}</dd></div><div><dt>验证结果</dt><dd>${escapeHtml(outcome)}</dd></div></dl>`;
@@ -1452,7 +1751,9 @@ function renderOverlay() {
   if (!state.overlay) return "";
   if (state.overlay === "filters") return renderDiscoveryFilterSheet();
   if (state.overlay === "profile-settings") return renderProfileSettingsSheet();
+  if (state.overlay === "profile-editor") return renderLiveProfileEditor();
   const person = selectedPerson();
+  if (!person) return "";
   const directionAlignment = directionAlignmentFor(person.id);
   if (state.overlay === "person") {
     const greeted = state.greeted.includes(person.id);
@@ -1497,7 +1798,7 @@ function renderOverlay() {
           </button>
         `}
       </div>
-      <div class="sheet-actions person-sheet-actions"><button class="secondary-button" data-action="greet" data-person="${person.id}">${greeted ? "已表达想认识" : "想认识"}</button><button class="primary-button" data-action="direct-tap" data-person="${person.id}">模拟碰卡直连</button></div>
+      <div class="sheet-actions person-sheet-actions"><button class="secondary-button" data-action="greet" data-person="${person.id}">${greeted ? "已表达想认识" : "想认识"}</button><button class="primary-button" data-action="direct-tap" data-person="${person.id}">${state.live.enabled ? "等待真实碰卡" : "模拟碰卡直连"}</button></div>
     </section></div>`;
   }
   if (state.overlay === "tap") {
@@ -1568,7 +1869,7 @@ function renderOverlay() {
     return `<div class="overlay success-overlay"><section class="success-card team-success">
       <div class="success-mark">→</div><p class="micro-label">INVITATION SENT</p><h3>已邀请 ${person.name}<br>加入项目</h3>
       <p>对方确认前不会被写入团队，也不会被分配任务。</p>
-      <button class="primary-button full" data-action="confirm-team-invite" data-person="${person.id}">模拟对方确认加入</button>
+      ${state.live.enabled ? `<button class="primary-button full" data-action="sync-live-now">等待对方在自己的设备确认</button>` : `<button class="primary-button full" data-action="confirm-team-invite" data-person="${person.id}">模拟对方确认加入</button>`}
       <button class="secondary-button full" data-action="view-connection">稍后处理</button>
     </section></div>`;
   }
@@ -1609,17 +1910,37 @@ function variantDescription() {
 }
 
 function bindEvents() {
+  document.querySelector("[data-live-login]")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    if (event.currentTarget.reportValidity()) loginLive(event.currentTarget);
+  });
+  document.querySelector("[data-live-profile-form]")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    if (event.currentTarget.reportValidity()) updateLiveProfile(event.currentTarget);
+  });
+  const liveProfileForm = document.querySelector("[data-live-profile-form]");
+  liveProfileForm?.querySelectorAll('input[name="public-fields"]').forEach((input) => {
+    input.addEventListener("change", () => {
+      const selectedLabels = [...liveProfileForm.querySelectorAll('input[name="public-fields"]:checked')]
+        .map((field) => publicFieldCatalog[field.value])
+        .filter(Boolean);
+      const preview = liveProfileForm.querySelector("[data-public-fields-preview]");
+      if (preview) preview.textContent = selectedLabels.join("、") || "当前没有公开字段";
+    });
+  });
   document.querySelectorAll("[data-person]:not([data-action])").forEach((element) => {
     element.addEventListener("click", () => {
       state.selectedId = element.dataset.person;
       state.overlay = "person";
       state.personDetailExpanded = false;
+      writeAppHistory();
       render();
     });
   });
   document.querySelectorAll("button[data-tab]").forEach((element) => element.addEventListener("click", () => {
     state.tab = element.dataset.tab;
     state.overlay = null;
+    writeAppHistory();
     render();
   }));
   document.querySelectorAll("[data-action]").forEach((element) => element.addEventListener("click", () => handleAction(element.dataset.action, element)));
@@ -1657,6 +1978,7 @@ function bindEvents() {
       alignment.draft = draft;
       alignment.status = "pending_partner";
       state.overlay = "direction-review";
+      writeAppHistory();
       render();
     });
   });
@@ -1813,6 +2135,7 @@ function bindRecommendationSwipe() {
       state.selectedId = card.dataset.personId;
       state.overlay = "person";
       state.personDetailExpanded = false;
+      writeAppHistory();
       render();
     } else resetCard();
   });
@@ -1839,12 +2162,46 @@ function bindRecommendationSwipe() {
       state.selectedId = card.dataset.personId;
       state.overlay = "person";
       state.personDetailExpanded = false;
+      writeAppHistory();
       render();
     }
   });
 }
 
 function handleAction(action, element) {
+  const navigationBefore = JSON.stringify(appHistoryPayload());
+  if (action === "retry-live") {
+    loadLiveMe({ force: true });
+    return;
+  }
+  if (action === "logout-live") {
+    logoutLive();
+    return;
+  }
+  if (action === "sync-live-now") {
+    refreshLiveState();
+    return;
+  }
+  if (action === "resolve-connection") {
+    resolveLiveConnectionRequest(element.dataset.requestId, element.dataset.resolution);
+    return;
+  }
+  if (action === "resolve-team-invitation") {
+    resolveLiveTeamInvitation(element.dataset.invitationId, element.dataset.resolution);
+    return;
+  }
+  if (action === "generate-live-pack") {
+    generateLiveStarterPack();
+    return;
+  }
+  if (action === "live-task-action") {
+    updateLiveTask(element.dataset.taskId, element.dataset.resolution);
+    return;
+  }
+  if (action === "confirm-live-plan") {
+    confirmLivePlan();
+    return;
+  }
   if (action === "choose-status") {
     state.collaborationStatus = element.dataset.status;
   }
@@ -1879,6 +2236,8 @@ function handleAction(action, element) {
   if (action === "close-discovery-filters") state.overlay = null;
   if (action === "open-profile-settings") state.overlay = "profile-settings";
   if (action === "close-profile-settings") state.overlay = null;
+  if (action === "open-profile-editor") state.overlay = "profile-editor";
+  if (action === "close-profile-editor") state.overlay = null;
   if (action === "profile-setting-detail" || action === "profile-placeholder") {
     showToast(`${element.dataset.label}将在下一轮接入`);
   }
@@ -1910,10 +2269,10 @@ function handleAction(action, element) {
       roles: [...state.discoveryFilterDraft.roles],
     };
     state.recommendationIndex = 0;
-    const firstResult = filterDiscoveryPeople(rankedPeople)[0];
+    const firstResult = filterDiscoveryPeople(discoveryPeople())[0];
     if (firstResult) state.selectedId = firstResult.id;
     state.overlay = null;
-    showToast(activeDiscoveryFilterCount() ? `已应用筛选 · ${filterDiscoveryPeople(rankedPeople).length} 人符合` : "已显示本场全部成员");
+    showToast(activeDiscoveryFilterCount() ? `已应用筛选 · ${filterDiscoveryPeople(discoveryPeople()).length} 人符合` : "已显示本场全部成员");
   }
   if (action === "filter-connections") {
     state.connectionFilter = ["all", "pending", "connected"].includes(element.dataset.filter)
@@ -1955,7 +2314,7 @@ function handleAction(action, element) {
   if (action === "next-person") {
     const pool = state.variant === "B"
       ? filterDiscoveryPeople(activeRadarPeople())
-      : filterDiscoveryPeople(people);
+      : filterDiscoveryPeople(discoveryPeople());
     if (!pool.length) return;
     const index = pool.findIndex((person) => person.id === state.selectedId);
     state.selectedId = pool[(Math.max(index, 0) + 1) % pool.length].id;
@@ -1963,6 +2322,11 @@ function handleAction(action, element) {
   if (action === "refresh") showToast(`已读取附近 ${activeRadarPeople().length} 个协作信号`);
   if (action === "greet") {
     const id = element.dataset.person;
+    if (state.live.enabled) {
+      const person = livePeople().find((item) => item.id === id);
+      if (person) sendLiveConnectionRequest(person);
+      return;
+    }
     if (!state.greeted.includes(id)) {
       state.greeted.push(id);
       showToast(`已向 ${selectedPerson().name} 表达“想认识”`);
@@ -1972,6 +2336,11 @@ function handleAction(action, element) {
     state.overlay = "person";
   }
   if (action === "direct-tap") {
+    if (state.live.enabled) {
+      refreshLiveState();
+      showToast("请完成真实碰卡；连接事件会自动同步");
+      return;
+    }
     state.selectedId = element.dataset.person || state.selectedId;
     state.overlay = "tap";
   }
@@ -2023,11 +2392,20 @@ function handleAction(action, element) {
       showToast("先由双方确认项目方向");
       return;
     }
+    if (state.live.enabled) {
+      const person = livePeople().find((item) => item.id === id);
+      if (person) createAndInviteLiveProject(person);
+      return;
+    }
     state.collaborationStatus = "TEAM_RECRUITING";
     if (!state.invited.includes(id)) state.invited.push(id);
     state.overlay = "invite-sent";
   }
   if (action === "confirm-team-invite") {
+    if (state.live.enabled) {
+      showToast("请由对方在自己的设备确认入队");
+      return;
+    }
     const id = element.dataset.person;
     if (!state.joined.includes(id)) state.joined.push(id);
     state.overlay = "joined";
@@ -2065,9 +2443,13 @@ function handleAction(action, element) {
     state.visible = !state.visible;
     showToast(state.visible ? visibilityRestoredMessage() : "已暂停附近展示");
   }
-  if (action === "sync-card") showToast("原型：公开字段编辑器将在下一轮接入");
+  if (action === "sync-card") {
+    if (state.live.enabled) state.overlay = "profile-editor";
+    else showToast("原型：Live 模式可编辑真实公开字段");
+  }
   if (action === "bind-platform") connectPlatform(element.dataset.platform);
   if (action === "remove-platform") disconnectPlatform(element.dataset.platform);
+  if (JSON.stringify(appHistoryPayload()) !== navigationBefore) writeAppHistory();
   render();
 }
 
@@ -2103,6 +2485,7 @@ function showToast(message) {
 function handlePlatformBack() {
   if (state.overlay) {
     state.overlay = null;
+    writeAppHistory({ replace: true });
     render();
     return true;
   }
@@ -2114,6 +2497,7 @@ function handlePlatformBack() {
   }
   if (state.tab !== "discover") {
     state.tab = "discover";
+    writeAppHistory({ replace: true });
     render();
     return true;
   }
@@ -2122,8 +2506,15 @@ function handlePlatformBack() {
 
 window.RallyApp = Object.freeze({ handleBack: handlePlatformBack });
 
-window.addEventListener("popstate", () => {
-  state.variant = readVariant();
+window.addEventListener("popstate", (event) => {
+  const snapshot = event.state?.rally;
+  state.variant = availableDiscoveryVariants().includes(snapshot?.variant)
+    ? snapshot.variant
+    : readVariant();
+  state.tab = ["discover", "connections", "collaboration", "profile"].includes(snapshot?.tab)
+    ? snapshot.tab
+    : (new URL(location.href).searchParams.get("view") || "discover");
+  state.overlay = typeof snapshot?.overlay === "string" ? snapshot.overlay : null;
   render();
 });
 
@@ -2132,47 +2523,453 @@ window.addEventListener("keydown", (event) => {
   if (["input", "textarea"].includes(tag) || event.target?.isContentEditable) return;
   if (event.key === "Escape" && state.overlay) {
     state.overlay = null;
+    writeAppHistory({ replace: true });
     render();
   }
 });
 
 render();
+writeAppHistory({ replace: true });
 
-async function loadLiveMe() {
-  if (!state.live.enabled || state.live.meLoaded || state.live.meLoading) return;
-  state.live.meLoading = true;
+function clearLiveSession() {
+  liveConfig.accessToken = null;
+  localStorage.removeItem("rally_access_token");
+  localStorage.removeItem("rally_session_expires_at");
+  state.overlay = null;
+  writeAppHistory({ replace: true });
+  state.live.authStatus = "required";
+  state.live.sessionExpiresAt = null;
+  state.live.meLoaded = false;
+  state.live.currentUserId = null;
+  state.live.currentProfile = null;
+  state.live.discover = [];
+  state.live.nearby = [];
+  state.live.connectionRequests = [];
+  state.live.teamInvitations = [];
+  state.live.projects = [];
+  state.live.activeProject = null;
+  state.live.room = null;
+  stopLivePolling();
+  stopLivePresence();
+}
+
+function handleLiveFailure(error, fallback = "网络暂时不可用") {
+  if (error instanceof ApiError && error.isAuthenticationError) {
+    clearLiveSession();
+    state.live.error = "登录已过期，请重新登录";
+    return;
+  }
+  state.live.error = safeLiveText(error?.message, fallback, 180);
+}
+
+async function runLiveMutation(resourceKey, operation) {
+  if (state.live.pendingOperations.has(resourceKey)) {
+    return api.runExclusive(resourceKey, operation);
+  }
+  state.live.pendingOperations.add(resourceKey);
+  render();
   try {
-    const response = await fetch(`${liveConfig.apiBase}/api/me`, { headers: liveHeaders() });
-    if (!response.ok) return;
-    const payload = await response.json();
-    const eventProfile = (payload.profiles || []).find((profile) => profile.event_id === liveConfig.eventId);
-    state.live.platformLinks = payload.platform_links || [];
-    state.visible = eventProfile?.visibility?.state === "VISIBLE";
-    state.live.meLoaded = true;
+    return await api.runExclusive(resourceKey, operation);
+  } finally {
+    state.live.pendingOperations.delete(resourceKey);
     render();
-  } catch {
-    // The static prototype remains usable while a local API is offline.
+  }
+}
+
+function liveBusyAttributes(resourceKey) {
+  return state.live.pendingOperations.has(resourceKey) ? 'disabled aria-busy="true"' : "";
+}
+
+async function loginLive(form) {
+  if (state.live.meLoading) return;
+  const formData = new FormData(form);
+  const userId = String(formData.get("user-id") || "").trim();
+  const accessKey = String(formData.get("access-key") || "");
+  state.live.meLoading = true;
+  state.live.error = "";
+  render();
+  try {
+    const payload = await api.post("/api/auth/demo-sessions", { user_id: userId }, {
+      authenticate: false,
+      headers: { "x-demo-access-key": accessKey },
+    });
+    liveConfig.accessToken = payload.access_token;
+    state.live.sessionExpiresAt = payload.expires_at;
+    state.live.authStatus = "ready";
+    localStorage.setItem("rally_access_token", payload.access_token);
+    localStorage.setItem("rally_session_expires_at", payload.expires_at);
+    localStorage.setItem("rally_api_base", liveConfig.apiBase);
+    state.live.meLoading = false;
+    await loadLiveMe({ force: true });
+  } catch (error) {
+    handleLiveFailure(error, "登录失败，请检查账号和现场访问码");
   } finally {
     state.live.meLoading = false;
+    render();
   }
+}
+
+async function logoutLive() {
+  try {
+    if (liveConfig.accessToken) {
+      stopLivePresence();
+      await api.delete(`/api/events/${encodeURIComponent(liveConfig.eventId)}/presence`, {
+        keepalive: true,
+      });
+      await api.delete("/api/auth/session");
+    }
+  } catch {
+    // Local session data is still removed if the server is temporarily unavailable.
+  }
+  clearLiveSession();
+  state.live.error = "";
+  render();
+}
+
+function parseProfileList(value, { maximumItems = 5 } = {}) {
+  return String(value || "")
+    .split(/[，,\n]/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, maximumItems);
+}
+
+async function updateLiveProfile(form) {
+  const formData = new FormData(form);
+  const skills = parseProfileList(formData.get("skills"));
+  const interests = parseProfileList(formData.get("interests"));
+  const preferences = parseProfileList(formData.get("preferences"));
+  if (skills.length < 3 || interests.length < 1 || preferences.length < 1) {
+    showToast("至少填写 3 项能力、1 项兴趣和 1 项协作偏好");
+    return;
+  }
+  const profileInput = {
+    role: String(formData.get("role") || "").trim(),
+    status: String(formData.get("status") || ""),
+    skills,
+    interests,
+    availability: String(formData.get("availability") || "").trim(),
+    collaboration_preferences: preferences,
+    collaboration_need: String(formData.get("need") || "").trim(),
+    evidence: parseProfileList(formData.get("evidence"), { maximumItems: 12 }),
+  };
+  const publicFields = formData.getAll("public-fields").map(String);
+  try {
+    await runLiveMutation("profile:update", async () => {
+      await api.patch(
+        `/api/events/${encodeURIComponent(liveConfig.eventId)}/profile`,
+        profileInput,
+      );
+      await api.patch(
+        `/api/events/${encodeURIComponent(liveConfig.eventId)}/visibility`,
+        {
+          state: state.visible ? "VISIBLE" : "PAUSED",
+          public_fields: publicFields,
+        },
+      );
+    });
+    state.overlay = null;
+    writeAppHistory({ replace: true });
+    showToast("协作资料与公开范围已保存");
+    await loadLiveMe({ force: true });
+  } catch (error) {
+    handleLiveFailure(error, "资料保存失败");
+    showToast(state.live.error);
+  }
+  render();
+}
+
+async function loadLiveMe({ force = false } = {}) {
+  if (!state.live.enabled || state.live.authStatus !== "ready" || state.live.meLoading) return;
+  if (state.live.meLoaded && !force) return;
+  state.live.meLoading = true;
+  state.live.error = "";
+  render();
+  try {
+    const payload = await api.get("/api/me");
+    const eventProfile = (payload.profiles || []).find((profile) => profile.event_id === liveConfig.eventId);
+    state.live.platformLinks = payload.platform_links || [];
+    state.live.currentProfile = eventProfile || null;
+    state.visible = eventProfile?.visibility?.state === "VISIBLE";
+    state.live.currentUserId = payload.user?.id || null;
+    Object.assign(currentUser, {
+      id: String(payload.user?.id || currentUser.id).replace(/^user-/, ""),
+      name: safeLiveText(payload.user?.display_name, currentUser.name, 40),
+      avatar: /^memoji-\d+$/.test(payload.user?.avatar || "") ? payload.user.avatar : currentUser.avatar,
+      role: safeLiveText(eventProfile?.role, currentUser.role, 80),
+      skills: Array.isArray(eventProfile?.skills) ? eventProfile.skills : currentUser.skills,
+    });
+    state.live.meLoaded = true;
+    await refreshLiveState();
+    startLivePolling();
+  } catch (error) {
+    state.live.meLoaded = false;
+    handleLiveFailure(error, "无法读取当前账号");
+  } finally {
+    state.live.meLoading = false;
+    render();
+  }
+}
+
+function normalizeConnectionRequest(request) {
+  const counterpartPerson = livePerson({
+    user_id: request.counterpart?.id,
+    display_name: request.counterpart?.display_name,
+    avatar: request.counterpart?.avatar,
+    role: request.counterpart?.role,
+    status: request.counterpart?.status,
+  });
+  return { ...request, counterpartPerson };
+}
+
+async function sendLiveConnectionRequest(person) {
+  if (!person?.userId) return;
+  try {
+    const payload = await runLiveMutation(`connection:${person.userId}`, () => api.post(
+      "/api/connections/requests",
+      {
+        recipient_id: person.userId,
+        event_id: liveConfig.eventId,
+        source: "link",
+        message: "想和你当面聊聊当前的协作方向",
+      },
+    ));
+    if (payload.connection) showToast(`你和 ${person.name} 已经建联`);
+    else showToast(payload.idempotent_replay ? "招呼已存在，等待对方回应" : `已向 ${person.name} 表达“想认识”`);
+    await refreshLiveState();
+    advanceRecommendation(filterDiscoveryPeople(discoveryPeople()));
+  } catch (error) {
+    handleLiveFailure(error, "连接请求发送失败");
+    showToast(state.live.error);
+  }
+  render();
+}
+
+async function resolveLiveConnectionRequest(requestId, action) {
+  if (!requestId || !new Set(["accept", "reject", "cancel", "block"]).has(action)) return;
+  if (action === "block" && !window.confirm("拉黑后双方将不能继续发送连接请求，确认拉黑？")) return;
+  try {
+    await runLiveMutation(`connection-request:${requestId}`, () => api.patch(
+      `/api/connections/requests/${encodeURIComponent(requestId)}`,
+      { action, ...(action === "block" ? { reason_code: "USER_REQUEST" } : {}) },
+    ));
+    const labels = { accept: "已接受连接", reject: "已拒绝请求", cancel: "已撤回请求", block: "已拉黑并关闭请求" };
+    showToast(labels[action]);
+    await refreshLiveState();
+  } catch (error) {
+    handleLiveFailure(error, "连接状态更新失败");
+    showToast(state.live.error);
+  }
+  render();
+}
+
+async function createAndInviteLiveProject(person) {
+  try {
+    let project = state.live.activeProject;
+    let roleNeeds = project?.role_needs || [];
+    if (!project) {
+      const direction = directionAlignmentFor(person.id).draft;
+      const hasDirection = direction.audience && direction.problem && direction.outcome;
+      const created = await runLiveMutation("project:create", () => api.post("/api/projects", {
+        event_id: liveConfig.eventId,
+        title: "离线会议洞察终端",
+        summary: hasDirection
+          ? `为${direction.audience}解决${direction.problem}，验证${direction.outcome}`
+          : "把线下讨论自动沉淀为可执行任务",
+        role_need: {
+          title: person.teamRole || "协作成员",
+          skills: person.skills.slice(0, 5),
+          capacity: 3,
+        },
+      }));
+      project = { ...created.project, role_needs: created.role_needs };
+      roleNeeds = created.role_needs;
+    }
+    const roleNeed = roleNeeds.find((item) => item.remaining_capacity > 0 && item.status === "OPEN");
+    if (!roleNeed) throw new ApiError("当前项目没有可用的入队角色", { status: 409, code: "ROLE_NEED_FILLED" });
+    const payload = await runLiveMutation(`team-invitation:${project.id}:${person.userId}`, () => api.post(
+      `/api/projects/${encodeURIComponent(project.id)}/invitations`,
+      { invitee_id: person.userId, role_need_id: roleNeed.id },
+    ));
+    state.overlay = "invite-sent";
+    writeAppHistory();
+    showToast(payload.idempotent_replay ? "入队邀请仍在等待确认" : `已邀请 ${person.name} 加入项目`);
+    await refreshLiveState();
+  } catch (error) {
+    handleLiveFailure(error, "项目邀请发送失败");
+    showToast(state.live.error);
+  }
+  render();
+}
+
+async function resolveLiveTeamInvitation(invitationId, action) {
+  if (!invitationId || !new Set(["accept", "decline"]).has(action)) return;
+  try {
+    await runLiveMutation(`team-invitation:${invitationId}`, () => api.patch(
+      `/api/team-invitations/${encodeURIComponent(invitationId)}`,
+      { action },
+    ));
+    showToast(action === "accept" ? "已确认入队，项目启动舱正在恢复" : "已拒绝入队邀请");
+    await refreshLiveState();
+    if (action === "accept") {
+      state.tab = "collaboration";
+      writeAppHistory();
+    }
+  } catch (error) {
+    handleLiveFailure(error, "入队邀请更新失败");
+    showToast(state.live.error);
+  }
+  render();
+}
+
+async function generateLiveStarterPack() {
+  const projectId = state.live.activeProject?.id;
+  if (!projectId) return;
+  try {
+    await runLiveMutation(`starter-pack:${projectId}`, () => api.post(
+      `/api/projects/${encodeURIComponent(projectId)}/starter-pack`,
+      {},
+    ));
+    showToast("启动计划已生成，等待成员认领与确认");
+    await refreshLiveState();
+  } catch (error) {
+    handleLiveFailure(error, "启动计划生成失败");
+    showToast(state.live.error);
+  }
+}
+
+async function updateLiveTask(taskId, action) {
+  if (!taskId || !new Set(["claim", "start", "complete", "block"]).has(action)) return;
+  try {
+    await runLiveMutation(`task:${taskId}`, () => api.patch(
+      `/api/tasks/${encodeURIComponent(taskId)}`,
+      { action },
+    ));
+    const labels = { claim: "任务已认领", start: "任务已开始", complete: "任务已完成", block: "任务已标记阻塞" };
+    showToast(labels[action]);
+    await refreshLiveState();
+  } catch (error) {
+    handleLiveFailure(error, "任务状态更新失败");
+    showToast(state.live.error);
+  }
+}
+
+async function confirmLivePlan() {
+  const projectId = state.live.activeProject?.id;
+  if (!projectId) return;
+  try {
+    const payload = await runLiveMutation(`plan-confirmation:${projectId}`, () => api.post(
+      `/api/projects/${encodeURIComponent(projectId)}/plan-confirmations`,
+      {},
+    ));
+    showToast(payload.starter_pack.status === "CONFIRMED" ? "全员已确认当前计划" : "已记录你的确认，等待其他成员");
+    await refreshLiveState();
+  } catch (error) {
+    handleLiveFailure(error, "计划确认失败");
+    showToast(state.live.error);
+  }
+}
+
+function normalizeTeamInvitation(invitation) {
+  return {
+    ...invitation,
+    counterpartPerson: livePerson({
+      user_id: invitation.counterpart?.id,
+      display_name: invitation.counterpart?.display_name,
+      avatar: invitation.counterpart?.avatar,
+      role: invitation.role_need?.title,
+      status: invitation.status === "PENDING" ? "等待入队确认" : "项目成员",
+    }),
+  };
+}
+
+function localPersonId(userId) {
+  return String(userId || "").replace(/^user-/, "");
+}
+
+async function refreshLiveState() {
+  if (!state.live.enabled || !state.live.meLoaded || state.live.syncInFlight) return;
+  state.live.syncInFlight = true;
+  try {
+    const eventId = encodeURIComponent(liveConfig.eventId);
+    const [discover, incoming, outgoing, incomingInvitations, outgoingInvitations, projects] = await Promise.all([
+      api.get(`/api/events/${eventId}/discover`),
+      api.get(`/api/connections/requests?event_id=${eventId}&direction=incoming`),
+      api.get(`/api/connections/requests?event_id=${eventId}&direction=outgoing`),
+      api.get(`/api/team-invitations?event_id=${eventId}&direction=incoming`),
+      api.get(`/api/team-invitations?event_id=${eventId}&direction=outgoing`),
+      api.get(`/api/projects?event_id=${eventId}`),
+    ]);
+    state.live.discover = (discover.people || []).map(livePerson);
+    state.live.connectionRequests = [
+      ...(incoming.requests || []).map(normalizeConnectionRequest),
+      ...(outgoing.requests || []).map(normalizeConnectionRequest),
+    ];
+    state.live.teamInvitations = [
+      ...(incomingInvitations.invitations || []),
+      ...(outgoingInvitations.invitations || []),
+    ].map(normalizeTeamInvitation);
+    state.live.projects = projects.projects || [];
+    state.live.activeProject = state.live.projects[0] || null;
+    const connectedIds = state.live.connectionRequests
+      .filter((item) => item.status === "ACCEPTED" && item.connection_id)
+      .map((item) => item.counterpartPerson.id);
+    const pendingIds = state.live.connectionRequests
+      .filter((item) => item.status === "REQUESTED" && item.direction === "outgoing")
+      .map((item) => item.counterpartPerson.id);
+    state.connected = [...new Set(connectedIds)];
+    state.greeted = [...new Set([...connectedIds, ...pendingIds])];
+    state.invited = state.live.teamInvitations
+      .filter((item) => item.status === "PENDING" && item.direction === "outgoing")
+      .map((item) => item.counterpartPerson.id);
+    state.joined = state.live.activeProject
+      ? state.live.activeProject.members
+        .filter((member) => member.user_id !== state.live.currentUserId)
+        .map((member) => localPersonId(member.user_id))
+      : [];
+    if (state.live.activeProject) {
+      const room = await api.get(`/api/projects/${encodeURIComponent(state.live.activeProject.id)}/room`);
+      state.live.room = room;
+    } else {
+      state.live.room = null;
+    }
+    if (!livePeople().some((person) => person.id === state.selectedId)) {
+      state.selectedId = state.live.discover[0]?.id || livePeople()[0]?.id || "";
+    }
+    state.live.syncError = "";
+  } catch (error) {
+    if (error instanceof ApiError && error.isAuthenticationError) handleLiveFailure(error);
+    else state.live.syncError = safeLiveText(error?.message, "同步暂时中断", 160);
+  } finally {
+    state.live.syncInFlight = false;
+    render();
+  }
+}
+
+let livePollTimer = null;
+function startLivePolling() {
+  if (livePollTimer || !state.live.meLoaded) return;
+  livePollTimer = window.setInterval(() => {
+    if (document.visibilityState === "visible") refreshLiveState();
+  }, 2500);
+}
+
+function stopLivePolling() {
+  if (livePollTimer) window.clearInterval(livePollTimer);
+  livePollTimer = null;
 }
 
 async function updateLiveVisibility(nextVisible) {
   try {
-    const response = await fetch(
-      `${liveConfig.apiBase}/api/events/${encodeURIComponent(liveConfig.eventId)}/visibility`,
-      {
-        method: "PATCH",
-        headers: liveHeaders(),
-        body: JSON.stringify({ state: nextVisible ? "VISIBLE" : "PAUSED" }),
-      },
-    );
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.error?.message || "公开状态更新失败");
+    const payload = await runLiveMutation("visibility", () => api.patch(
+      `/api/events/${encodeURIComponent(liveConfig.eventId)}/visibility`,
+      { state: nextVisible ? "VISIBLE" : "PAUSED" },
+    ));
     state.visible = payload.visibility?.state === "VISIBLE";
     showToast(state.visible ? visibilityRestoredMessage() : "已暂停附近展示");
   } catch (error) {
-    showToast(error.message);
+    handleLiveFailure(error, "公开状态更新失败");
+    showToast(state.live.error);
   }
   render();
 }
@@ -2193,13 +2990,10 @@ async function connectPlatform(platform, suppliedUrl = "") {
     return;
   }
   try {
-    const response = await fetch(`${liveConfig.apiBase}/api/me/platform-links/${platform}`, {
-      method: "PUT",
-      headers: liveHeaders(),
-      body: JSON.stringify({ url }),
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.error?.message || "链接绑定失败");
+    const payload = await runLiveMutation(`platform:${platform}`, () => api.put(
+      `/api/me/platform-links/${encodeURIComponent(platform)}`,
+      { url },
+    ));
     state.live.platformLinks = [
       ...state.live.platformLinks.filter((link) => link.platform !== platform),
       payload.platform_link,
@@ -2211,7 +3005,8 @@ async function connectPlatform(platform, suppliedUrl = "") {
         : `${item.label}链接已保存，未标记为平台验证`,
     );
   } catch (error) {
-    showToast(error.message);
+    handleLiveFailure(error, "链接绑定失败");
+    showToast(state.live.error);
   }
   render();
 }
@@ -2221,53 +3016,44 @@ async function disconnectPlatform(platform) {
   if (!item || !state.live.enabled) return;
   if (!window.confirm(`移除${item.label}链接？这不会删除平台上的任何内容。`)) return;
   try {
-    const response = await fetch(`${liveConfig.apiBase}/api/me/platform-links/${platform}`, {
-      method: "DELETE",
-      headers: liveHeaders(),
-    });
-    if (!response.ok) throw new Error("链接移除失败");
+    await runLiveMutation(`platform:${platform}`, () => api.delete(
+      `/api/me/platform-links/${encodeURIComponent(platform)}`,
+    ));
     state.live.platformLinks = state.live.platformLinks.filter((link) => link.platform !== platform);
     delete state.platformDrafts[platform];
     showToast(`${item.label}链接已移除`);
   } catch (error) {
-    showToast(error.message);
+    handleLiveFailure(error, "链接移除失败");
+    showToast(state.live.error);
   }
   render();
 }
 
-function liveHeaders() {
-  const headers = { "content-type": "application/json" };
-  if (liveConfig.accessToken) headers.authorization = `Bearer ${liveConfig.accessToken}`;
-  else headers["x-demo-user-id"] = liveConfig.demoUserId;
-  return headers;
-}
-
-async function publishLivePosition(position) {
+async function publishLivePosition(position, generation = state.live.presenceGeneration) {
+  if (!state.live.started || generation !== state.live.presenceGeneration) return;
   if (state.live.requestInFlight) return;
   state.live.requestInFlight = true;
+  const controller = new AbortController();
+  state.live.presenceController = controller;
   try {
-    const presence = await fetch(
-      `${liveConfig.apiBase}/api/events/${encodeURIComponent(liveConfig.eventId)}/presence`,
+    await api.put(
+      `/api/events/${encodeURIComponent(liveConfig.eventId)}/presence`,
       {
-        method: "PUT",
-        headers: liveHeaders(),
-        body: JSON.stringify({
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-          accuracy_m: position.coords.accuracy,
-        }),
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+        accuracy_m: position.coords.accuracy,
       },
+      { signal: controller.signal },
     );
-    if (!presence.ok) {
-      const payload = await presence.json().catch(() => ({}));
-      throw new Error(payload.error?.message || `定位上报失败（${presence.status}）`);
+    if (!state.live.started || generation !== state.live.presenceGeneration) {
+      await api.delete(`/api/events/${encodeURIComponent(liveConfig.eventId)}/presence`, {
+        keepalive: true,
+      });
+      return;
     }
-    const nearby = await fetch(
-      `${liveConfig.apiBase}/api/events/${encodeURIComponent(liveConfig.eventId)}/nearby`,
-      { headers: liveHeaders() },
+    const payload = await api.get(
+      `/api/events/${encodeURIComponent(liveConfig.eventId)}/nearby`,
     );
-    if (!nearby.ok) throw new Error(`附近列表读取失败（${nearby.status}）`);
-    const payload = await nearby.json();
     state.live.nearby = (payload.nearby || []).map(livePerson);
     if (state.live.nearby.length && !state.live.nearby.some((item) => item.id === state.selectedId)) {
       state.selectedId = state.live.nearby[0].id;
@@ -2280,10 +3066,13 @@ async function publishLivePosition(position) {
       hour12: false,
     });
   } catch (error) {
+    if (error?.name === "AbortError") return;
+    if (error instanceof ApiError && error.isAuthenticationError) handleLiveFailure(error);
     state.live.status = "error";
     state.live.error = safeLiveText(error.message, "真实定位暂不可用", 160);
     state.live.nearby = [];
   } finally {
+    if (state.live.presenceController === controller) state.live.presenceController = null;
     state.live.requestInFlight = false;
     render();
   }
@@ -2292,6 +3081,8 @@ async function publishLivePosition(position) {
 function startLivePresence() {
   if (state.live.started) return;
   state.live.started = true;
+  state.live.presenceGeneration += 1;
+  const generation = state.live.presenceGeneration;
   state.live.status = "requesting";
   if (!navigator.geolocation) {
     state.live.status = "error";
@@ -2300,7 +3091,7 @@ function startLivePresence() {
     return;
   }
   state.live.watcherId = navigator.geolocation.watchPosition(
-    publishLivePosition,
+    (position) => publishLivePosition(position, generation),
     (positionError) => {
       state.live.status = "error";
       state.live.error = positionError.code === positionError.PERMISSION_DENIED
@@ -2318,12 +3109,13 @@ function stopLivePresence() {
   if (!state.live.started) return;
   if (state.live.watcherId !== null) navigator.geolocation?.clearWatch(state.live.watcherId);
   state.live.started = false;
+  state.live.presenceGeneration += 1;
+  state.live.presenceController?.abort();
+  state.live.presenceController = null;
   state.live.watcherId = null;
   state.live.status = "idle";
   state.live.nearby = [];
-  fetch(`${liveConfig.apiBase}/api/events/${encodeURIComponent(liveConfig.eventId)}/presence`, {
-    method: "DELETE",
-    headers: liveHeaders(),
+  api.delete(`/api/events/${encodeURIComponent(liveConfig.eventId)}/presence`, {
     keepalive: true,
   }).catch(() => {});
 }
@@ -2339,6 +3131,23 @@ function syncLivePresenceLifecycle() {
   else stopLivePresence();
 }
 
-window.addEventListener("pagehide", stopLivePresence);
+window.addEventListener("pagehide", () => {
+  stopLivePolling();
+  stopLivePresence();
+});
+
+window.addEventListener("beforeunload", () => {
+  stopLivePolling();
+  stopLivePresence();
+});
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") {
+    refreshLiveState();
+    syncLivePresenceLifecycle();
+  } else {
+    stopLivePresence();
+  }
+});
 
 loadLiveMe();

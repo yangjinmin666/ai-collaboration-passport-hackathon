@@ -1,0 +1,61 @@
+name: Rally product checks
+
+on:
+  pull_request:
+    paths:
+      - "当前方案-ToC-AI组队/backend/**"
+      - "当前方案-ToC-AI组队/prototype/mobile-demo/**"
+      - ".github/workflows/rally-ci.yml"
+  push:
+    paths:
+      - "当前方案-ToC-AI组队/backend/**"
+      - "当前方案-ToC-AI组队/prototype/mobile-demo/**"
+      - ".github/workflows/rally-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  product-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: 当前方案-ToC-AI组队
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install browser test runtime
+        run: |
+          python -m pip install --disable-pip-version-check pillow playwright
+          python -m playwright install --with-deps chromium
+
+      - name: Check JavaScript syntax
+        run: |
+          node --input-type=module --check < prototype/mobile-demo/app.js
+          node --input-type=module --check < prototype/mobile-demo/api-client.js
+
+      - name: Run backend contract tests
+        working-directory: 当前方案-ToC-AI组队/backend
+        run: npm test
+
+      - name: Run mobile smoke test
+        working-directory: 当前方案-ToC-AI组队/prototype/mobile-demo
+        run: |
+          python -m http.server 4173 --bind 127.0.0.1 >/tmp/rally-mobile-http.log 2>&1 &
+          mobile_server_pid=$!
+          trap 'kill "$mobile_server_pid"' EXIT
+          python smoke_test.py
+
+      - name: Run two-device Live E2E
+        working-directory: 当前方案-ToC-AI组队/prototype/mobile-demo
+        run: python live_e2e_test.py

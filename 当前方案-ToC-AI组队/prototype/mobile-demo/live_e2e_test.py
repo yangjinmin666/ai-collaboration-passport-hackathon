@@ -88,6 +88,7 @@ def main():
         "HOST": "127.0.0.1",
         "DATABASE_PATH": ":memory:",
         "ALLOW_INSECURE_DEMO_AUTH": "1",
+        "DEMO_ACCESS_KEY": "browser-demo-access-key",
     }
     backend = subprocess.Popen(
         ["node", "src/server.js"],
@@ -149,7 +150,14 @@ def main():
                 permissions=["geolocation"],
             )
             page = context.new_page()
+            presence_requests = []
             page.on("pageerror", lambda error: errors.append(str(error)))
+            page.on(
+                "request",
+                lambda request: presence_requests.append(request.method)
+                if "/presence" in request.url
+                else None,
+            )
             page.goto(
                 f"{frontend_url}/?variant=B&live=1"
                 f"&apiBase={urllib.parse.quote(backend_url, safe=':/')}"
@@ -203,6 +211,54 @@ def main():
                 "https://portfolio.example.com/zhou-wen-v2"
             )
 
+            page.locator('[data-action="open-profile-editor"]').click()
+            profile_form = page.locator("[data-live-profile-form]")
+            profile_form.locator('input[name="role"]').fill("AI 产品与后端")
+            profile_form.locator('select[name="status"]').select_option("团队缺人")
+            profile_form.locator('input[name="skills"]').fill("Agent，产品架构，后端")
+            profile_form.locator('input[name="interests"]').fill("现场协作，可信 AI")
+            profile_form.locator('input[name="availability"]').fill("今天可持续投入 6 小时")
+            profile_form.locator('input[name="preferences"]').fill("快速原型，异步记录")
+            profile_form.locator('textarea[name="need"]').fill("寻找硬件搭档完成真机闭环")
+            profile_form.locator('textarea[name="evidence"]').fill("RALLY Live API\n双设备协作 E2E")
+            profile_form.locator(
+                'input[name="public-fields"][value="evidence"]'
+            ).uncheck()
+            assert "能力证据" not in profile_form.locator(
+                "[data-public-fields-preview]"
+            ).inner_text()
+            profile_form.get_by_role(
+                "button", name="保存资料与公开范围"
+            ).click()
+            page.get_by_text("协作资料与公开范围已保存", exact=True).wait_for(
+                timeout=5000
+            )
+            _, me = request_json(f"{backend_url}/api/me", user_id="user-zhou")
+            event_profile = next(
+                profile for profile in me["profiles"]
+                if profile["event_id"] == "hackathon-2026"
+            )
+            assert event_profile["role"] == "AI 产品与后端"
+            assert event_profile["status"] == "团队缺人"
+            assert event_profile["skills"] == ["Agent", "产品架构", "后端"]
+            assert event_profile["evidence"] == ["RALLY Live API", "双设备协作 E2E"]
+            assert "evidence" not in event_profile["visibility"]["public_fields"]
+
+            page.reload()
+            page.locator('.app-nav [data-tab="profile"]').wait_for(timeout=8000)
+            page.locator('.app-nav [data-tab="profile"]').click()
+            page.locator('[data-action="open-profile-editor"]').click()
+            profile_form = page.locator("[data-live-profile-form]")
+            assert profile_form.locator('input[name="role"]').input_value() == (
+                "AI 产品与后端"
+            )
+            assert not profile_form.locator(
+                'input[name="public-fields"][value="evidence"]'
+            ).is_checked()
+            page.locator(
+                '.profile-settings-head [data-action="close-profile-editor"]'
+            ).click()
+
             page.locator('[data-action="toggle-visible"]').click()
             page.get_by_text("已暂停附近展示", exact=True).wait_for(timeout=4000)
             _, me = request_json(f"{backend_url}/api/me", user_id="user-zhou")
@@ -215,7 +271,7 @@ def main():
                 f"{backend_url}/api/events/hackathon-2026/nearby",
                 user_id="user-lin",
             )
-            assert nearby["nearby"] == []
+            assert nearby["nearby"] == [], presence_requests
 
             page.locator('[data-action="toggle-visible"]').click()
             page.get_by_text("已恢复展会内可见", exact=True).wait_for(timeout=4000)
@@ -227,12 +283,17 @@ def main():
                 f"&apiBase={urllib.parse.quote(backend_url, safe=':/')}"
                 "&demoUser=user-zhou",
             )
-            time.sleep(0.4)
-            _, nearby = request_json(
-                f"{backend_url}/api/events/hackathon-2026/nearby",
-                user_id="user-lin",
-            )
-            assert nearby["nearby"] == []
+            deadline = time.time() + 3
+            nearby = {"nearby": ["pending"]}
+            while time.time() < deadline and nearby["nearby"]:
+                _, nearby = request_json(
+                    f"{backend_url}/api/events/hackathon-2026/nearby",
+                    user_id="user-lin",
+                )
+                if nearby["nearby"]:
+                    time.sleep(0.1)
+            assert nearby["nearby"] == [], presence_requests
+            assert presence_requests[-1] == "DELETE", presence_requests
             assert errors == []
 
             token_requests = []
@@ -254,6 +315,267 @@ def main():
             assert token_requests
             assert all(url.startswith(frontend_url) for url in token_requests)
             assert all("attacker.invalid" not in url for url in token_requests)
+
+            untrusted_context = browser.new_context(
+                viewport={"width": 390, "height": 844},
+                is_mobile=True,
+                has_touch=True,
+            )
+            untrusted_page = untrusted_context.new_page()
+            login_requests = []
+            untrusted_page.on(
+                "request",
+                lambda request: login_requests.append(request.url)
+                if "/api/auth/demo-sessions" in request.url
+                else None,
+            )
+            untrusted_page.goto(
+                f"{frontend_url}/?variant=A&live=1"
+                "&apiBase=https://attacker.invalid/collect",
+            )
+            untrusted_page.get_by_label("RALLY 账号").fill("user-zhou")
+            untrusted_page.get_by_label("现场访问码").fill("must-not-leak")
+            untrusted_page.get_by_role("button", name="登录 RALLY").click()
+            untrusted_page.wait_for_timeout(500)
+            assert login_requests
+            assert all(url.startswith(frontend_url) for url in login_requests)
+            assert all("attacker.invalid" not in url for url in login_requests)
+            untrusted_context.close()
+
+            xss_context = browser.new_context(
+                viewport={"width": 390, "height": 844},
+                is_mobile=True,
+                has_touch=True,
+            )
+            xss_page = xss_context.new_page()
+
+            def mock_live_inboxes(route):
+                parsed = urllib.parse.urlparse(route.request.url)
+                query = urllib.parse.parse_qs(parsed.query)
+                direction = query.get("direction", [""])[0]
+                if parsed.path == "/api/connections/requests" and direction == "incoming":
+                    route.fulfill(
+                        status=200,
+                        content_type="application/json",
+                        body=json.dumps({"requests": [{
+                            "id": "request-xss",
+                            "direction": "incoming",
+                            "status": "REQUESTED",
+                            "source": "link",
+                            "message": "<img src=x onerror='window.__rallyInboxXss=1'>",
+                            "connection_id": None,
+                            "counterpart": {
+                                "id": "user-lin",
+                                "display_name": "<img src=x onerror='window.__rallyInboxXss=2'>",
+                                "avatar": "memoji-4",
+                                "role": "硬件构建者",
+                                "status": "未组队",
+                            },
+                        }]}),
+                    )
+                    return
+                if parsed.path == "/api/team-invitations" and direction == "incoming":
+                    route.fulfill(
+                        status=200,
+                        content_type="application/json",
+                        body=json.dumps({"invitations": [{
+                            "id": "invitation-xss",
+                            "direction": "incoming",
+                            "status": "PENDING",
+                            "project": {
+                                "id": "project-xss",
+                                "title": "<img src=x onerror='window.__rallyInboxXss=3'>",
+                                "summary": "test",
+                                "status": "FORMING",
+                            },
+                            "counterpart": {
+                                "id": "user-lin",
+                                "display_name": "<img src=x onerror='window.__rallyInboxXss=4'>",
+                                "avatar": "memoji-4",
+                            },
+                            "role_need": {
+                                "id": "role-xss",
+                                "title": "<img src=x onerror='window.__rallyInboxXss=5'>",
+                                "skills": [],
+                            },
+                        }]}),
+                    )
+                    return
+                route.continue_()
+
+            xss_page.route("**/api/**", mock_live_inboxes)
+            xss_page.goto(
+                f"{frontend_url}/?variant=A&live=1"
+                f"&apiBase={urllib.parse.quote(backend_url, safe=':/')}"
+                "&demoUser=user-zhou",
+            )
+            xss_page.locator(".app-nav").wait_for(timeout=8000)
+            xss_page.locator('.app-nav [data-tab="connections"]').click()
+            xss_page.get_by_text("想认识你", exact=True).wait_for(timeout=4000)
+            assert xss_page.locator('img[src="x"]').count() == 0
+            xss_page.locator('.app-nav [data-tab="collaboration"]').click()
+            xss_page.get_by_text("入队邀请", exact=True).wait_for(timeout=4000)
+            assert xss_page.locator('img[src="x"]').count() == 0
+            assert xss_page.evaluate("window.__rallyInboxXss") is None
+            xss_context.close()
+
+            expiry_context = browser.new_context(
+                viewport={"width": 390, "height": 844},
+                is_mobile=True,
+                has_touch=True,
+            )
+            expiry_page = expiry_context.new_page()
+            expiry_page.on(
+                "pageerror", lambda error: errors.append(f"expiry:{error}")
+            )
+            expiry_page.goto(
+                f"{frontend_url}/?variant=A&live=1"
+                f"&apiBase={urllib.parse.quote(backend_url, safe=':/')}"
+                "&demoUser=user-zhou",
+            )
+            expiry_page.locator(".recommendation-card-active").wait_for(
+                timeout=8000
+            )
+            expiry_page.locator(".recommendation-card-active").click()
+            expiry_page.route(
+                "**/api/events/hackathon-2026/discover",
+                lambda route: route.fulfill(
+                    status=401,
+                    content_type="application/json",
+                    body=json.dumps({
+                        "error": {
+                            "code": "AUTH_REQUIRED",
+                            "message": "A valid session is required.",
+                        }
+                    }),
+                ),
+            )
+            expiry_page.get_by_text("登录后进入现场", exact=True).wait_for(
+                timeout=6000
+            )
+            assert expiry_page.locator(".overlay").count() == 0
+            assert "overlay" not in urllib.parse.parse_qs(
+                urllib.parse.urlparse(expiry_page.url).query
+            )
+            expiry_context.close()
+
+            sync_context = browser.new_context(
+                viewport={"width": 390, "height": 844},
+                is_mobile=True,
+                has_touch=True,
+            )
+            sync_page = sync_context.new_page()
+            sync_page.route(
+                "**/api/events/hackathon-2026/discover",
+                lambda route: route.fulfill(
+                    status=503,
+                    content_type="application/json",
+                    body=json.dumps({
+                        "error": {
+                            "code": "UNAVAILABLE",
+                            "message": "Discover temporarily unavailable",
+                        }
+                    }),
+                ),
+            )
+            sync_page.goto(
+                f"{frontend_url}/?variant=A&live=1"
+                f"&apiBase={urllib.parse.quote(backend_url, safe=':/')}"
+                "&demoUser=user-zhou",
+            )
+            sync_page.get_by_text("现场成员暂时无法同步", exact=True).wait_for(
+                timeout=8000
+            )
+            assert sync_page.get_by_role("button", name="重新连接").is_visible()
+            sync_context.close()
+
+            def login_live(live_page, user_id):
+                live_page.goto(
+                    f"{frontend_url}/?variant=A&live=1"
+                    f"&apiBase={urllib.parse.quote(backend_url, safe=':/')}",
+                )
+                live_page.get_by_label("RALLY 账号").fill(user_id)
+                live_page.get_by_label("现场访问码").fill("browser-demo-access-key")
+                live_page.get_by_role("button", name="登录 RALLY").click()
+                live_page.locator(".app-nav").wait_for(timeout=8000)
+
+            zhou_context = browser.new_context(
+                viewport={"width": 390, "height": 844}, is_mobile=True, has_touch=True
+            )
+            lin_context = browser.new_context(
+                viewport={"width": 390, "height": 844}, is_mobile=True, has_touch=True
+            )
+            zhou_page = zhou_context.new_page()
+            lin_page = lin_context.new_page()
+            zhou_page.on("pageerror", lambda error: errors.append(f"zhou:{error}"))
+            lin_page.on("pageerror", lambda error: errors.append(f"lin:{error}"))
+            login_live(zhou_page, "user-zhou")
+            login_live(lin_page, "user-lin")
+
+            zhou_page.get_by_role("button", name="向 林澈 表达想认识").click()
+            zhou_page.get_by_text("已向 林澈 表达“想认识”", exact=True).wait_for(
+                timeout=5000
+            )
+            lin_page.locator('.app-nav [data-tab="connections"]').click()
+            lin_page.get_by_text("想认识你", exact=True).wait_for(timeout=8000)
+            lin_page.get_by_role("button", name="接受", exact=True).click()
+            lin_page.get_by_text("已接受连接", exact=True).wait_for(timeout=5000)
+
+            zhou_page.locator('.app-nav [data-tab="connections"]').click()
+            zhou_page.get_by_text("已建联", exact=True).first.wait_for(timeout=8000)
+            zhou_page.get_by_role("button", name="继续项目协作").click()
+            zhou_page.get_by_role("button", name="共同填写方向草案").click()
+            zhou_page.locator('input[name="audience"]').fill("线下黑客松参与者")
+            zhou_page.locator('input[name="problem"]').fill("现场协作难以继续")
+            zhou_page.locator('input[name="outcome"]').fill("让真实交流进入启动流程")
+            zhou_page.get_by_role("button", name="确认我的方向草案").click()
+            zhou_page.get_by_role("button", name="模拟林澈确认方向").click()
+            zhou_page.get_by_role("button", name="创建项目并邀请入队").click()
+            zhou_page.get_by_role("heading", name="已邀请 林澈 加入项目").wait_for(
+                timeout=8000
+            )
+            zhou_page.locator('[data-action="view-connection"]').click()
+
+            lin_page.locator('.app-nav [data-tab="collaboration"]').click()
+            lin_page.get_by_text("入队邀请", exact=True).wait_for(timeout=8000)
+            lin_page.get_by_role("button", name="确认入队").click()
+            lin_page.get_by_text("已确认入队", exact=False).wait_for(timeout=5000)
+            lin_page.get_by_text("离线会议洞察终端", exact=True).wait_for(timeout=8000)
+
+            zhou_page.locator('.app-nav [data-tab="collaboration"]').click()
+            zhou_page.get_by_role("button", name="生成启动计划").wait_for(timeout=8000)
+            zhou_page.get_by_role("button", name="生成启动计划").click()
+            zhou_page.get_by_text("人机协作启动计划", exact=True).wait_for(timeout=8000)
+            lin_page.get_by_text("人机协作启动计划", exact=True).wait_for(timeout=8000)
+            lin_page.get_by_role("button", name="我来负责").first.click()
+            lin_page.get_by_text("任务已认领", exact=True).wait_for(timeout=5000)
+
+            _, projects = request_json(
+                f"{backend_url}/api/projects?event_id=hackathon-2026",
+                user_id="user-lin",
+            )
+            project_id = projects["projects"][0]["id"]
+            _, room = request_json(
+                f"{backend_url}/api/projects/{project_id}/room",
+                user_id="user-lin",
+            )
+            assert any(
+                task["confirmed_owner_id"] == "user-lin" for task in room["tasks"]
+            )
+
+            zhou_page.reload()
+            zhou_page.locator('.app-nav [data-tab="collaboration"]').wait_for(timeout=8000)
+            zhou_page.locator('.app-nav [data-tab="collaboration"]').click()
+            zhou_page.get_by_text("离线会议洞察终端", exact=True).wait_for(timeout=8000)
+            assert zhou_page.locator(".live-login-card").count() == 0
+            lin_page.reload()
+            lin_page.locator('.app-nav [data-tab="collaboration"]').wait_for(timeout=8000)
+            lin_page.locator('.app-nav [data-tab="collaboration"]').click()
+            lin_page.get_by_text("离线会议洞察终端", exact=True).wait_for(timeout=8000)
+            assert lin_page.locator(".live-login-card").count() == 0
+
+            zhou_context.close()
+            lin_context.close()
             browser.close()
 
         print(json.dumps({
@@ -262,8 +584,14 @@ def main():
             "presence_removed_after_leaving": True,
             "visibility_pause_persisted": True,
             "platform_link_saved_rendered_and_removed": True,
+            "live_profile_edit_persisted_after_reload": True,
             "live_profile_xss_blocked": True,
             "bearer_api_base_query_ignored": True,
+            "access_code_api_base_query_ignored": True,
+            "live_inbox_xss_blocked": True,
+            "expired_session_overlay_cleared": True,
+            "discover_sync_error_visible": True,
+            "two_device_main_flow_persisted": True,
             "browser_errors": errors,
         }, ensure_ascii=False, indent=2))
     finally:

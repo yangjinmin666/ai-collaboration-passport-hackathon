@@ -1,6 +1,7 @@
 """PROTOTYPE smoke test for the mobile demo."""
 
 import json
+import urllib.parse
 from io import BytesIO
 from pathlib import Path
 
@@ -157,6 +158,20 @@ def main():
                 "discovery_tabs": page.locator(".discovery-tabs button").count(),
                 "exhibition_context": page.locator(".event-context").inner_text(),
                 "prototype_switcher_removed": page.locator(".prototype-switcher").count() == 0,
+                "fake_phone_status_removed": page.locator(".phone-status, .phone-island").count() == 0,
+                "top_safe_area_reserved": page.locator(".screen").evaluate(
+                    "element => parseFloat(getComputedStyle(element).paddingTop) >= 12"
+                ),
+                "nonzero_top_safe_area_applied": page.locator(".phone-shell").evaluate(
+                    """shell => {
+                        shell.style.setProperty('--rally-safe-area-top', '47px');
+                        const applied = parseFloat(getComputedStyle(
+                            shell.querySelector('.screen')
+                        ).paddingTop) >= 47;
+                        shell.style.removeProperty('--rally-safe-area-top');
+                        return applied;
+                    }"""
+                ),
                 "body_scroll_width": page.evaluate("document.body.scrollWidth"),
                 "viewport_width": page.evaluate("window.innerWidth"),
             }
@@ -165,6 +180,9 @@ def main():
             assert report["variants"][variant]["exhibition_context"] == "AI Hardware Hackathon 2026"
             assert page.get_by_text("当前活动 · 2026", exact=True).count() == 0
             assert report["variants"][variant]["prototype_switcher_removed"]
+            assert report["variants"][variant]["fake_phone_status_removed"]
+            assert report["variants"][variant]["top_safe_area_reserved"]
+            assert report["variants"][variant]["nonzero_top_safe_area_applied"]
             assert report["variants"][variant]["body_scroll_width"] <= report["variants"][variant]["viewport_width"]
             assert_mobile_visual_baseline(page, report["visual_baseline"], f"variant_{variant}")
             if variant == "A":
@@ -231,6 +249,7 @@ def main():
                     page.get_by_text("展会名册", exact=True).is_visible()
                     and page.get_by_text("展会专属", exact=True).is_visible()
                 )
+
                 assert report["variants"][variant]["ledger_people_count"] == 11
                 assert report["variants"][variant]["directory_is_exhibition_scoped"]
             if variant == "B":
@@ -302,6 +321,25 @@ def main():
                     for horizontal, vertical in avatar_offsets.values()
                 )
                 assert report["variants"][variant]["avatar_subjects_are_centered"], avatar_offsets
+
+        page.goto(f"{BASE_URL}/?variant=A")
+        page.locator(".recommendation-card-active").click()
+        assert urllib.parse.parse_qs(
+            urllib.parse.urlparse(page.url).query
+        )["overlay"] == ["person"]
+        page.go_back()
+        page.locator(".person-overlay").wait_for(state="detached")
+        page.locator('.app-nav [data-tab="profile"]').click()
+        assert urllib.parse.parse_qs(urllib.parse.urlparse(page.url).query)["view"] == ["profile"]
+        page.locator('[data-action="open-profile-settings"]').click()
+        assert urllib.parse.parse_qs(urllib.parse.urlparse(page.url).query)["overlay"] == ["profile-settings"]
+        page.go_back()
+        page.locator(".profile-settings-overlay").wait_for(state="detached")
+        assert page.locator('body[data-tab="profile"]').count() == 1
+        page.go_back()
+        assert page.locator('body[data-tab="discover"]').count() == 1
+        report["flow"]["browser_back_closes_overlay_before_leaving"] = True
+        report["flow"]["major_view_is_reflected_in_url"] = True
 
         page.goto(f"{BASE_URL}/?variant=C&event=community-meetup")
         page.wait_for_load_state("networkidle")
@@ -829,6 +867,18 @@ def main():
         assert report["flow"]["desktop_workspace_hands_off_to_tools"]
         workspace_desktop.screenshot(path=str(OUTPUT_DIR / "workspace-desktop.png"), full_page=True)
         workspace_desktop.close()
+
+        page.goto(f"{BASE_URL}/?variant=A")
+        page.evaluate("() => navigator.serviceWorker.ready")
+        page.reload(wait_until="networkidle")
+        assert page.evaluate("Boolean(navigator.serviceWorker.controller)")
+        context.set_offline(True)
+        try:
+            page.goto(f"{BASE_URL}/?variant=A", wait_until="domcontentloaded")
+            page.locator(".app-nav").wait_for(timeout=4000)
+            report["flow"]["pwa_shell_opens_offline"] = True
+        finally:
+            context.set_offline(False)
 
         browser.close()
 

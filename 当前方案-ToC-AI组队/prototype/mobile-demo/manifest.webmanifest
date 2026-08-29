@@ -1,0 +1,19 @@
+{
+  "name": "RALLY 集结",
+  "short_name": "RALLY",
+  "description": "从现场发现、真实建联到项目启动的人机协作入口",
+  "start_url": "./?live=1&variant=A",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f7f9fc",
+  "theme_color": "#ffffff",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "./assets/rally-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -1146,6 +1146,34 @@ export function createProductModule(database, {
     }));
   }
 
+  function listProjectsForMember({ actorId, eventId }) {
+    if (!actorId) return error(401, "AUTH_REQUIRED", "A valid session is required.");
+    if (!eventId) return error(400, "EVENT_REQUIRED", "event_id is required.");
+    const memberships = database.prepare(`
+      SELECT project.*, membership.membership_role, membership.role_need_id,
+        membership.joined_at
+      FROM project_memberships membership
+      JOIN projects project ON project.project_id = membership.project_id
+      WHERE membership.user_id = ? AND project.event_id = ?
+      ORDER BY project.updated_at DESC, project.project_id DESC
+    `).all(actorId, eventId);
+    return {
+      status: 200,
+      body: {
+        projects: memberships.map((row) => ({
+          ...mapProject(row),
+          my_membership: {
+            membership_role: row.membership_role,
+            role_need_id: row.role_need_id,
+            joined_at: row.joined_at,
+          },
+          role_needs: listRoleNeeds(database, row.project_id),
+          members: listMembers(database, row.project_id),
+        })),
+      },
+    };
+  }
+
   async function createProject({ request, actorId }) {
     if (!actorId) return error(401, "AUTH_REQUIRED", "A valid session is required.");
     const parsed = await readJson(request);
@@ -1333,6 +1361,69 @@ export function createProductModule(database, {
       expires_at: row.expires_at,
       created_at: row.created_at,
       updated_at: row.updated_at,
+    };
+  }
+
+  function listTeamInvitations({ actorId, eventId, direction, status }) {
+    if (!actorId) return error(401, "AUTH_REQUIRED", "A valid session is required.");
+    if (!eventId) return error(400, "EVENT_REQUIRED", "event_id is required.");
+    if (!new Set(["incoming", "outgoing"]).has(direction)) {
+      return error(400, "INVALID_DIRECTION", "direction must be incoming or outgoing.");
+    }
+    const allowedStatuses = new Set(["PENDING", "ACCEPTED", "DECLINED", "CANCELLED", "EXPIRED"]);
+    if (status && !allowedStatuses.has(status)) {
+      return error(400, "INVALID_STATUS", "status is invalid.");
+    }
+    const now = clock().toISOString();
+    database.prepare(`
+      UPDATE team_invitations
+      SET status = 'EXPIRED', updated_at = ?
+      WHERE status = 'PENDING' AND expires_at <= ?
+        AND project_id IN (SELECT project_id FROM projects WHERE event_id = ?)
+    `).run(now, now, eventId);
+    const ownerColumn = direction === "incoming" ? "invitee_id" : "inviter_id";
+    const counterpartColumn = direction === "incoming" ? "inviter_id" : "invitee_id";
+    const statusClause = status ? "AND invitation.status = ?" : "";
+    const parameters = status ? [actorId, eventId, status] : [actorId, eventId];
+    const rows = database.prepare(`
+      SELECT invitation.*, project.title AS project_title,
+        project.summary AS project_summary, project.status AS project_status,
+        counterpart.user_id AS counterpart_id,
+        counterpart.display_name AS counterpart_display_name,
+        counterpart.avatar AS counterpart_avatar,
+        need.title AS role_need_title, need.skills_json AS role_need_skills_json
+      FROM team_invitations invitation
+      JOIN projects project ON project.project_id = invitation.project_id
+      JOIN users counterpart ON counterpart.user_id = invitation.${counterpartColumn}
+      JOIN project_role_needs need ON need.role_need_id = invitation.role_need_id
+      WHERE invitation.${ownerColumn} = ? AND project.event_id = ?
+        ${statusClause}
+      ORDER BY invitation.updated_at DESC, invitation.invitation_id DESC
+    `).all(...parameters);
+    return {
+      status: 200,
+      body: {
+        invitations: rows.map((row) => ({
+          ...mapInvitation(row),
+          direction,
+          project: {
+            id: row.project_id,
+            title: row.project_title,
+            summary: row.project_summary,
+            status: row.project_status,
+          },
+          counterpart: {
+            id: row.counterpart_id,
+            display_name: row.counterpart_display_name,
+            avatar: row.counterpart_avatar,
+          },
+          role_need: {
+            id: row.role_need_id,
+            title: row.role_need_title,
+            skills: JSON.parse(row.role_need_skills_json),
+          },
+        })),
+      },
     };
   }
 
@@ -2808,6 +2899,13 @@ export function createProductModule(database, {
         });
       }
 
+      if (request.method === "GET" && url.pathname === "/api/projects") {
+        return listProjectsForMember({
+          actorId,
+          eventId: url.searchParams.get("event_id"),
+        });
+      }
+
       if (request.method === "POST" && url.pathname === "/api/projects") {
         return createProject({ request, actorId });
       }
@@ -2820,6 +2918,15 @@ export function createProductModule(database, {
           request,
           actorId,
           projectId: decodeURIComponent(projectInvitationMatch[1]),
+        });
+      }
+
+      if (request.method === "GET" && url.pathname === "/api/team-invitations") {
+        return listTeamInvitations({
+          actorId,
+          eventId: url.searchParams.get("event_id"),
+          direction: url.searchParams.get("direction") ?? "incoming",
+          status: url.searchParams.get("status"),
         });
       }
 
