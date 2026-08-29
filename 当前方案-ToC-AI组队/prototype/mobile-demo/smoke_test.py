@@ -170,11 +170,49 @@ def main():
             if variant == "A":
                 report["variants"][variant]["active_recommendation_cards"] = page.locator(".recommendation-card-active").count()
                 report["variants"][variant]["recommendation_progress_count"] = page.locator(".recommendation-progress i").count()
+                boundary_style = page.locator(".recommendation-boundary").evaluate(
+                    """element => {
+                        const style = getComputedStyle(element);
+                        const box = element.getBoundingClientRect();
+                        return {
+                            border: parseFloat(style.borderTopWidth),
+                            background: style.backgroundColor,
+                            height: box.height,
+                            text: element.textContent.trim(),
+                        };
+                    }"""
+                )
+                report["variants"][variant]["connection_boundary_is_lightweight"] = (
+                    boundary_style["border"] == 0
+                    and boundary_style["background"] == "rgba(0, 0, 0, 0)"
+                    and boundary_style["height"] < 48
+                    and boundary_style["text"] == "线上只表达“想认识”，线下碰卡后才交换双方授权信息并建联。"
+                )
+                card_geometry = page.locator(".recommendation-card-active").evaluate(
+                    """card => {
+                        const footer = card.querySelector(':scope > footer');
+                        const cardBox = card.getBoundingClientRect();
+                        const footerBox = footer.getBoundingClientRect();
+                        return {
+                            height: cardBox.height,
+                            bottomInset: cardBox.bottom - footerBox.bottom,
+                            clientHeight: card.clientHeight,
+                            scrollHeight: card.scrollHeight,
+                        };
+                    }"""
+                )
+                report["variants"][variant]["recommendation_card_has_safe_bottom_inset"] = (
+                    card_geometry["height"] >= 400
+                    and card_geometry["bottomInset"] >= 16
+                    and card_geometry["scrollHeight"] <= card_geometry["clientHeight"]
+                )
                 report["variants"][variant]["table_like_lists_removed"] = (
                     page.locator(".role-roster-person, .person-row").count() == 0
                 )
                 assert report["variants"][variant]["active_recommendation_cards"] == 1
                 assert report["variants"][variant]["recommendation_progress_count"] == 11
+                assert report["variants"][variant]["connection_boundary_is_lightweight"], boundary_style
+                assert report["variants"][variant]["recommendation_card_has_safe_bottom_inset"], card_geometry
                 assert report["variants"][variant]["table_like_lists_removed"]
             if variant == "B":
                 report["variants"][variant]["radar_people_count"] = page.locator(".radar-person").count()

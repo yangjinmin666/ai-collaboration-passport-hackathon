@@ -889,10 +889,7 @@ function renderVariantA() {
       <section class="recommendation-progress" aria-label="推荐浏览进度">
         ${recommendationPool.map((item, index) => `<i class="${index === currentIndex ? "active" : ""}" title="${item.name}"></i>`).join("")}
       </section>
-      <section class="recommendation-boundary">
-        <span>线上只表达意愿</span>
-        <p>线下碰卡后才会直接交换双方授权信息并建联。</p>
-      </section>
+      <p class="recommendation-boundary">线上只表达“想认识”，线下碰卡后才交换双方授权信息并建联。</p>
     </div>
   `;
 }

@@ -251,9 +251,8 @@ body::before {
 .recommendation-progress { display: flex; justify-content: center; gap: 4px; margin-top: 9px; }
 .recommendation-progress i { width: 4px; height: 4px; border-radius: 999px; background: #d5dbe2; transition: width .18s ease, background .18s ease; }
 .recommendation-progress i.active { width: 15px; background: var(--guide-blue); }
-.recommendation-boundary { margin: 14px 2px 0; padding: 10px 12px; border: 1px solid #e0e5eb; border-radius: 15px; background: #f8f9fb; }
-.recommendation-boundary span { color: #2e3b49; font-size: 9px; font-weight: 750; }
-.recommendation-boundary p { margin: 3px 0 0; color: #7d8894; font-size: 8px; line-height: 1.45; }
+.recommendation-boundary { display: flex; align-items: flex-start; gap: 7px; margin: 14px 5px 0; color: #7d8894; font-size: 8px; line-height: 1.5; }
+.recommendation-boundary::before { width: 5px; height: 5px; flex: 0 0 auto; margin-top: .42em; border-radius: 50%; background: var(--guide-blue); content: ""; }
 
 .text-action { border: 0; background: transparent; padding: 6px; font-size: 10px; font-weight: 650; color: var(--cobalt); cursor: pointer; }
 
@@ -764,6 +763,7 @@ body[data-flow="onboarding"] .onboarding-shell { background: #fff; background-im
   .app-nav { bottom: 10px; }
   .screen { padding-bottom: 96px; }
   .radar-field { width: 286px; height: 286px; margin-top: -2px; }
+  .recommendation-deck { height: 408px; }
 
   /* Mobile typography foundation: real-device sizes, not scaled mockup sizes. */
   .micro-label, .eyebrow { font-size: var(--type-micro); line-height: 1.4; }
@@ -797,8 +797,7 @@ body[data-flow="onboarding"] .onboarding-shell { background: #fff; background-im
   .recommendation-card-active > footer b { font-size: var(--type-label); }
   .recommendation-actions small { font-size: 11px; }
   .recommendation-hint { font-size: var(--type-micro); }
-  .recommendation-boundary span { font-size: var(--type-label); }
-  .recommendation-boundary p { font-size: 11px; line-height: var(--leading-body); }
+  .recommendation-boundary { font-size: 11px; line-height: var(--leading-body); }
 
   /* Onboarding: one readable hierarchy across all four steps. */
   .onboarding-header > strong { font-size: var(--type-label); }
