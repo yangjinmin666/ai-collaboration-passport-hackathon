@@ -78,6 +78,44 @@ def assert_mobile_visual_baseline(page, report: dict, label: str):
     assert not baseline["touchViolations"], baseline["touchViolations"]
 
 
+def recommendation_layout_geometry(page, text_scale: float = 1.0) -> dict:
+    """Measure the fixed recommendation viewport with realistic safe-area insets."""
+    return page.locator(".phone-shell").evaluate(
+        """(shell, scale) => {
+            shell.style.setProperty('--rally-safe-area-top', '47px');
+            shell.style.setProperty('--rally-safe-area-bottom', '27px');
+            if (scale !== 1) {
+                shell.querySelectorAll('.recommendation-view *').forEach(element => {
+                    const size = parseFloat(getComputedStyle(element).fontSize);
+                    if (size) element.style.fontSize = `${size * scale}px`;
+                });
+            }
+            const screen = shell.querySelector('.screen');
+            const card = shell.querySelector('.recommendation-card-active');
+            const footer = card.querySelector(':scope > footer');
+            const actions = shell.querySelector('.recommendation-actions');
+            const nav = shell.querySelector('.app-nav');
+            const rect = element => element.getBoundingClientRect();
+            screen.scrollTop = screen.scrollHeight;
+            card.scrollTop = card.scrollHeight;
+            return {
+                screenClientHeight: screen.clientHeight,
+                screenScrollHeight: screen.scrollHeight,
+                screenScrollTop: screen.scrollTop,
+                cardHeight: rect(card).height,
+                cardClientHeight: card.clientHeight,
+                cardScrollHeight: card.scrollHeight,
+                cardScrollTop: card.scrollTop,
+                cardFooterInset: rect(card).bottom - rect(footer).bottom,
+                actionNavGap: rect(nav).top - rect(actions).bottom,
+                bodyScrollWidth: document.body.scrollWidth,
+                viewportWidth: innerWidth,
+            };
+        }""",
+        text_scale,
+    )
+
+
 def dispatch_recommendation_swipe(page, delta_x: int, pointer_id: int):
     """Dispatch one deterministic swipe gesture against the active recommendation."""
     page.locator(".recommendation-card-active").evaluate(
@@ -203,6 +241,31 @@ def main():
         assert live_gate_geometry["scrollHeight"] <= live_gate_geometry["clientHeight"] + 1
         layout_page.close()
 
+        short_layout_page = context.new_page()
+        short_layout_page.set_viewport_size({"width": 390, "height": 667})
+        short_layout_page.goto(f"{BASE_URL}/?variant=A&splash=0", wait_until="networkidle")
+        short_layout = recommendation_layout_geometry(short_layout_page)
+        report["visual_baseline"]["short_recommendation_viewport"] = short_layout
+        assert short_layout["screenScrollHeight"] <= short_layout["screenClientHeight"] + 1
+        assert short_layout["screenScrollTop"] == 0
+        assert short_layout["cardScrollHeight"] <= short_layout["cardClientHeight"] + 1
+        assert short_layout["cardFooterInset"] >= 10
+        assert short_layout["actionNavGap"] >= 16
+        assert short_layout["bodyScrollWidth"] <= short_layout["viewportWidth"]
+        short_layout_page.close()
+
+        large_text_page = context.new_page()
+        large_text_page.goto(f"{BASE_URL}/?variant=A&splash=0", wait_until="networkidle")
+        large_text_layout = recommendation_layout_geometry(large_text_page, text_scale=1.3)
+        report["visual_baseline"]["large_text_recommendation_viewport"] = large_text_layout
+        assert large_text_layout["screenScrollHeight"] <= large_text_layout["screenClientHeight"] + 1
+        assert large_text_layout["screenScrollTop"] == 0
+        assert large_text_layout["cardScrollHeight"] > large_text_layout["cardClientHeight"]
+        assert large_text_layout["cardScrollTop"] > 0
+        assert large_text_layout["cardFooterInset"] >= 10
+        assert large_text_layout["actionNavGap"] >= 16
+        large_text_page.close()
+
         page = context.new_page()
         page.on("console", lambda msg: report["errors"].append(f"console:{msg.type}:{msg.text}") if msg.type == "error" else None)
         page.on("pageerror", lambda error: report["errors"].append(f"page:{error}"))
@@ -254,41 +317,16 @@ def main():
                     and page.get_by_text("右滑想认识 →", exact=True).count() == 0
                 )
                 assert report["variants"][variant]["persistent_swipe_hint_removed"]
-                recommendation_viewport = page.locator(".phone-shell").evaluate(
-                    """shell => {
-                        shell.style.setProperty('--rally-safe-area-top', '47px');
-                        shell.style.setProperty('--rally-safe-area-bottom', '27px');
-                        const screen = shell.querySelector('.screen');
-                        screen.scrollTop = screen.scrollHeight;
-                        return {
-                            clientHeight: screen.clientHeight,
-                            scrollHeight: screen.scrollHeight,
-                            scrollTop: screen.scrollTop,
-                        };
-                    }"""
-                )
+                recommendation_viewport = recommendation_layout_geometry(page)
                 report["variants"][variant]["recommendation_stays_in_one_viewport"] = (
                     page.locator(".recommendation-boundary").count() == 0
-                    and recommendation_viewport["scrollHeight"] <= recommendation_viewport["clientHeight"] + 1
-                    and recommendation_viewport["scrollTop"] == 0
-                )
-                card_geometry = page.locator(".recommendation-card-active").evaluate(
-                    """card => {
-                        const footer = card.querySelector(':scope > footer');
-                        const cardBox = card.getBoundingClientRect();
-                        const footerBox = footer.getBoundingClientRect();
-                        return {
-                            height: cardBox.height,
-                            bottomInset: cardBox.bottom - footerBox.bottom,
-                            clientHeight: card.clientHeight,
-                            scrollHeight: card.scrollHeight,
-                        };
-                    }"""
+                    and recommendation_viewport["screenScrollHeight"] <= recommendation_viewport["screenClientHeight"] + 1
+                    and recommendation_viewport["screenScrollTop"] == 0
                 )
                 report["variants"][variant]["recommendation_card_has_safe_bottom_inset"] = (
-                    card_geometry["height"] >= 400
-                    and card_geometry["bottomInset"] >= 16
-                    and card_geometry["scrollHeight"] <= card_geometry["clientHeight"]
+                    recommendation_viewport["cardHeight"] >= 400
+                    and recommendation_viewport["cardFooterInset"] >= 16
+                    and recommendation_viewport["cardScrollHeight"] <= recommendation_viewport["cardClientHeight"]
                 )
                 report["variants"][variant]["table_like_lists_removed"] = (
                     page.locator(".role-roster-person, .person-row").count() == 0
@@ -296,7 +334,7 @@ def main():
                 assert report["variants"][variant]["active_recommendation_cards"] == 1
                 assert report["variants"][variant]["recommendation_progress_count"] == 11
                 assert report["variants"][variant]["recommendation_stays_in_one_viewport"], recommendation_viewport
-                assert report["variants"][variant]["recommendation_card_has_safe_bottom_inset"], card_geometry
+                assert report["variants"][variant]["recommendation_card_has_safe_bottom_inset"], recommendation_viewport
                 assert report["variants"][variant]["table_like_lists_removed"]
             if variant == "B":
                 discovery_backgrounds = page.locator(".phone-shell").evaluate(
