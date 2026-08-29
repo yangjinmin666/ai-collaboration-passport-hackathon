@@ -1034,6 +1034,69 @@ def main():
             lin_page.get_by_text("离线会议洞察终端", exact=True).wait_for(timeout=8000)
             assert lin_page.locator(".live-login-card").count() == 0
 
+            zhou_page.set_viewport_size({"width": 1440, "height": 900})
+            zhou_page.goto(
+                f"{frontend_url}/?variant=A&workspace=1&view=collaboration&live=1"
+                f"&apiBase={urllib.parse.quote(backend_url, safe=':/')}",
+            )
+            desktop_workspace = zhou_page.locator(
+                f'.live-workspace-view[data-live-project-id="{project_id}"]'
+            )
+            desktop_workspace.wait_for(timeout=8000)
+            desktop_grid = desktop_workspace.locator(".workspace-desktop-grid")
+            assert desktop_grid.is_visible()
+            assert desktop_grid.get_by_text("周闻", exact=True).first.is_visible()
+            assert desktop_grid.get_by_text("林澈", exact=True).first.is_visible()
+            assert desktop_grid.locator("[data-live-task-id]").count() == len(
+                room["tasks"]
+            )
+            assert desktop_grid.get_by_text("0 / 2 位成员已确认", exact=True).is_visible()
+
+            unowned_task = next(
+                task for task in room["tasks"]
+                if task["confirmed_owner_id"] is None
+            )
+            desktop_grid.locator(
+                f'[data-live-task-id="{unowned_task["id"]}"] '
+                '[data-action="live-task-action"][data-resolution="claim"]'
+            ).click()
+            zhou_page.get_by_text("任务已认领", exact=True).wait_for(timeout=5000)
+            task_card = desktop_grid.locator(
+                f'[data-live-task-id="{unowned_task["id"]}"]'
+            )
+            task_card.get_by_text("负责人：周闻", exact=False).wait_for(timeout=8000)
+            assert task_card.get_by_role("button", name="开始任务").is_visible()
+
+            desktop_grid.get_by_role("button", name="确认当前计划").click()
+            zhou_page.get_by_text("已记录你的确认，等待其他成员", exact=True).wait_for(
+                timeout=5000
+            )
+            desktop_grid.get_by_text("1 / 2 位成员已确认", exact=True).wait_for(
+                timeout=8000
+            )
+            _, desktop_room = request_json(
+                f"{backend_url}/api/projects/{project_id}/room",
+                user_id="user-zhou",
+            )
+            assert desktop_room["confirmation_progress"] == {
+                "confirmed": 1,
+                "required": 2,
+            }
+            assert any(
+                task["id"] == unowned_task["id"]
+                and task["confirmed_owner_id"] == "user-zhou"
+                for task in desktop_room["tasks"]
+            )
+            zhou_page.reload()
+            desktop_workspace.wait_for(timeout=8000)
+            refreshed_desktop_grid = desktop_workspace.locator(
+                ".workspace-desktop-grid"
+            )
+            assert refreshed_desktop_grid.is_visible()
+            assert refreshed_desktop_grid.get_by_text(
+                "1 / 2 位成员已确认", exact=True
+            ).is_visible()
+
             zhou_context.close()
             lin_context.close()
             browser.close()
@@ -1056,6 +1119,7 @@ def main():
             "discover_sync_error_visible": True,
             "first_time_phone_user_profile_ready": True,
             "two_device_main_flow_persisted": True,
+            "live_desktop_workspace_connected": True,
             "browser_errors": errors,
         }, ensure_ascii=False, indent=2))
     finally:

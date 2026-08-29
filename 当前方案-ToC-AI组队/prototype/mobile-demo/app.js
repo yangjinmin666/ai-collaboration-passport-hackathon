@@ -1758,30 +1758,159 @@ function renderLiveCollaboration() {
 
   const room = state.live.room;
   const pack = room?.starter_pack;
-  const tasks = room?.tasks || [];
   const canGenerate = new Set(["ORIGINATOR", "LEADER"]).has(project.my_membership?.membership_role);
-  const memberName = (userId) => room?.members.find((member) => member.user_id === userId)?.display_name || "待认领";
-  return `<div class="view utility-view live-workspace-view">
+  const members = room?.members || project.members || [];
+  const launchStage = !pack ? 1 : pack.status === "CONFIRMED" ? 3 : 2;
+  const launchLabel = !pack
+    ? "等待生成启动计划"
+    : pack.status === "CONFIRMED"
+      ? "计划已确认，进入执行"
+      : "当前确认分工";
+  return `<div class="view utility-view workspace-view live-workspace-view" data-live-project-id="${escapeHtml(project.id)}">
     ${commonHeader("协作")}
-    <section class="project-card live-project-summary">
-      <p class="micro-label">COSPAN SPACE / LIVE</p><h3>${escapeHtml(project.title)}</h3><p>${escapeHtml(project.summary)}</p>
-      <div class="live-member-list">${project.members.map((member) => `<span>${escapeHtml(member.display_name)}<small>${escapeHtml(member.profile_role || member.membership_role)}</small></span>`).join("")}</div>
-      ${state.live.syncError ? `<div class="inline-sync-error"><span>${state.live.syncError}</span><button data-action="sync-live-now">重试</button></div>` : ""}
+    <section class="workspace-project-head live-project-summary">
+      <div class="workspace-project-top">
+        <div class="workspace-live"><i></i>${pack?.status === "CONFIRMED" ? "执行中" : "后端实时同步"}</div>
+        <span class="workspace-room-label">COSPAN SPACE / LIVE</span>
+      </div>
+      <h3>${escapeHtml(project.title)}</h3>
+      <p>${escapeHtml(project.summary)}</p>
+      <div class="workspace-project-meta">
+        <div class="workspace-avatar-stack" aria-label="${members.length} 位项目成员">${members.map((member) => `<span>${escapeHtml((member.display_name || "成员").slice(0, 2).toUpperCase())}</span>`).join("")}</div>
+        <span><strong>${members.length} 位成员</strong><small>${pack ? `计划 V${pack.version}` : "等待启动计划"}</small></span>
+        <b>${room?.agent_daily_budget ? `Agent ${room.agent_daily_budget.used}/${room.agent_daily_budget.cap}` : "实时 Room"}</b>
+      </div>
+      <div class="workspace-launch-summary" role="progressbar" aria-label="项目启动进度" aria-valuemin="1" aria-valuemax="3" aria-valuenow="${launchStage}">
+        <div><span>启动进度</span><strong>${launchStage} / 3 · ${launchLabel}</strong></div>
+        <small>${pack ? `${room.confirmation_progress.confirmed} / ${room.confirmation_progress.required} 位成员已确认` : "项目成员到齐后，由发起人生成首版计划"}</small>
+        <i aria-hidden="true"><b style="width:${launchStage / 3 * 100}%"></b></i>
+      </div>
+      ${state.live.syncError ? `<div class="inline-sync-error"><span>${escapeHtml(state.live.syncError)}</span><button data-action="sync-live-now">重试</button></div>` : ""}
     </section>
-      ${!pack ? `<section class="launch-pack live-empty-pack"><p class="micro-label">STARTER PACK</p><h3>${project.members.length < 2 ? "等待成员确认入队" : "团队已就绪，可以生成启动计划"}</h3><p>${project.members.length < 2 ? "邀请已发出，对方确认前不会成为成员或被分配任务。" : "Agent 先生成可修改的模板建议；任务仍需成员主动认领并由全员确认。"}</p>${canGenerate && project.members.length >= 2 ? `<button class="primary-button full" data-action="generate-live-pack" ${liveBusyAttributes(`starter-pack:${project.id}`)}>生成启动计划</button>` : ""}</section>` : `<section class="launch-pack live-task-pack">
-      <header><div><p class="micro-label">PLAN BASELINE V${pack.version}</p><h3>人机协作启动计划</h3></div><span class="source-chip">${pack.generated_by === "TEMPLATE_FALLBACK" ? "模板降级" : "模型生成"}</span></header>
-      <aside class="workspace-risk"><span>先确认的风险</span><strong>${escapeHtml(pack.risk.summary)}</strong></aside>
-      <div class="live-task-list">${tasks.map((task, index) => {
-        const mine = task.confirmed_owner_id === state.live.currentUserId;
-        const action = !task.confirmed_owner_id ? ["claim", "我来负责"]
-          : mine && task.status === "ACCEPTED" ? ["start", "开始任务"]
-            : mine && task.status === "IN_PROGRESS" ? ["complete", "标记完成"]
-              : null;
-        return `<article><b>${String(index + 1).padStart(2, "0")}</b><span><strong>${escapeHtml(task.title)}</strong><small>${escapeHtml(task.acceptance_criteria)}</small><em>负责人：${escapeHtml(memberName(task.confirmed_owner_id))} · ${task.status}</em></span>${action ? `<button data-action="live-task-action" data-task-id="${task.id}" data-resolution="${action[0]}" ${liveBusyAttributes(`task:${task.id}`)}>${action[1]}</button>` : ""}</article>`;
-      }).join("")}</div>
-      <footer class="live-plan-confirmation"><span>全员确认 ${room.confirmation_progress.confirmed}/${room.confirmation_progress.required}</span><button class="primary-button" data-action="confirm-live-plan" ${pack.status === "CONFIRMED" ? "disabled" : liveBusyAttributes(`plan-confirmation:${project.id}`)}>${pack.status === "CONFIRMED" ? "计划已确认" : "确认当前计划"}</button></footer>
-    </section>`}
+    <div class="workspace-mobile-content">
+      ${renderLivePlanPanel(project, room, canGenerate, false)}
+    </div>
+    ${renderLiveDesktopWorkspace(project, room, canGenerate)}
   </div>`;
+}
+
+function liveRoomMember(room, userId) {
+  return room?.members?.find((member) => member.user_id === userId) || null;
+}
+
+function liveMemberName(room, userId) {
+  return liveRoomMember(room, userId)?.display_name || "待认领";
+}
+
+function liveMembershipLabel(role) {
+  return ({ ORIGINATOR: "项目发起人", LEADER: "团队 Leader", MEMBER: "项目成员" })[role] || "项目成员";
+}
+
+function liveTaskStatusLabel(status) {
+  return ({ PROPOSED: "待认领", ACCEPTED: "已接受", IN_PROGRESS: "进行中", BLOCKED: "已阻塞", DONE: "已完成" })[status] || status;
+}
+
+function liveTaskAction(task) {
+  const mine = task.confirmed_owner_id === state.live.currentUserId;
+  if (!task.confirmed_owner_id) return ["claim", "我来负责"];
+  if (mine && task.status === "ACCEPTED") return ["start", "开始任务"];
+  if (mine && task.status === "IN_PROGRESS") return ["complete", "标记完成"];
+  return null;
+}
+
+function renderLiveTaskRows(room, desktop = false) {
+  return (room?.tasks || []).map((task, index) => {
+    const action = liveTaskAction(task);
+    const mine = task.confirmed_owner_id === state.live.currentUserId;
+    const taskMarker = desktop ? ` data-live-task-id="${escapeHtml(task.id)}"` : "";
+    const actionControl = action
+      ? `<button data-action="live-task-action" data-task-id="${escapeHtml(task.id)}" data-resolution="${action[0]}" ${liveBusyAttributes(`task:${task.id}`)}>${action[1]}</button>`
+      : mine
+        ? "<em>我负责</em>"
+        : "";
+    return `<article${taskMarker}><b>${String(index + 1).padStart(2, "0")}</b><span><strong>${escapeHtml(task.title)}</strong><small>${escapeHtml(task.acceptance_criteria)}</small><em>${escapeHtml(task.mode)} · ${escapeHtml(liveTaskStatusLabel(task.status))} · 负责人：${escapeHtml(liveMemberName(room, task.confirmed_owner_id))}</em></span>${actionControl}</article>`;
+  }).join("");
+}
+
+function renderLivePlanPanel(project, room, canGenerate, desktop) {
+  const pack = room?.starter_pack;
+  const memberCount = room?.members?.length || project.members?.length || 0;
+  if (!pack) {
+    return `<section class="launch-pack live-empty-pack">
+      <p class="micro-label">STARTER PACK / LIVE</p>
+      <h3>${memberCount < 2 ? "等待成员确认入队" : "团队已就绪，可以生成启动计划"}</h3>
+      <p>${memberCount < 2 ? "邀请已发出，对方确认前不会成为成员或被分配任务。" : "Agent 先生成可修改的建议；任务仍需成员主动认领并由全员确认。"}</p>
+      ${canGenerate && memberCount >= 2 ? `<button class="primary-button full" data-action="generate-live-pack" ${liveBusyAttributes(`starter-pack:${project.id}`)}>生成启动计划</button>` : ""}
+    </section>`;
+  }
+  return `<section class="${desktop ? "agent-proposal" : "launch-pack live-task-pack"}" data-live-pack-id="${escapeHtml(pack.id)}">
+    <header><div><p class="micro-label">PLAN BASELINE V${pack.version} · LIVE</p><h3>${desktop ? "实时分工与任务" : "人机协作启动计划"}</h3></div><span class="source-chip">${pack.generated_by === "TEMPLATE_FALLBACK" ? "模板降级" : "模型生成"}</span></header>
+    <p>所有任务和负责人均来自后端 Room；认领和确认会写回协作基线，刷新后继续恢复。</p>
+    <aside class="workspace-risk"><span>先确认的风险</span><strong>${escapeHtml(pack.risk?.summary || "先锁定最小可行交付边界")}</strong></aside>
+    <div class="live-task-list">${renderLiveTaskRows(room, desktop)}</div>
+    <footer class="live-plan-confirmation"><span>${room.confirmation_progress.confirmed} / ${room.confirmation_progress.required} 位成员已确认</span><button class="primary-button" data-action="confirm-live-plan" ${pack.status === "CONFIRMED" ? "disabled" : liveBusyAttributes(`plan-confirmation:${project.id}`)}>${pack.status === "CONFIRMED" ? "计划已确认" : "确认当前计划"}</button></footer>
+  </section>`;
+}
+
+function liveActivityTitle(activity, room) {
+  const actor = liveMemberName(room, activity.actor_id);
+  const labels = {
+    project_created: "项目已创建",
+    team_invitation_created: "已发出项目邀请",
+    team_invitation_accepted: `${actor} 确认加入项目`,
+    starter_pack_generated: "Agent 已生成启动计划",
+    task_claimed: `${actor} 已认领任务`,
+    task_started: `${actor} 已开始任务`,
+    task_completed: `${actor} 已完成任务`,
+    task_blocked: `${actor} 将任务标记为阻塞`,
+    plan_confirmation_recorded: `${actor} 已确认当前计划`,
+    plan_confirmed: "全员已确认当前计划",
+    plan_reopened_for_member: "新成员加入，计划已重新开放确认",
+    agent_run_started: `${actor} 已触发 Agent`,
+    agent_run_completed: "Agent 运行已完成，等待人类审阅",
+    agent_run_reviewed: `${actor} 已审阅 Agent 结果`,
+    agent_run_cancelled: `${actor} 已取消 Agent 运行`,
+    project_sos_created: `${actor} 已发布项目 SOS`,
+  };
+  return labels[activity.event_type] || "协作空间状态已更新";
+}
+
+function renderLiveActivityTimeline(room) {
+  const activity = (room?.activity || []).slice(0, 8);
+  if (!activity.length) return `<div class="workspace-timeline"><article><i></i><span><strong>等待第一条协作记录</strong><small>关键变化会由后端写入这里</small></span></article></div>`;
+  return `<div class="workspace-timeline">${activity.map((item, index) => `<article class="${index === 0 ? "is-current" : ""}"><i></i><span><strong>${escapeHtml(liveActivityTitle(item, room))}</strong><small>${escapeHtml(item.source || "live")} · ${escapeHtml(new Date(item.created_at).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }))}</small></span></article>`).join("")}</div>`;
+}
+
+function renderLiveAgentRuns(room) {
+  const runs = room?.agent_runs || [];
+  if (!runs.length) return `<article class="workspace-risk"><span>Agent 运行</span><p>当前没有运行记录；计划确认后，HUMAN_AGENT 任务可由负责人触发简报。</p></article>`;
+  return `<div class="workspace-timeline">${runs.slice(0, 4).map((run) => `<article><i></i><span><strong>${run.agent_kind === "PLANNER" ? "启动计划 Agent" : "调研简报 Agent"} · ${escapeHtml(run.status)}</strong><small>${escapeHtml(run.model || "模型待记录")} · ${Number(run.total_tokens || 0)} tokens</small></span></article>`).join("")}</div>`;
+}
+
+function renderLiveDesktopWorkspace(project, room, canGenerate) {
+  if (!room) return `<section class="workspace-desktop-grid" aria-label="桌面协作工作台"><main class="desktop-workspace-panel desktop-agent-panel"><div class="live-spinner"></div><p>正在从后端恢复协作空间…</p></main></section>`;
+  const budget = room.agent_daily_budget || { used: 0, cap: 0 };
+  return `<section class="workspace-desktop-grid" aria-label="桌面协作工作台">
+    <aside class="desktop-workspace-panel desktop-members-panel">
+      <header><p class="micro-label">TEAM / LIVE</p><h3>成员与权限</h3><span>来自项目成员关系</span></header>
+      <div class="workspace-members">${room.members.map((member) => {
+        const person = livePerson({ user_id: member.user_id, display_name: member.display_name, avatar: member.avatar, role: member.profile_role, status: liveMembershipLabel(member.membership_role) });
+        return `<article>${glyph(person, "sm")}<span><strong>${escapeHtml(member.display_name)}</strong><small>${escapeHtml(liveMembershipLabel(member.membership_role))} · ${escapeHtml(member.profile_role || "协作成员")}</small></span><em>${member.user_id === state.live.currentUserId ? "当前账号" : "已加入"}</em></article>`;
+      }).join("")}</div>
+      <aside class="workspace-governance"><span>权限边界</span><p>只有项目发起人或 Leader 能生成启动计划；任务必须由本人认领，计划必须由全员确认。</p></aside>
+      <section class="workspace-handoff"><div><span>真实 Room</span><p>成员、任务、确认进度与活动记录均由后端保存，刷新和跨设备可恢复。</p></div></section>
+    </aside>
+    <main class="desktop-workspace-panel desktop-agent-panel">
+      <header><p class="micro-label">AGENT ROUTING / LIVE</p><h3>分工与执行</h3><span>建议不会自动生效</span></header>
+      ${renderLivePlanPanel(project, room, canGenerate, true)}
+    </main>
+    <aside class="desktop-workspace-panel desktop-records-panel">
+      <header><p class="micro-label">PROJECT MEMORY / LIVE</p><h3>记录与决策</h3><span>受保护的后端审计记录</span></header>
+      ${renderLiveActivityTimeline(room)}
+      <aside class="record-policy"><b>Agent 预算：${budget.used} / ${budget.cap}</b><p>Agent 输出保持待审阅状态，不能替成员确认计划或接受任务。</p></aside>
+      ${renderLiveAgentRuns(room)}
+    </aside>
+  </section>`;
 }
 
 function renderCollaborationLobby() {
