@@ -989,6 +989,13 @@ def main():
             zhou_page.get_by_label("输入消息").fill(
                 "我们先聊清楚想服务哪类参展者？"
             )
+            zhou_page.wait_for_timeout(2800)
+            assert zhou_page.get_by_label("输入消息").evaluate(
+                "element => document.activeElement === element"
+            )
+            assert zhou_page.get_by_label("输入消息").input_value() == (
+                "我们先聊清楚想服务哪类参展者？"
+            )
             zhou_page.get_by_role("button", name="发送消息").click()
             zhou_page.get_by_text(
                 "我们先聊清楚想服务哪类参展者？", exact=True

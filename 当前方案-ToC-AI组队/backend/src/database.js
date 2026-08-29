@@ -1429,6 +1429,20 @@ export function createConnectionMessage(
 ) {
   database.exec("BEGIN IMMEDIATE");
   try {
+    const connection = findConnectionById(database, connectionId);
+    if (!connection) {
+      database.exec("ROLLBACK");
+      return { outcome: "NOT_FOUND" };
+    }
+    if (!connection.members.includes(senderId)) {
+      database.exec("ROLLBACK");
+      return { outcome: "FORBIDDEN" };
+    }
+    if (connection.status !== "ACTIVE") {
+      database.exec("ROLLBACK");
+      return { outcome: "INACTIVE" };
+    }
+
     if (clientMessageId) {
       const existing = database.prepare(`
         SELECT * FROM connection_messages
@@ -1436,7 +1450,11 @@ export function createConnectionMessage(
       `).get(connectionId, senderId, clientMessageId);
       if (existing) {
         database.exec("COMMIT");
-        return { message: mapConnectionMessage(existing), idempotentReplay: true };
+        return {
+          outcome: "SENT",
+          message: mapConnectionMessage(existing),
+          idempotentReplay: true,
+        };
       }
     }
 
@@ -1450,7 +1468,6 @@ export function createConnectionMessage(
     const message = mapConnectionMessage(database.prepare(`
       SELECT * FROM connection_messages WHERE message_id = ?
     `).get(messageId));
-    const connection = findConnectionById(database, connectionId);
     appendEventLog(database, {
       eventId: connection.event_id,
       actorId: senderId,
@@ -1462,7 +1479,7 @@ export function createConnectionMessage(
       createdAt: now,
     });
     database.exec("COMMIT");
-    return { message, idempotentReplay: false };
+    return { outcome: "SENT", message, idempotentReplay: false };
   } catch (error) {
     database.exec("ROLLBACK");
     throw error;
@@ -1499,7 +1516,8 @@ export function readConnectionConversation(
   `).get(userId, userId, connectionId, userId);
   if (!connection) return null;
 
-  const messages = database.prepare(`
+  const messageLimit = Math.max(1, Math.min(Number(limit) || 100, 100));
+  const messageRows = database.prepare(`
     SELECT * FROM (
       SELECT * FROM connection_messages
       WHERE connection_id = ?
@@ -1507,7 +1525,9 @@ export function readConnectionConversation(
       LIMIT ?
     ) recent
     ORDER BY message_seq ASC
-  `).all(connectionId, Math.max(1, Math.min(Number(limit) || 100, 100)));
+  `).all(connectionId, messageLimit + 1);
+  const hasMore = messageRows.length > messageLimit;
+  const messages = hasMore ? messageRows.slice(-messageLimit) : messageRows;
   const unread = database.prepare(`
     SELECT count(*) AS unread_count
     FROM connection_messages
@@ -1541,7 +1561,7 @@ export function readConnectionConversation(
     messages: messages.map(mapConnectionMessage),
     unread_count: Number(unread.unread_count),
     last_read_message_id: lastRead?.message_id ?? null,
-    has_more: messages.length >= Math.max(1, Math.min(Number(limit) || 100, 100)),
+    has_more: hasMore,
   };
 }
 

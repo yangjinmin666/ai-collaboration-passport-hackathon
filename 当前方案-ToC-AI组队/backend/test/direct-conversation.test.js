@@ -157,5 +157,57 @@ describe("direct conversation", () => {
     );
     assert.equal(inactive.status, 409);
     assert.equal((await inactive.json()).error.code, "CONNECTION_INACTIVE");
+
+    const blockedSend = await fetch(`${baseUrl}/api/connections/${connection.id}/messages`, {
+      method: "POST",
+      headers: headers("user-zhou"),
+      body: JSON.stringify({ text: "拉黑后不应发送成功" }),
+    });
+    assert.equal(blockedSend.status, 409);
+    assert.equal((await blockedSend.json()).error.code, "CONNECTION_INACTIVE");
+  });
+
+  test("message pagination distinguishes an exact page from additional history", async () => {
+    const { connection } = await createConnection();
+
+    for (let index = 1; index <= 100; index += 1) {
+      const sent = await fetch(`${baseUrl}/api/connections/${connection.id}/messages`, {
+        method: "POST",
+        headers: headers("user-zhou"),
+        body: JSON.stringify({
+          text: `消息 ${index}`,
+          client_message_id: `client-pagination-${String(index).padStart(4, "0")}`,
+        }),
+      });
+      assert.equal(sent.status, 201);
+    }
+
+    const exactPage = await fetch(
+      `${baseUrl}/api/connections/${connection.id}/conversation`,
+      { headers: headers("user-lin") },
+    );
+    const exactConversation = (await exactPage.json()).conversation;
+    assert.equal(exactConversation.messages.length, 100);
+    assert.equal(exactConversation.has_more, false);
+
+    const overflow = await fetch(`${baseUrl}/api/connections/${connection.id}/messages`, {
+      method: "POST",
+      headers: headers("user-zhou"),
+      body: JSON.stringify({
+        text: "消息 101",
+        client_message_id: "client-pagination-0101",
+      }),
+    });
+    assert.equal(overflow.status, 201);
+
+    const additionalHistory = await fetch(
+      `${baseUrl}/api/connections/${connection.id}/conversation`,
+      { headers: headers("user-lin") },
+    );
+    const pagedConversation = (await additionalHistory.json()).conversation;
+    assert.equal(pagedConversation.messages.length, 100);
+    assert.equal(pagedConversation.messages[0].text, "消息 2");
+    assert.equal(pagedConversation.messages.at(-1).text, "消息 101");
+    assert.equal(pagedConversation.has_more, true);
   });
 });

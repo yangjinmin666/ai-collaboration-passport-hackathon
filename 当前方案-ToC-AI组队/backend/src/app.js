@@ -1744,6 +1744,28 @@ export function createApi({
           clientMessageId: clientMessageId ?? null,
           now,
         });
+        if (result.outcome === "NOT_FOUND") {
+          sendError(response, 404, "CONNECTION_NOT_FOUND", "Connection not found.");
+          return;
+        }
+        if (result.outcome === "FORBIDDEN") {
+          sendError(
+            response,
+            403,
+            "CONNECTION_FORBIDDEN",
+            "Only connection participants can use this conversation.",
+          );
+          return;
+        }
+        if (result.outcome === "INACTIVE") {
+          sendError(
+            response,
+            409,
+            "CONNECTION_INACTIVE",
+            "This connection no longer accepts conversation messages.",
+          );
+          return;
+        }
         sendJson(response, result.idempotentReplay ? 200 : 201, {
           message: result.message,
           idempotent_replay: result.idempotentReplay,

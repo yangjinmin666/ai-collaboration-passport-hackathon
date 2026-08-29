@@ -717,6 +717,7 @@ const state = {
     error: "",
     draft: "",
     pendingClientMessageId: null,
+    pendingMessageText: null,
     demoMessages: startsInWorkspace ? {
       lin: [
         {
@@ -2387,11 +2388,19 @@ function renderAppNav() {
     ["profile", "我的"],
   ];
   const unreadConversationCount = state.live.connectionRequests.reduce(
-    (total, request) => total + Number(request.unread_count || 0),
-    0,
+    (byConnection, request) => {
+      if (!request.connection_id) return byConnection;
+      const unreadCount = Number(request.unread_count || 0);
+      byConnection.set(
+        request.connection_id,
+        Math.max(byConnection.get(request.connection_id) || 0, unreadCount),
+      );
+      return byConnection;
+    },
+    new Map(),
   );
   const connectionCount = state.live.enabled
-    ? unreadConversationCount
+    ? [...unreadConversationCount.values()].reduce((total, count) => total + count, 0)
     : (state.connected.length || state.greeted.length);
   const collaborationCount = state.joined.length;
   return `<nav class="app-nav" aria-label="主导航">${items.map(([id, label]) => `<button class="${state.tab === id ? "active" : ""}" data-tab="${id}" aria-label="${label}" ${state.tab === id ? 'aria-current="page"' : ""}><span>${renderAppNavIcon(id)}</span><small>${label}</small>${id === "connections" && connectionCount ? `<i>${connectionCount}</i>` : id === "collaboration" && collaborationCount ? `<i>${collaborationCount}</i>` : ""}</button>`).join("")}</nav>`;
@@ -2632,6 +2641,30 @@ function directConversationPerson(conversation = state.directConversation.data) 
   });
 }
 
+function directConversationMessagesMarkup(direct, person) {
+  const messages = direct.data?.messages || [];
+  const currentUserId = state.live.currentUserId || "user-zhou";
+  if (!messages.length) {
+    return direct.loading
+      ? ""
+      : `<div class="conversation-empty"><span>·</span><strong>从一句具体的话开始</strong><p>可以先问对方想验证什么。发消息不会自动创建项目或分配任务。</p></div>`;
+  }
+  return messages.map((message) => {
+    const mine = message.sender_id === currentUserId;
+    return `<article class="conversation-message ${mine ? "is-mine" : "is-theirs"}" data-message-id="${escapeHtml(message.id)}"><span>${mine ? "我" : escapeHtml(person.name)} · ${directConversationTime(message.created_at)}</span><p>${escapeHtml(message.text)}</p></article>`;
+  }).join("");
+}
+
+function updateFocusedConversationMessages() {
+  const messageList = document.querySelector(".conversation-message-list");
+  const person = directConversationPerson();
+  if (!messageList || !person) return false;
+  messageList.innerHTML = directConversationMessagesMarkup(state.directConversation, person);
+  const scroll = document.querySelector("[data-conversation-scroll]");
+  if (scroll) scroll.scrollTop = scroll.scrollHeight;
+  return true;
+}
+
 function renderDirectConversation() {
   const direct = state.directConversation;
   const conversation = direct.data;
@@ -2643,8 +2676,6 @@ function renderDirectConversation() {
     consent_mode: "physical_mutual",
     connected_at: new Date().toISOString(),
   };
-  const messages = conversation?.messages || [];
-  const currentUserId = state.live.currentUserId || "user-zhou";
   const collaborationAction = state.joined.includes(person.id)
     ? `<button class="secondary-button" data-tab="collaboration">进入共同协作</button>`
     : `<button class="secondary-button" data-action="conversation-intent" data-person="${person.id}">澄清合作意图</button>`;
@@ -2666,12 +2697,9 @@ function renderDirectConversation() {
           ${collaborationAction}
         </aside>
         ${direct.loading && !conversation ? `<div class="conversation-loading"><i></i><span>正在恢复对话…</span></div>` : ""}
-        ${direct.error ? `<div class="conversation-error" role="alert"><span>${escapeHtml(direct.error)}</span><button data-action="retry-conversation">重试</button></div>` : ""}
+        ${direct.error ? `<div class="conversation-error" role="alert"><span>${escapeHtml(direct.error)}</span><button data-action="retry-conversation">${direct.pendingClientMessageId ? (direct.pendingMessageText === direct.draft.trim() ? "重新发送" : "发送当前内容") : "重试"}</button></div>` : ""}
         <section class="conversation-message-list" aria-live="polite">
-          ${messages.length ? messages.map((message) => {
-            const mine = message.sender_id === currentUserId;
-            return `<article class="conversation-message ${mine ? "is-mine" : "is-theirs"}" data-message-id="${escapeHtml(message.id)}"><span>${mine ? "我" : escapeHtml(person.name)} · ${directConversationTime(message.created_at)}</span><p>${escapeHtml(message.text)}</p></article>`;
-          }).join("") : direct.loading ? "" : `<div class="conversation-empty"><span>·</span><strong>从一句具体的话开始</strong><p>可以先问对方想验证什么。发消息不会自动创建项目或分配任务。</p></div>`}
+          ${directConversationMessagesMarkup(direct, person)}
         </section>
       </div>
       <form class="direct-conversation-composer" data-conversation-form>
@@ -3487,7 +3515,12 @@ function handleAction(action, element) {
     return;
   }
   if (action === "retry-conversation") {
-    loadDirectConversation();
+    if (state.directConversation.pendingClientMessageId && state.directConversation.draft.trim()) {
+      const form = document.querySelector("[data-conversation-form]");
+      if (form) sendDirectConversationMessage(form);
+    } else {
+      loadDirectConversation();
+    }
     return;
   }
   if (action === "conversation-intent") {
@@ -4614,7 +4647,9 @@ function openDirectConversation(element) {
   state.directConversation.connectionId = connectionId;
   state.directConversation.error = "";
   state.directConversation.draft = "";
+  state.directConversation.sending = false;
   state.directConversation.pendingClientMessageId = null;
+  state.directConversation.pendingMessageText = null;
   state.overlay = "conversation";
   if (state.live.enabled) {
     state.directConversation.data = null;
@@ -4648,6 +4683,7 @@ async function loadDirectConversation({ silent = false } = {}) {
         `/api/connections/${encodeURIComponent(connectionId)}/conversation`,
         { last_read_message_id: lastMessage.id },
       );
+      if (state.directConversation.connectionId !== connectionId) return;
       conversation = marked.conversation;
       state.live.connectionRequests = state.live.connectionRequests.map((request) => (
         request.connection_id === connectionId
@@ -4660,12 +4696,15 @@ async function loadDirectConversation({ silent = false } = {}) {
     if (counterpartId) state.selectedId = counterpartId;
     state.directConversation.error = "";
   } catch (error) {
+    if (state.directConversation.connectionId !== connectionId) return;
     if (error instanceof ApiError && error.isAuthenticationError) handleLiveFailure(error);
     else state.directConversation.error = safeLiveText(error?.message, "对话暂时无法同步", 160);
   } finally {
     if (state.directConversation.connectionId === connectionId) {
       state.directConversation.loading = false;
-      render();
+      const composerHasFocus = document.activeElement?.closest?.("[data-conversation-form]");
+      if (!silent || !composerHasFocus || state.directConversation.error) render();
+      else updateFocusedConversationMessages();
     }
   }
 }
@@ -4702,9 +4741,13 @@ async function sendDirectConversationMessage(form) {
   const connectionId = state.directConversation.connectionId;
   if (!connectionId || state.directConversation.sending) return;
   const fallbackUuid = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  const clientMessageId = state.directConversation.pendingClientMessageId
-    || `client-${globalThis.crypto?.randomUUID?.() || fallbackUuid}`;
+  const replaysPendingMessage = state.directConversation.pendingClientMessageId
+    && state.directConversation.pendingMessageText === text;
+  const clientMessageId = replaysPendingMessage
+    ? state.directConversation.pendingClientMessageId
+    : `client-${globalThis.crypto?.randomUUID?.() || fallbackUuid}`;
   state.directConversation.pendingClientMessageId = clientMessageId;
+  state.directConversation.pendingMessageText = text;
   state.directConversation.sending = true;
   state.directConversation.error = "";
   render();
@@ -4713,6 +4756,7 @@ async function sendDirectConversationMessage(form) {
       `/api/connections/${encodeURIComponent(connectionId)}/messages`,
       { text, client_message_id: clientMessageId },
     );
+    if (state.directConversation.connectionId !== connectionId) return;
     const messages = state.directConversation.data?.messages || [];
     if (!messages.some((message) => message.id === payload.message.id)) {
       state.directConversation.data = {
@@ -4722,13 +4766,17 @@ async function sendDirectConversationMessage(form) {
     }
     state.directConversation.draft = "";
     state.directConversation.pendingClientMessageId = null;
+    state.directConversation.pendingMessageText = null;
     await loadDirectConversation({ silent: true });
   } catch (error) {
+    if (state.directConversation.connectionId !== connectionId) return;
     if (error instanceof ApiError && error.isAuthenticationError) handleLiveFailure(error);
     else state.directConversation.error = safeLiveText(error?.message, "消息发送失败，可以重试", 160);
   } finally {
-    state.directConversation.sending = false;
-    render();
+    if (state.directConversation.connectionId === connectionId) {
+      state.directConversation.sending = false;
+      render();
+    }
   }
 }
 
