@@ -718,6 +718,7 @@ const state = {
     draft: "",
     pendingClientMessageId: null,
     pendingMessageText: null,
+    loadRevision: 0,
     demoMessages: startsInWorkspace ? {
       lin: [
         {
@@ -4715,6 +4716,13 @@ function openDirectConversation(element) {
 async function loadDirectConversation({ silent = false } = {}) {
   const connectionId = state.directConversation.connectionId;
   if (!state.live.enabled || !connectionId) return;
+  const loadRevision = state.directConversation.loadRevision + 1;
+  state.directConversation.loadRevision = loadRevision;
+  const isCurrentLoad = () => (
+    state.overlay === "conversation"
+    && state.directConversation.connectionId === connectionId
+    && state.directConversation.loadRevision === loadRevision
+  );
   if (!silent) state.directConversation.loading = true;
   state.directConversation.error = "";
   if (!silent) render();
@@ -4722,7 +4730,7 @@ async function loadDirectConversation({ silent = false } = {}) {
     const payload = await api.get(
       `/api/connections/${encodeURIComponent(connectionId)}/conversation`,
     );
-    if (state.directConversation.connectionId !== connectionId) return;
+    if (!isCurrentLoad()) return;
     let conversation = payload.conversation;
     const lastMessage = conversation.messages.at(-1);
     if (conversation.unread_count > 0 && lastMessage) {
@@ -4730,7 +4738,7 @@ async function loadDirectConversation({ silent = false } = {}) {
         `/api/connections/${encodeURIComponent(connectionId)}/conversation`,
         { last_read_message_id: lastMessage.id },
       );
-      if (state.directConversation.connectionId !== connectionId) return;
+      if (!isCurrentLoad()) return;
       conversation = marked.conversation;
       state.live.connectionRequests = state.live.connectionRequests.map((request) => (
         request.connection_id === connectionId
@@ -4743,11 +4751,11 @@ async function loadDirectConversation({ silent = false } = {}) {
     if (counterpartId) state.selectedId = counterpartId;
     state.directConversation.error = "";
   } catch (error) {
-    if (state.directConversation.connectionId !== connectionId) return;
+    if (!isCurrentLoad()) return;
     if (error instanceof ApiError && error.isAuthenticationError) handleLiveFailure(error);
     else state.directConversation.error = safeLiveText(error?.message, "对话暂时无法同步", 160);
   } finally {
-    if (state.directConversation.connectionId === connectionId) {
+    if (isCurrentLoad()) {
       state.directConversation.loading = false;
       const composerHasFocus = document.activeElement?.closest?.("[data-conversation-form]");
       if (composerHasFocus && !state.directConversation.error) {
