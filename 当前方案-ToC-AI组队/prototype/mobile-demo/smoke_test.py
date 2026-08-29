@@ -965,10 +965,13 @@ def main():
         )
         report["flow"]["demo_display_matches_esp32_8048s043"] = (
             page.get_by_text("ESP32-8048S043", exact=True).is_visible()
-            and page.get_by_text("800 × 480", exact=True).is_visible()
-            and 1.63 <= display_ratio <= 1.70
+            and page.get_by_text("480 × 800", exact=True).is_visible()
+            and demo_display.get_attribute("data-orientation") == "portrait"
+            and 0.58 <= display_ratio <= 0.62
             and demo_display.locator(".fake-qr").count() == 0
         )
+        demo_display.screenshot(path=str(OUTPUT_DIR / "esp32-8048s043-portrait.png"))
+        page.locator(".screen").evaluate("screen => { screen.scrollTop = 0; }")
         report["flow"]["platform_links_use_input_rows"] = (
             page.locator(".platform-connect-list .platform-connect-row").count() == 7
             and page.locator(".platform-connect-list input").count() == 7

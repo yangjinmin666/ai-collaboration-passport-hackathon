@@ -2079,10 +2079,10 @@ function renderProfile() {
       ${renderPublicProfileCard()}
       <section class="device-preview">
         <div class="device-preview-head">
-          <div><p class="micro-label">DEMO DISPLAY</p><h3>4.3″ 现场展示屏</h3></div>
-          <span class="sync-chip"><b>● 已同步</b><small>ESP32-8048S043</small><small>800 × 480</small></span>
+          <div><p class="micro-label">DEMO BADGE</p><h3>4.3″ 竖向现场工牌</h3></div>
+          <span class="sync-chip"><b>● 已同步</b><small>ESP32-8048S043</small><small>480 × 800</small></span>
         </div>
-        <div class="eink-card ${state.visible ? "" : "is-hidden"}">
+        <div class="eink-card ${state.visible ? "" : "is-hidden"}" data-orientation="portrait">
           <header class="demo-display-top">
             <span class="demo-display-brand">COSPAN <b>合拍</b></span>
             <span class="demo-display-event">AI HARDWARE HACKATHON 2026</span>
