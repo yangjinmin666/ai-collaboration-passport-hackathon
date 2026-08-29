@@ -248,6 +248,12 @@ def main():
             if variant == "A":
                 report["variants"][variant]["active_recommendation_cards"] = page.locator(".recommendation-card-active").count()
                 report["variants"][variant]["recommendation_progress_count"] = page.locator(".recommendation-progress i").count()
+                report["variants"][variant]["persistent_swipe_hint_removed"] = (
+                    page.locator(".recommendation-hint").count() == 0
+                    and page.get_by_text("← 左滑暂不看", exact=True).count() == 0
+                    and page.get_by_text("右滑想认识 →", exact=True).count() == 0
+                )
+                assert report["variants"][variant]["persistent_swipe_hint_removed"]
                 boundary_style = page.locator(".recommendation-boundary").evaluate(
                     """element => {
                         const style = getComputedStyle(element);
@@ -518,6 +524,11 @@ def main():
         page.get_by_label("怎么称呼你").fill("小雨")
         page.get_by_label("我确认将以上资料公开到本场展会；可以随时修改、暂停或撤回").check()
         report["flow"]["onboarding_card_preview_visible"] = page.locator("[data-onboarding-card-preview]").is_visible()
+        report["flow"]["swipe_directions_only_taught_in_onboarding"] = page.get_by_text(
+            "选择一个头像，确认公开预览。开始发现后，左滑暂不看，右滑表达想认识。以后可以随时在“我的”里修改或暂停展示。",
+            exact=True,
+        ).is_visible()
+        assert report["flow"]["swipe_directions_only_taught_in_onboarding"]
         assert_mobile_visual_baseline(page, report["visual_baseline"], "onboarding_preview")
         page.wait_for_timeout(350)
         page.screenshot(path=str(OUTPUT_DIR / "onboarding-eink-preview.png"), full_page=True)

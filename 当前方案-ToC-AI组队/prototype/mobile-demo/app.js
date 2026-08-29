@@ -1291,7 +1291,7 @@ function renderOnboardingIdentity() {
   const avatars = ["memoji-1", "memoji-2", "memoji-4", "memoji-5", "memoji-7", "memoji-9"];
   const skills = parseProfileList(draft.skills);
   return `<form class="onboarding-step onboarding-form onboarding-identity" data-onboarding-form data-onboarding-step="3">
-    ${onboardingGuide("04 / READY", "最后，让队友知道怎么称呼你。", "选择一个头像，确认公开预览。以后可以随时在“我的”里修改或暂停展示。")}
+    ${onboardingGuide("04 / READY", "最后，让队友知道怎么称呼你。", "选择一个头像，确认公开预览。开始发现后，左滑暂不看，右滑表达想认识。以后可以随时在“我的”里修改或暂停展示。")}
     <section class="onboarding-avatar-picker" aria-label="选择头像">
       <span class="memoji-avatar ${draft.avatar} onboarding-avatar-preview" aria-label="当前头像"></span>
       <div>${avatars.map((avatar) => `<button type="button" class="${draft.avatar === avatar ? "selected" : ""}" data-action="choose-onboarding-avatar" data-avatar="${avatar}" aria-label="选择头像 ${avatar.replace("memoji-", "")}" aria-pressed="${draft.avatar === avatar}"><span class="memoji-avatar ${avatar}"></span></button>`).join("")}</div>
@@ -1468,7 +1468,6 @@ function renderVariantA() {
         <button class="recommendation-detail" data-action="open-person" data-person="${person.id}" aria-label="查看 ${person.name} 的完整信息"><span>•••</span><small>看详情</small></button>
         <button class="recommendation-like" data-action="like-recommendation" data-person="${person.id}" aria-label="向 ${person.name} 表达想认识"><span>认识</span><small>想认识</small></button>
       </section>
-      <p class="recommendation-hint"><span>← 左滑暂不看</span><span>右滑想认识 →</span></p>
       <section class="recommendation-progress" aria-label="推荐浏览进度">
         ${recommendationPool.map((item, index) => `<i class="${index === currentIndex ? "active" : ""}" title="${item.name}"></i>`).join("")}
       </section>
