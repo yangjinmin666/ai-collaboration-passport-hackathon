@@ -229,6 +229,28 @@ const people = [
 const rankedPeople = [...people];
 const radarPeople = rankedPeople;
 
+const availabilityHoursByPerson = {
+  lin: 12,
+  su: 8,
+  qixi: 10,
+  shenlan: 1,
+  baiyu: 4,
+  miya: 2,
+  qiaohe: 4,
+  alan: 8,
+  aguang: 6,
+  hanche: 1,
+  carlo: 10,
+};
+const publicEvidencePeople = new Set(["lin", "su", "baiyu", "miya", "aguang", "carlo"]);
+const defaultDiscoveryFilters = () => ({
+  statuses: [],
+  roles: [],
+  minimumHours: 0,
+  distance: "event",
+  evidenceRequired: false,
+});
+
 const variantNames = {
   A: "发现 · 推荐",
   B: "发现 · 附近",
@@ -293,6 +315,8 @@ const state = {
   invited: startsInWorkspace ? ["lin"] : [],
   joined: startsInWorkspace ? ["lin"] : [],
   connectionFilter: "all",
+  discoveryFilters: defaultDiscoveryFilters(),
+  discoveryFilterDraft: defaultDiscoveryFilters(),
   acceptedTasks: [],
   live: {
     enabled: liveConfig.enabled,
@@ -354,6 +378,61 @@ function activeRadarPeople() {
   return radarPeople;
 }
 
+function roleFilterFor(person) {
+  const searchable = `${person.role || ""} ${(person.skills || []).join(" ")} ${person.teamRole || ""}`;
+  if (/硬件|嵌入式|IoT|结构|工业|CMF|打样/i.test(searchable)) return "hardware";
+  if (/交互|视觉|品牌|创意|WebGL|路演|叙事/i.test(searchable)) return "design";
+  if (/算法|Embedding|RAG|推荐|Agent|API|后端|AI/i.test(searchable)) return "ai";
+  if (/安全|隐私|身份|风控|红队/i.test(searchable)) return "safety";
+  if (/增长|社区|内容|裂变|运营/i.test(searchable)) return "growth";
+  return "product";
+}
+
+function statusFilterFor(person) {
+  const status = person.status || "";
+  if (/未组队|找队伍|正在找/.test(status)) return "seeking";
+  if (/招人|急聘|团队缺人/.test(status)) return "recruiting";
+  return "support";
+}
+
+function availableHoursFor(person) {
+  if (Number.isFinite(person.availabilityHours)) return person.availabilityHours;
+  if (availabilityHoursByPerson[person.id] !== undefined) return availabilityHoursByPerson[person.id];
+  const hours = String(person.availability || "").match(/(\d+(?:\.\d+)?)\s*小?时/);
+  return hours ? Number(hours[1]) : 0;
+}
+
+function hasPublicEvidence(person) {
+  if (typeof person.hasPublicEvidence === "boolean") return person.hasPublicEvidence;
+  return publicEvidencePeople.has(person.id);
+}
+
+function distanceSignalFor(person) {
+  return Number.isFinite(person.signal) ? person.signal : 1;
+}
+
+function filterDiscoveryPeople(pool, filters = state.discoveryFilters) {
+  return pool.filter((person) => {
+    if (filters.statuses.length && !filters.statuses.includes(statusFilterFor(person))) return false;
+    if (filters.roles.length && !filters.roles.includes(roleFilterFor(person))) return false;
+    if (availableHoursFor(person) < filters.minimumHours) return false;
+    if (filters.distance === "nearby" && distanceSignalFor(person) < 2) return false;
+    if (filters.distance === "very_near" && distanceSignalFor(person) < 3) return false;
+    if (filters.evidenceRequired && !hasPublicEvidence(person)) return false;
+    return true;
+  });
+}
+
+function activeDiscoveryFilterCount(filters = state.discoveryFilters) {
+  return [
+    filters.statuses.length > 0,
+    filters.roles.length > 0,
+    filters.minimumHours > 0,
+    filters.distance !== "event",
+    filters.evidenceRequired,
+  ].filter(Boolean).length;
+}
+
 function livePerson(person) {
   const localId = String(person.user_id || "")
     .replace(/^user-/, "")
@@ -369,6 +448,10 @@ function livePerson(person) {
   const skills = Array.isArray(person.skills)
     ? person.skills.slice(0, 12).map((skill) => safeLiveText(skill, "", 40)).filter(Boolean)
     : [];
+  const evidenceItems = Array.isArray(person.evidence)
+    ? person.evidence.slice(0, 8).map((item) => safeLiveText(item, "", 120)).filter(Boolean)
+    : [];
+  const platformLinks = Array.isArray(person.platform_links) ? person.platform_links : [];
   const signal = person.distance?.band === "under_50m"
     ? 3
     : person.distance?.band === "under_200m"
@@ -383,8 +466,10 @@ function livePerson(person) {
     role,
     status,
     skills,
+    availability: safeLiveText(person.availability, "", 120),
     proximity: safeLiveText(person.distance?.label, "活动现场", 40),
-    evidence: "活动内授权公开资料",
+    evidence: evidenceItems[0] || "活动内授权公开资料",
+    hasPublicEvidence: evidenceItems.length > 0 || platformLinks.length > 0,
     reason: "对方正在同一活动现场，可以直接当面确认协作意图。",
     caution: "具体投入时间和分工仍需当面确认",
     fit: "同场协作",
@@ -569,9 +654,15 @@ function renderCurrentView() {
 }
 
 function commonHeader(title = "发现") {
+  const filterCount = activeDiscoveryFilterCount();
+  const filterButton = title === "发现"
+    ? `<button class="discovery-filter-trigger ${filterCount ? "is-filtered" : ""}" data-action="open-discovery-filters" aria-label="设置发现硬门槛${filterCount ? `，已启用 ${filterCount} 项` : ""}">
+        <span aria-hidden="true"><i></i><i></i><i></i></span>${filterCount ? `<b>${filterCount}</b>` : ""}
+      </button>`
+    : "";
   return `
     <header class="app-header">
-      <div class="app-brand"><strong>RALLY</strong><span>集结 · ${title}</span></div>
+      <div class="app-header-start">${filterButton}<div class="app-brand"><strong>RALLY</strong><span>集结 · ${title}</span></div></div>
       <span class="event-context"><i></i>当前活动 · 2026</span>
     </header>
   `;
@@ -586,15 +677,18 @@ function renderDiscoveryTabs() {
 }
 
 function renderVariantA() {
-  const person = recommendedPerson();
-  const nextPerson = rankedPeople[(state.recommendationIndex + 1) % rankedPeople.length];
+  const recommendationPool = filterDiscoveryPeople(rankedPeople);
+  const person = recommendedPerson(recommendationPool);
+  if (!person) return renderDiscoveryEmpty("推荐");
+  const currentIndex = state.recommendationIndex % recommendationPool.length;
+  const nextPerson = recommendationPool[(currentIndex + 1) % recommendationPool.length];
   return `
     <div class="view view-a">
       ${commonHeader("发现")}
       ${renderDiscoveryTabs()}
       <section class="recommendation-intro">
         <div><span>为你的项目推荐</span><strong>${collaborationNeedLabel()}</strong></div>
-        <em>${state.recommendationIndex + 1} / ${rankedPeople.length}</em>
+        <em>${currentIndex + 1} / ${recommendationPool.length}</em>
       </section>
       <section class="recommendation-deck" aria-label="协作者推荐卡片">
         <article class="recommendation-card recommendation-card-next" aria-hidden="true">
@@ -624,7 +718,7 @@ function renderVariantA() {
       </section>
       <p class="recommendation-hint"><span>← 左滑暂不看</span><span>右滑想认识 →</span></p>
       <section class="recommendation-progress" aria-label="推荐浏览进度">
-        ${rankedPeople.map((item, index) => `<i class="${index === state.recommendationIndex ? "active" : ""}" title="${item.name}"></i>`).join("")}
+        ${recommendationPool.map((item, index) => `<i class="${index === currentIndex ? "active" : ""}" title="${item.name}"></i>`).join("")}
       </section>
       <section class="recommendation-boundary">
         <span>线上只表达意愿</span>
@@ -634,17 +728,34 @@ function renderVariantA() {
   `;
 }
 
-function recommendedPerson() {
-  return rankedPeople[state.recommendationIndex % rankedPeople.length];
+function renderDiscoveryEmpty(mode) {
+  return `<div class="view view-${state.variant.toLowerCase()}">
+    ${commonHeader("发现")}
+    ${renderDiscoveryTabs()}
+    <section class="discovery-filter-empty">
+      <span class="empty-symbol">⌁</span>
+      <p class="micro-label">STRICT FILTERS / 0 RESULT</p>
+      <h3>当前硬门槛下暂无${mode}结果</h3>
+      <p>RALLY 不会偷偷放宽你的门槛。调整状态、职能或投入时间后再查看。</p>
+      <button class="primary-button" data-action="open-discovery-filters">调整硬门槛</button>
+    </section>
+  </div>`;
 }
 
-function advanceRecommendation() {
-  state.recommendationIndex = (state.recommendationIndex + 1) % rankedPeople.length;
-  state.selectedId = recommendedPerson().id;
+function recommendedPerson(pool = filterDiscoveryPeople(rankedPeople)) {
+  if (!pool.length) return null;
+  return pool[state.recommendationIndex % pool.length];
+}
+
+function advanceRecommendation(pool = filterDiscoveryPeople(rankedPeople)) {
+  if (!pool.length) return;
+  state.recommendationIndex = (state.recommendationIndex + 1) % pool.length;
+  state.selectedId = recommendedPerson(pool).id;
 }
 
 function expressRecommendationInterest(personId) {
   const person = people.find((item) => item.id === personId) || recommendedPerson();
+  if (!person) return;
   if (!state.greeted.includes(person.id)) state.greeted.push(person.id);
   showToast(`已向 ${person.name} 表达“想认识”`);
   advanceRecommendation();
@@ -669,7 +780,7 @@ function radarPosition(index, total) {
 }
 
 function renderVariantB() {
-  const nearbyPeople = activeRadarPeople();
+  const nearbyPeople = filterDiscoveryPeople(activeRadarPeople());
   const person = nearbyPeople.find((item) => item.id === state.selectedId)
     || nearbyPeople[0]
     || selectedPerson();
@@ -711,25 +822,27 @@ function renderVariantB() {
           <button class="secondary-button" data-action="next-person">换一个</button>
           <button class="primary-button" data-action="open-person" data-person="${person.id}">查看为什么</button>
         </div>
-      </section>` : `<section class="radar-ticket"><p class="ticket-reason">暂未发现仍在活动内公开位置的协作者。定位只在本页前台开启，并会在离开后立即停止。</p></section>`}
+      </section>` : `<section class="radar-ticket"><p class="ticket-reason">${activeDiscoveryFilterCount() ? "附近暂时没有同时满足当前硬门槛的人，RALLY 没有自动放宽条件。" : "暂未发现仍在活动内公开位置的协作者。定位只在本页前台开启，并会在离开后立即停止。"}</p>${activeDiscoveryFilterCount() ? `<button class="secondary-button full" data-action="open-discovery-filters">调整硬门槛</button>` : ""}</section>`}
     </div>
   `;
 }
 
 function renderVariantC() {
+  const directoryPeople = filterDiscoveryPeople(people);
+  if (!directoryPeople.length) return renderDiscoveryEmpty("名册");
   return `
     <div class="view view-c">
       ${commonHeader("发现")}
       ${renderDiscoveryTabs()}
       <section class="directory-copy"><span class="status-pill status-open"><i></i>本场活动</span><h3>活动名册</h3><p>查看明确授权参加当前活动的成员，名册仍属于你手机上的发现页。</p></section>
       <section class="ledger-status">
-        <div><span>可见成员</span><strong>${String(people.length).padStart(2, "0")} 人</strong></div>
-        <div><span>当前筛选</span><strong>全部角色</strong></div>
+        <div><span>可见成员</span><strong>${String(directoryPeople.length).padStart(2, "0")} 人</strong></div>
+        <div><span>当前筛选</span><strong>${activeDiscoveryFilterCount() ? `${activeDiscoveryFilterCount()} 项门槛` : "全部角色"}</strong></div>
         <div><span>排序方式</span><strong>项目缺口</strong></div>
       </section>
       <div class="ledger-rule"><span>按当前缺口优先</span><b>EVENT DIRECTORY</b></div>
       <section class="ledger-list">
-        ${people.map((person) => `
+        ${directoryPeople.map((person) => `
           <button class="ledger-person" data-person="${person.id}">
             ${glyph(person, "xs")}
             <span class="ledger-main">
@@ -1036,8 +1149,74 @@ function renderAppNav() {
   return `<nav class="app-nav">${items.map(([id, icon, label]) => `<button class="${state.tab === id ? "active" : ""}" data-tab="${id}"><span>${icon}</span><small>${label}</small>${id === "connections" && connectionCount ? `<i>${connectionCount}</i>` : id === "collaboration" && collaborationCount ? `<i>${collaborationCount}</i>` : ""}</button>`).join("")}</nav>`;
 }
 
+function renderDiscoveryFilterChip(group, value, label) {
+  const selected = state.discoveryFilterDraft[group].includes(value);
+  return `<button class="discovery-filter-chip ${selected ? "selected" : ""}" data-action="toggle-discovery-filter" data-group="${group}" data-value="${value}" aria-pressed="${selected}">${label}</button>`;
+}
+
+function renderDiscoveryFilterSheet() {
+  const draft = state.discoveryFilterDraft;
+  const previewCount = filterDiscoveryPeople(rankedPeople, draft).length;
+  const activeCount = activeDiscoveryFilterCount(draft);
+  const statusOptions = [
+    ["seeking", "正在找队伍"],
+    ["recruiting", "团队正在招人"],
+    ["support", "可交流／可支援"],
+  ];
+  const roleOptions = [
+    ["hardware", "硬件／结构"],
+    ["design", "设计／路演"],
+    ["ai", "AI／算法"],
+    ["product", "产品／研究"],
+    ["growth", "增长／运营"],
+    ["safety", "安全／隐私"],
+  ];
+  const hourOptions = [[0, "不限"], [2, "≥ 2h"], [4, "≥ 4h"], [8, "≥ 8h"]];
+  const distanceOptions = [["event", "整个会场"], ["nearby", "附近"], ["very_near", "很近"]];
+  return `<div class="overlay discovery-filter-overlay">
+    <button class="overlay-backdrop" data-action="close-discovery-filters" aria-label="关闭发现筛选"></button>
+    <section class="bottom-sheet discovery-filter-sheet" aria-label="发现硬门槛设置">
+      <header class="discovery-filter-head">
+        <button class="filter-sheet-close" data-action="close-discovery-filters" aria-label="返回发现页">←</button>
+        <div><p class="micro-label">DISCOVERY GATES</p><h3>发现硬门槛</h3></div>
+        <button class="filter-reset-link" data-action="reset-discovery-filters">重置</button>
+      </header>
+      <section class="filter-impact" aria-live="polite">
+        <span>本场公开成员</span>
+        <div><strong>${rankedPeople.length}</strong><i>→</i><strong>${previewCount}</strong><em>人符合</em></div>
+        <p>${activeCount ? `已启用 ${activeCount} 类门槛，所有条件同时满足才会出现。` : "尚未设置门槛，当前展示全部授权成员。"}</p>
+      </section>
+      <section class="filter-setting-block">
+        <header><div><strong>协作状态</strong><small>至少满足一个所选状态</small></div><em>硬门槛</em></header>
+        <div class="discovery-filter-chips">${statusOptions.map(([value, label]) => renderDiscoveryFilterChip("statuses", value, label)).join("")}</div>
+      </section>
+      <section class="filter-setting-block">
+        <header><div><strong>需要的职能</strong><small>按能力与当前角色共同判断</small></div><em>硬门槛</em></header>
+        <div class="discovery-filter-chips">${roleOptions.map(([value, label]) => renderDiscoveryFilterChip("roles", value, label)).join("")}</div>
+      </section>
+      <section class="filter-setting-block">
+        <header><div><strong>最低可投入时间</strong><small>未知投入时间的人不会通过该门槛</small></div><em>硬门槛</em></header>
+        <div class="discovery-filter-segments">${hourOptions.map(([value, label]) => `<button class="${draft.minimumHours === value ? "selected" : ""}" data-action="set-discovery-filter" data-filter="minimumHours" data-value="${value}" aria-pressed="${draft.minimumHours === value}">${label}</button>`).join("")}</div>
+      </section>
+      <section class="filter-setting-block">
+        <header><div><strong>现场范围</strong><small>只改变发现结果，不公开精确位置</small></div><em>硬门槛</em></header>
+        <div class="discovery-filter-segments">${distanceOptions.map(([value, label]) => `<button class="${draft.distance === value ? "selected" : ""}" data-action="set-discovery-filter" data-filter="distance" data-value="${value}" aria-pressed="${draft.distance === value}">${label}</button>`).join("")}</div>
+      </section>
+      <button class="filter-switch-row ${draft.evidenceRequired ? "selected" : ""}" data-action="toggle-discovery-evidence" aria-pressed="${draft.evidenceRequired}">
+        <span><strong>必须有公开项目证据</strong><small>仅自述能力但没有可查看证据的人将被排除</small></span><i><b></b></i>
+      </button>
+      <aside class="filter-boundary-note"><b>硬门槛只决定“是否出现”</b><span>AI 仍可解释推荐顺序，但不会替你修改条件，也不会给人生成匹配百分比。</span></aside>
+      <footer class="discovery-filter-actions">
+        <button class="secondary-button" data-action="close-discovery-filters">取消</button>
+        <button class="primary-button" data-action="apply-discovery-filters">查看 ${previewCount} 人</button>
+      </footer>
+    </section>
+  </div>`;
+}
+
 function renderOverlay() {
   if (!state.overlay) return "";
+  if (state.overlay === "filters") return renderDiscoveryFilterSheet();
   const person = selectedPerson();
   if (state.overlay === "person") {
     const greeted = state.greeted.includes(person.id);
@@ -1236,6 +1415,48 @@ function handleAction(action, element) {
     else state.onboardingStep += 1;
   }
   if (action === "preview-mode") state.previewMode = element.dataset.mode;
+  if (action === "open-discovery-filters") {
+    state.discoveryFilterDraft = {
+      ...state.discoveryFilters,
+      statuses: [...state.discoveryFilters.statuses],
+      roles: [...state.discoveryFilters.roles],
+    };
+    state.overlay = "filters";
+  }
+  if (action === "close-discovery-filters") state.overlay = null;
+  if (action === "reset-discovery-filters") state.discoveryFilterDraft = defaultDiscoveryFilters();
+  if (action === "toggle-discovery-filter") {
+    const group = element.dataset.group;
+    const value = element.dataset.value;
+    if (["statuses", "roles"].includes(group)) {
+      state.discoveryFilterDraft[group] = state.discoveryFilterDraft[group].includes(value)
+        ? state.discoveryFilterDraft[group].filter((item) => item !== value)
+        : [...state.discoveryFilterDraft[group], value];
+    }
+  }
+  if (action === "set-discovery-filter") {
+    if (element.dataset.filter === "minimumHours") {
+      state.discoveryFilterDraft.minimumHours = Number(element.dataset.value);
+    }
+    if (element.dataset.filter === "distance") {
+      state.discoveryFilterDraft.distance = element.dataset.value;
+    }
+  }
+  if (action === "toggle-discovery-evidence") {
+    state.discoveryFilterDraft.evidenceRequired = !state.discoveryFilterDraft.evidenceRequired;
+  }
+  if (action === "apply-discovery-filters") {
+    state.discoveryFilters = {
+      ...state.discoveryFilterDraft,
+      statuses: [...state.discoveryFilterDraft.statuses],
+      roles: [...state.discoveryFilterDraft.roles],
+    };
+    state.recommendationIndex = 0;
+    const firstResult = filterDiscoveryPeople(rankedPeople)[0];
+    if (firstResult) state.selectedId = firstResult.id;
+    state.overlay = null;
+    showToast(activeDiscoveryFilterCount() ? `已应用硬门槛 · ${filterDiscoveryPeople(rankedPeople).length} 人符合` : "已显示本场全部成员");
+  }
   if (action === "filter-connections") {
     state.connectionFilter = ["all", "pending", "connected"].includes(element.dataset.filter)
       ? element.dataset.filter
@@ -1265,7 +1486,9 @@ function handleAction(action, element) {
   if (action === "dismiss-recommendation") dismissRecommendation();
   if (action === "like-recommendation") expressRecommendationInterest(element.dataset.person);
   if (action === "next-person") {
-    const pool = state.variant === "B" ? activeRadarPeople() : people;
+    const pool = state.variant === "B"
+      ? filterDiscoveryPeople(activeRadarPeople())
+      : filterDiscoveryPeople(people);
     if (!pool.length) return;
     const index = pool.findIndex((person) => person.id === state.selectedId);
     state.selectedId = pool[(Math.max(index, 0) + 1) % pool.length].id;

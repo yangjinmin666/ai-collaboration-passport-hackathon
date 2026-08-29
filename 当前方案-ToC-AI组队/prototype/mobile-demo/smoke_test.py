@@ -257,6 +257,51 @@ def main():
                 )
                 assert report["variants"][variant]["avatar_subjects_are_centered"], avatar_offsets
 
+        page.goto(f"{BASE_URL}/?variant=A&build=hard-filters")
+        page.wait_for_load_state("networkidle")
+        page.get_by_role("button", name="设置发现硬门槛").click()
+        report["flow"]["discovery_filter_sheet_opens"] = page.get_by_text(
+            "发现硬门槛", exact=True
+        ).is_visible()
+        assert report["flow"]["discovery_filter_sheet_opens"]
+        page.get_by_role("button", name="正在找队伍", exact=True).click()
+        page.get_by_role("button", name="硬件／结构", exact=True).click()
+        page.get_by_role("button", name="≥ 8h", exact=True).click()
+        assert page.get_by_role("button", name="查看 2 人", exact=True).is_visible()
+        assert_mobile_visual_baseline(page, report["visual_baseline"], "discovery_filters")
+        page.screenshot(path=str(OUTPUT_DIR / "discovery-hard-filters.png"), full_page=True)
+        page.get_by_role("button", name="查看 2 人", exact=True).click()
+        report["flow"]["hard_filters_reduce_recommendations"] = (
+            page.locator(".recommendation-progress i").count() == 2
+            and page.locator(".discovery-filter-trigger > b").inner_text() == "3"
+        )
+        assert report["flow"]["hard_filters_reduce_recommendations"]
+        page.locator("[data-discovery-view='B']").click()
+        report["flow"]["hard_filters_apply_to_nearby"] = page.locator(".radar-person").count() == 2
+        assert report["flow"]["hard_filters_apply_to_nearby"]
+        page.locator("[data-discovery-view='C']").click()
+        report["flow"]["hard_filters_apply_to_directory"] = page.locator(".ledger-person").count() == 2
+        assert report["flow"]["hard_filters_apply_to_directory"]
+
+        page.get_by_role("button", name="设置发现硬门槛，已启用 3 项").click()
+        page.get_by_role("button", name="重置", exact=True).click()
+        page.get_by_role("button", name="查看 11 人", exact=True).click()
+        report["flow"]["hard_filters_can_reset"] = (
+            page.locator(".ledger-person").count() == 11
+            and page.locator(".discovery-filter-trigger > b").count() == 0
+        )
+        assert report["flow"]["hard_filters_can_reset"]
+
+        page.get_by_role("button", name="设置发现硬门槛").click()
+        page.get_by_role("button", name="安全／隐私", exact=True).click()
+        page.get_by_role("button", name="≥ 8h", exact=True).click()
+        page.get_by_role("button", name="查看 0 人", exact=True).click()
+        report["flow"]["hard_filters_never_silently_relax"] = page.get_by_text(
+            "RALLY 不会偷偷放宽你的门槛。调整状态、职能或投入时间后再查看。",
+            exact=True,
+        ).is_visible()
+        assert report["flow"]["hard_filters_never_silently_relax"]
+
         page.goto(f"{BASE_URL}/?variant=A&workspace=1")
         page.wait_for_load_state("networkidle")
         page.locator(".app-nav [data-tab='discover']").click()
