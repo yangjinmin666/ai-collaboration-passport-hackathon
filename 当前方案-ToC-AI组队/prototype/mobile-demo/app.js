@@ -2100,6 +2100,28 @@ function showToast(message) {
   }, 1800);
 }
 
+function handlePlatformBack() {
+  if (state.overlay) {
+    state.overlay = null;
+    render();
+    return true;
+  }
+  if (state.onboarding) {
+    if (state.onboardingStep > 0) state.onboardingStep -= 1;
+    else finishOnboarding(false);
+    render();
+    return true;
+  }
+  if (state.tab !== "discover") {
+    state.tab = "discover";
+    render();
+    return true;
+  }
+  return false;
+}
+
+window.RallyApp = Object.freeze({ handleBack: handlePlatformBack });
+
 window.addEventListener("popstate", () => {
   state.variant = readVariant();
   render();
