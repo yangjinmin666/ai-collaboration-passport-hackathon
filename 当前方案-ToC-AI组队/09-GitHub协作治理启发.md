@@ -4,7 +4,7 @@ version: "1.1"
 created: 2026-08-29
 updated: 2026-08-29
 status: research-complete
-product: COSPAN｜共域
+product: COSPAN｜合拍
 scope: 黑客松协作空间的归属、权限、变更治理与贡献记录
 sources: GitHub 官方文档
 ---
