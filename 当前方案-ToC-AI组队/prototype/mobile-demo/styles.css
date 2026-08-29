@@ -995,6 +995,7 @@ body[data-flow="onboarding"] .onboarding-shell { background: #fff; background-im
     bottom: max(var(--space-4), var(--rally-safe-area-bottom));
   }
   .screen { padding-bottom: calc(104px + var(--rally-safe-area-bottom)); }
+  .screen:has(> .live-gate) { padding-bottom: 0; }
   .radar-field { width: 286px; height: 286px; margin-top: -2px; }
   .recommendation-deck { height: 408px; }
 

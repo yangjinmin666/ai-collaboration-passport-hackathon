@@ -159,6 +159,45 @@ def main():
             is_mobile=True,
             has_touch=True,
         )
+        layout_page = context.new_page()
+        layout_page.goto(f"{BASE_URL}/?variant=A&splash=0")
+        layout_page.wait_for_load_state("networkidle")
+        navigation_padding = layout_page.locator(".phone-shell").evaluate(
+            """shell => {
+                shell.style.setProperty('--rally-safe-area-bottom', '27px');
+                return parseFloat(getComputedStyle(shell.querySelector('.screen')).paddingBottom);
+            }"""
+        )
+        assert navigation_padding >= 131
+
+        layout_page.route(
+            "**/api/analytics/events",
+            lambda route: route.fulfill(status=202, content_type="application/json", body='{"accepted":0}'),
+        )
+        layout_page.goto(f"{BASE_URL}/?live=1&apiBase={BASE_URL}&splash=0")
+        layout_page.wait_for_selector(".screen > .live-gate")
+        live_gate_geometry = layout_page.locator(".phone-shell").evaluate(
+            """shell => {
+                shell.style.setProperty('--rally-safe-area-bottom', '27px');
+                const scrollArea = shell.querySelector('.screen');
+                const gate = scrollArea.querySelector(':scope > .live-gate');
+                const screenBox = scrollArea.getBoundingClientRect();
+                const gateBox = gate.getBoundingClientRect();
+                return {
+                    uncoveredBottom: screenBox.bottom - gateBox.bottom,
+                    scrollHeight: scrollArea.scrollHeight,
+                    clientHeight: scrollArea.clientHeight,
+                };
+            }"""
+        )
+        report["visual_baseline"]["live_gate_covers_mobile_viewport"] = {
+            **live_gate_geometry,
+            "navigationPadding": navigation_padding,
+        }
+        assert abs(live_gate_geometry["uncoveredBottom"]) <= 1
+        assert live_gate_geometry["scrollHeight"] <= live_gate_geometry["clientHeight"] + 1
+        layout_page.close()
+
         page = context.new_page()
         page.on("console", lambda msg: report["errors"].append(f"console:{msg.type}:{msg.text}") if msg.type == "error" else None)
         page.on("pageerror", lambda error: report["errors"].append(f"page:{error}"))
