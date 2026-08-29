@@ -8,6 +8,8 @@ import {
 } from "./database.js";
 
 const MAX_JSON_BYTES = 64 * 1024;
+const TASK_MODES_INTERNAL = new Set(["HUMAN", "HUMAN_AGENT", "PAIR"]);
+const AGENT_RUN_IDEMPOTENCY_WINDOW_MS = 10 * 60 * 1000;
 const PROFILE_FIELDS = new Set([
   "display_name",
   "avatar",
@@ -234,6 +236,53 @@ function installSchema(database) {
       FOREIGN KEY (sos_id) REFERENCES project_sos(sos_id),
       FOREIGN KEY (responder_id) REFERENCES users(user_id)
     );
+
+    CREATE TABLE IF NOT EXISTS agent_runs (
+      run_id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      task_id TEXT,
+      agent_kind TEXT NOT NULL CHECK (agent_kind IN ('PLANNER', 'RESEARCH_BRIEF')),
+      triggered_by TEXT NOT NULL,
+      status TEXT NOT NULL CHECK (status IN (
+        'QUEUED', 'RUNNING', 'REVIEW_PENDING', 'APPROVED', 'REJECTED', 'FAILED', 'CANCELLED'
+      )),
+      input_snapshot_json TEXT NOT NULL,
+      output_json TEXT,
+      review_decision TEXT CHECK (review_decision IS NULL OR review_decision IN ('APPROVED', 'REJECTED')),
+      reviewer_id TEXT,
+      reviewed_at TEXT,
+      reviewer_note TEXT,
+      model TEXT,
+      prompt_tokens INTEGER,
+      completion_tokens INTEGER,
+      total_tokens INTEGER,
+      latency_ms INTEGER,
+      error_code TEXT,
+      idempotency_key TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      completed_at TEXT,
+      FOREIGN KEY (project_id) REFERENCES projects(project_id),
+      FOREIGN KEY (task_id) REFERENCES work_items(task_id),
+      FOREIGN KEY (triggered_by) REFERENCES users(user_id),
+      FOREIGN KEY (reviewer_id) REFERENCES users(user_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS agent_runs_project_idx
+      ON agent_runs (project_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS agent_runs_task_idx
+      ON agent_runs (task_id, created_at DESC);
+    CREATE UNIQUE INDEX IF NOT EXISTS agent_runs_idem_idx
+      ON agent_runs (triggered_by, idempotency_key)
+      WHERE idempotency_key IS NOT NULL;
+
+    CREATE TABLE IF NOT EXISTS agent_daily_budget (
+      project_id TEXT NOT NULL,
+      day TEXT NOT NULL,
+      tokens_used INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (project_id, day),
+      FOREIGN KEY (project_id) REFERENCES projects(project_id)
+    );
   `);
   database.prepare(`
     INSERT OR IGNORE INTO event_collaboration_policies (
@@ -445,6 +494,8 @@ export function createProductModule(database, {
   platformMetadataFetcher = fetchPublicPlatformMetadata,
   demoAccessKey = null,
   eventPolicyOverrides = {},
+  agentRunner = null,
+  agentDailyTokenCap = 10_000,
 } = {}) {
   installSchema(database);
   const updateEventPolicy = database.prepare(`
@@ -1693,6 +1744,136 @@ export function createProductModule(database, {
     `).get(projectId, userId) ?? null;
   }
 
+  function currentBudgetDay(isoTimestamp) {
+    return isoTimestamp.slice(0, 10);
+  }
+
+  function readBudgetSnapshot(projectId, isoTimestamp) {
+    const day = currentBudgetDay(isoTimestamp);
+    const row = database.prepare(`
+      SELECT tokens_used FROM agent_daily_budget WHERE project_id = ? AND day = ?
+    `).get(projectId, day);
+    return {
+      day,
+      used: row ? Number(row.tokens_used) : 0,
+      cap: agentDailyTokenCap,
+    };
+  }
+
+  function budgetHasCapacity(projectId, isoTimestamp) {
+    const snapshot = readBudgetSnapshot(projectId, isoTimestamp);
+    return snapshot.used < snapshot.cap;
+  }
+
+  function consumeBudget(projectId, isoTimestamp, tokens) {
+    const day = currentBudgetDay(isoTimestamp);
+    const amount = Math.max(0, Number(tokens) || 0);
+    if (amount === 0) return readBudgetSnapshot(projectId, isoTimestamp);
+    database.prepare(`
+      INSERT INTO agent_daily_budget (project_id, day, tokens_used)
+      VALUES (?, ?, ?)
+      ON CONFLICT(project_id, day) DO UPDATE SET tokens_used = tokens_used + excluded.tokens_used
+    `).run(projectId, day, amount);
+    return readBudgetSnapshot(projectId, isoTimestamp);
+  }
+
+  function mapAgentRun(row) {
+    if (!row) return null;
+    return {
+      id: row.run_id,
+      project_id: row.project_id,
+      task_id: row.task_id ?? null,
+      agent_kind: row.agent_kind,
+      triggered_by: row.triggered_by,
+      status: row.status,
+      input_snapshot: row.input_snapshot_json ? JSON.parse(row.input_snapshot_json) : null,
+      output: row.output_json ? JSON.parse(row.output_json) : null,
+      review_decision: row.review_decision ?? null,
+      reviewer_id: row.reviewer_id ?? null,
+      reviewed_at: row.reviewed_at ?? null,
+      reviewer_note: row.reviewer_note ?? null,
+      model: row.model ?? null,
+      prompt_tokens: row.prompt_tokens == null ? null : Number(row.prompt_tokens),
+      completion_tokens: row.completion_tokens == null ? null : Number(row.completion_tokens),
+      total_tokens: row.total_tokens == null ? null : Number(row.total_tokens),
+      latency_ms: row.latency_ms == null ? null : Number(row.latency_ms),
+      error_code: row.error_code ?? null,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+      completed_at: row.completed_at ?? null,
+    };
+  }
+
+  function findAgentRun(runId) {
+    const row = database.prepare("SELECT * FROM agent_runs WHERE run_id = ?").get(runId);
+    return row ? mapAgentRun(row) : null;
+  }
+
+  function findAgentRunByIdempotency(triggeredBy, idempotencyKey) {
+    if (!idempotencyKey) return null;
+    const row = database.prepare(`
+      SELECT * FROM agent_runs
+      WHERE triggered_by = ? AND idempotency_key = ?
+    `).get(triggeredBy, idempotencyKey);
+    return row ? mapAgentRun(row) : null;
+  }
+
+  function listRecentAgentRuns(projectId, limit = 10) {
+    return database.prepare(`
+      SELECT * FROM agent_runs
+      WHERE project_id = ?
+      ORDER BY created_at DESC
+      LIMIT ?
+    `).all(projectId, limit).map(mapAgentRun);
+  }
+
+  function findInFlightRunForTask(taskId) {
+    const row = database.prepare(`
+      SELECT * FROM agent_runs
+      WHERE task_id = ? AND status IN ('QUEUED','RUNNING','REVIEW_PENDING')
+      ORDER BY created_at DESC
+      LIMIT 1
+    `).get(taskId);
+    return row ? mapAgentRun(row) : null;
+  }
+
+  function insertAgentRun({
+    runId, projectId, taskId, agentKind, triggeredBy, inputSnapshot,
+    idempotencyKey, now,
+  }) {
+    database.prepare(`
+      INSERT INTO agent_runs (
+        run_id, project_id, task_id, agent_kind, triggered_by, status,
+        input_snapshot_json, idempotency_key, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, 'QUEUED', ?, ?, ?, ?)
+    `).run(
+      runId,
+      projectId,
+      taskId ?? null,
+      agentKind,
+      triggeredBy,
+      JSON.stringify(inputSnapshot ?? {}),
+      idempotencyKey ?? null,
+      now,
+      now,
+    );
+  }
+
+  function transitionAgentRunStatus({ runId, fromStatus, toStatus, patch = {}, now }) {
+    const columns = ["status = ?", "updated_at = ?"];
+    const values = [toStatus, now];
+    for (const [column, value] of Object.entries(patch)) {
+      columns.push(`${column} = ?`);
+      values.push(value);
+    }
+    values.push(runId, fromStatus);
+    const result = database.prepare(`
+      UPDATE agent_runs SET ${columns.join(", ")}
+      WHERE run_id = ? AND status = ?
+    `).run(...values);
+    return result.changes === 1;
+  }
+
   async function generateStarterPack({ actorId, projectId }) {
     if (!actorId) return error(401, "AUTH_REQUIRED", "A valid session is required.");
     const project = findProject(database, projectId);
@@ -1725,10 +1906,11 @@ export function createProductModule(database, {
       display_name: member.display_name,
       role: member.profile_role,
     }));
-    const missingRoles = listRoleNeeds(database, projectId)
+    const roleNeeds = listRoleNeeds(database, projectId);
+    const missingRoles = roleNeeds
       .filter((need) => need.remaining_capacity > 0)
       .map((need) => need.title);
-    const risk = {
+    const fallbackRisk = {
       level: "MEDIUM",
       summary: "黑客松交付窗口较短，需先冻结最小范围、验收标准和降级演示路径",
     };
@@ -1755,19 +1937,79 @@ export function createProductModule(database, {
         suggestedOwnerId: null,
       },
     ];
+
+    let generatedBy = "TEMPLATE_FALLBACK";
+    let source = "template_fallback";
+    let plannerRisks = [fallbackRisk];
+    let plannerCoverage = { covered: coverage.map((m) => m.display_name), missing: missingRoles };
+    let plannerTasks = templates;
+    let plannerUsage = null;
+    let plannerModel = null;
+    let plannerLatency = null;
+    let plannerErrorCode = null;
+
+    if (agentRunner && budgetHasCapacity(projectId, now)) {
+      try {
+        const plannerResult = await agentRunner.runPlanner({
+          project: { title: project.title, summary: project.summary },
+          members: members.map((member) => ({
+            user_id: member.user_id,
+            display_name: member.display_name,
+            role: member.profile_role,
+            skills: Array.isArray(member.skills) ? member.skills : [],
+            availability: member.availability ?? "",
+          })),
+          roleNeeds: roleNeeds.map((need) => ({
+            title: need.title,
+            skills: Array.isArray(need.skills) ? need.skills : [],
+            remaining_capacity: need.remaining_capacity ?? 0,
+          })),
+        });
+        generatedBy = "AI";
+        source = "llm";
+        plannerRisks = plannerResult.output.risks;
+        if (plannerResult.output.role_coverage) {
+          plannerCoverage = plannerResult.output.role_coverage;
+        }
+        plannerUsage = plannerResult.usage;
+        plannerModel = plannerResult.model;
+        plannerLatency = plannerResult.latency_ms;
+        plannerTasks = plannerResult.output.tasks.map((task) => {
+          const suggested = task.mode === "PAIR"
+            ? null
+            : (task.mode === "HUMAN_AGENT" ? originator : (roleNeedMember ?? originator));
+          return {
+            title: task.title,
+            objective: task.objective,
+            acceptance: task.acceptance,
+            mode: TASK_MODES_INTERNAL.has(task.mode) ? task.mode : "HUMAN",
+            suggestedOwnerId: suggested,
+          };
+        });
+      } catch (err) {
+        plannerErrorCode = err?.code ?? "LLM_ERROR";
+      }
+    }
+
+    const primaryRisk = plannerRisks[0] ?? fallbackRisk;
     database.exec("BEGIN IMMEDIATE");
     try {
       database.prepare(`
         INSERT INTO starter_packs (
           pack_id, project_id, version, generated_by, status,
           role_coverage_json, missing_roles_json, risk_json, created_at, confirmed_at
-        ) VALUES (?, ?, 1, 'TEMPLATE_FALLBACK', 'PROPOSED', ?, ?, ?, ?, NULL)
+        ) VALUES (?, ?, 1, ?, 'PROPOSED', ?, ?, ?, ?, NULL)
       `).run(
         packId,
         projectId,
-        JSON.stringify(coverage),
-        JSON.stringify(missingRoles),
-        JSON.stringify(risk),
+        generatedBy,
+        JSON.stringify({
+          members: coverage,
+          covered: plannerCoverage.covered ?? [],
+          missing: plannerCoverage.missing ?? missingRoles,
+        }),
+        JSON.stringify(plannerCoverage.missing ?? missingRoles),
+        JSON.stringify(primaryRisk),
         now,
       );
       const insertTask = database.prepare(`
@@ -1777,7 +2019,7 @@ export function createProductModule(database, {
           status, created_at, updated_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 'PROPOSED', ?, ?)
       `);
-      templates.forEach((task, index) => {
+      plannerTasks.forEach((task, index) => {
         insertTask.run(
           `task_${randomUUID()}`,
           projectId,
@@ -1798,14 +2040,25 @@ export function createProductModule(database, {
         type: "starter_pack_generated",
         objectType: "starter_pack",
         objectId: packId,
-        source: "template_fallback",
-        payload: { project_id: projectId, task_count: templates.length },
+        source,
+        payload: {
+          project_id: projectId,
+          task_count: plannerTasks.length,
+          generated_by: generatedBy,
+          model: plannerModel,
+          total_tokens: plannerUsage?.total_tokens ?? null,
+          latency_ms: plannerLatency,
+          fallback_reason: plannerErrorCode,
+        },
         createdAt: now,
       });
       database.exec("COMMIT");
     } catch (caught) {
       database.exec("ROLLBACK");
       throw caught;
+    }
+    if (generatedBy === "AI" && plannerUsage?.total_tokens) {
+      consumeBudget(projectId, now, plannerUsage.total_tokens);
     }
     return {
       status: 201,
@@ -1984,6 +2237,9 @@ export function createProductModule(database, {
     const confirmed = pack ? Number(database.prepare(`
       SELECT count(*) AS count FROM plan_confirmations WHERE pack_id = ?
     `).get(pack.id).count) : 0;
+    const now = clock().toISOString();
+    const runs = listRecentAgentRuns(projectId, 10);
+    const budget = readBudgetSnapshot(projectId, now);
     return {
       status: 200,
       body: {
@@ -1995,6 +2251,290 @@ export function createProductModule(database, {
         confirmation_progress: { confirmed, required },
         sos: listProjectSos(database, projectId),
         activity: projectActivity(database, project),
+        agent_runs: runs,
+        agent_daily_budget: budget,
+      },
+    };
+  }
+
+  async function requestAgentRun({ actorId, taskId, idempotencyKey }) {
+    if (!actorId) return error(401, "AUTH_REQUIRED", "A valid session is required.");
+    if (!agentRunner) return error(503, "AGENT_UNAVAILABLE", "Agent runner is not configured on this deployment.");
+    const taskRow = database.prepare("SELECT * FROM work_items WHERE task_id = ?").get(taskId);
+    if (!taskRow) return error(404, "TASK_NOT_FOUND", "Task not found.");
+    const projectId = taskRow.project_id;
+    const task = mapTask(taskRow);
+    if (!projectMember(database, projectId, actorId)) {
+      return error(403, "TASK_FORBIDDEN", "Only project members can trigger AI runs on this task.");
+    }
+    if (task.confirmed_owner_id !== actorId) {
+      return error(403, "AGENT_TRIGGER_FORBIDDEN", "Only the task owner can trigger an AI brief.");
+    }
+    if (task.mode !== "HUMAN_AGENT") {
+      return error(409, "AGENT_MODE_NOT_SUPPORTED", "Only HUMAN_AGENT tasks accept AI briefs in v0.5.");
+    }
+    if (!["ACCEPTED", "IN_PROGRESS"].includes(task.status)) {
+      return error(409, "TASK_STATUS_INVALID", "Task must be ACCEPTED or IN_PROGRESS before triggering an AI brief.");
+    }
+    const pack = findStarterPack(database, projectId);
+    if (!pack || pack.status !== "CONFIRMED") {
+      return error(409, "PLAN_NOT_CONFIRMED", "Confirm the shared plan before running an AI brief on tasks.");
+    }
+    if (idempotencyKey) {
+      const replay = findAgentRunByIdempotency(actorId, idempotencyKey);
+      if (replay) {
+        return {
+          status: 200,
+          body: { agent_run: replay, idempotent_replay: true },
+        };
+      }
+    }
+    if (findInFlightRunForTask(taskId)) {
+      return error(409, "AGENT_RUN_IN_FLIGHT", "An AI run for this task is already active. Wait for it to finish or cancel it first.");
+    }
+    const now = clock().toISOString();
+    if (!budgetHasCapacity(projectId, now)) {
+      return error(429, "AGENT_BUDGET_EXCEEDED", "Daily AI token budget for this project is exhausted. Try again tomorrow.");
+    }
+    const project = findProject(database, projectId);
+    const member = listMembers(database, projectId).find((m) => m.user_id === actorId) ?? {
+      user_id: actorId,
+      display_name: actorId,
+      skills: [],
+    };
+    const runId = `run_${randomUUID()}`;
+    const inputSnapshot = {
+      project: { id: project.id, title: project.title, summary: project.summary },
+      task: {
+        id: task.id,
+        title: task.title,
+        objective: task.objective,
+        acceptance_criteria: task.acceptance_criteria,
+        mode: task.mode,
+      },
+      member: {
+        user_id: member.user_id,
+        display_name: member.display_name,
+        skills: Array.isArray(member.skills) ? member.skills : [],
+      },
+    };
+    insertAgentRun({
+      runId,
+      projectId,
+      taskId,
+      agentKind: "RESEARCH_BRIEF",
+      triggeredBy: actorId,
+      inputSnapshot,
+      idempotencyKey,
+      now,
+    });
+    appendEventLog(database, {
+      eventId: project.event_id,
+      actorId,
+      type: "agent_run_started",
+      objectType: "agent_run",
+      objectId: runId,
+      source: "llm",
+      payload: { project_id: projectId, task_id: taskId, agent_kind: "RESEARCH_BRIEF" },
+      createdAt: now,
+    });
+    if (!transitionAgentRunStatus({ runId, fromStatus: "QUEUED", toStatus: "RUNNING", now })) {
+      const current = findAgentRun(runId);
+      return { status: 200, body: { agent_run: current, idempotent_replay: false } };
+    }
+    let runnerResult;
+    let runnerError = null;
+    try {
+      runnerResult = await agentRunner.runResearchBrief({
+        project: inputSnapshot.project,
+        task: inputSnapshot.task,
+        member: inputSnapshot.member,
+      });
+    } catch (err) {
+      runnerError = err;
+    }
+    const finishedAt = clock().toISOString();
+    if (runnerError) {
+      const errorCode = runnerError.code ?? "LLM_ERROR";
+      transitionAgentRunStatus({
+        runId,
+        fromStatus: "RUNNING",
+        toStatus: "FAILED",
+        patch: {
+          error_code: errorCode,
+          completed_at: finishedAt,
+        },
+        now: finishedAt,
+      });
+      appendEventLog(database, {
+        eventId: project.event_id,
+        actorId,
+        type: "agent_run_completed",
+        objectType: "agent_run",
+        objectId: runId,
+        source: "llm",
+        payload: { status: "FAILED", error_code: errorCode, task_id: taskId },
+        createdAt: finishedAt,
+      });
+      return {
+        status: 200,
+        body: { agent_run: findAgentRun(runId), idempotent_replay: false },
+      };
+    }
+    const usage = runnerResult.usage ?? {};
+    transitionAgentRunStatus({
+      runId,
+      fromStatus: "RUNNING",
+      toStatus: "REVIEW_PENDING",
+      patch: {
+        output_json: JSON.stringify(runnerResult.output),
+        model: runnerResult.model ?? null,
+        prompt_tokens: usage.prompt_tokens ?? null,
+        completion_tokens: usage.completion_tokens ?? null,
+        total_tokens: usage.total_tokens ?? null,
+        latency_ms: runnerResult.latency_ms ?? null,
+        completed_at: finishedAt,
+      },
+      now: finishedAt,
+    });
+    if (usage.total_tokens) {
+      consumeBudget(projectId, finishedAt, usage.total_tokens);
+    }
+    appendEventLog(database, {
+      eventId: project.event_id,
+      actorId,
+      type: "agent_run_completed",
+      objectType: "agent_run",
+      objectId: runId,
+      source: "llm",
+      payload: {
+        status: "REVIEW_PENDING",
+        total_tokens: usage.total_tokens ?? null,
+        latency_ms: runnerResult.latency_ms ?? null,
+        model: runnerResult.model ?? null,
+        task_id: taskId,
+      },
+      createdAt: finishedAt,
+    });
+    return {
+      status: 201,
+      body: { agent_run: findAgentRun(runId), idempotent_replay: false },
+    };
+  }
+
+  function readAgentRun({ actorId, runId }) {
+    if (!actorId) return error(401, "AUTH_REQUIRED", "A valid session is required.");
+    const run = findAgentRun(runId);
+    if (!run) return error(404, "AGENT_RUN_NOT_FOUND", "Agent run not found.");
+    if (!projectMember(database, run.project_id, actorId)) {
+      return error(403, "AGENT_RUN_FORBIDDEN", "Only project members can view this agent run.");
+    }
+    return { status: 200, body: { agent_run: run } };
+  }
+
+  function reviewAgentRun({ actorId, runId, decision, note }) {
+    if (!actorId) return error(401, "AUTH_REQUIRED", "A valid session is required.");
+    const run = findAgentRun(runId);
+    if (!run) return error(404, "AGENT_RUN_NOT_FOUND", "Agent run not found.");
+    if (!projectMember(database, run.project_id, actorId)) {
+      return error(403, "AGENT_RUN_FORBIDDEN", "Only project members can review this agent run.");
+    }
+    if (run.status !== "REVIEW_PENDING") {
+      return error(409, "AGENT_RUN_NOT_REVIEWABLE", "Only pending runs can be reviewed.");
+    }
+    if (!["APPROVED", "REJECTED"].includes(decision)) {
+      return error(400, "INVALID_DECISION", "Decision must be APPROVED or REJECTED.");
+    }
+    if (run.task_id) {
+      const taskRow = database.prepare("SELECT confirmed_owner_id FROM work_items WHERE task_id = ?").get(run.task_id);
+      if (!taskRow || taskRow.confirmed_owner_id !== actorId) {
+        return error(403, "AGENT_REVIEW_FORBIDDEN", "Only the task owner can review this AI brief.");
+      }
+    } else if (run.triggered_by !== actorId) {
+      return error(403, "AGENT_REVIEW_FORBIDDEN", "Only the run trigger can review this agent run.");
+    }
+    const now = clock().toISOString();
+    const noteText = typeof note === "string" ? note.slice(0, 500) : null;
+    const ok = transitionAgentRunStatus({
+      runId,
+      fromStatus: "REVIEW_PENDING",
+      toStatus: decision,
+      patch: {
+        review_decision: decision,
+        reviewer_id: actorId,
+        reviewed_at: now,
+        reviewer_note: noteText,
+      },
+      now,
+    });
+    if (!ok) {
+      return error(409, "AGENT_RUN_NOT_REVIEWABLE", "The run status changed. Refresh and try again.");
+    }
+    const project = findProject(database, run.project_id);
+    appendEventLog(database, {
+      eventId: project.event_id,
+      actorId,
+      type: "agent_run_reviewed",
+      objectType: "agent_run",
+      objectId: runId,
+      source: "mobile",
+      payload: { decision, task_id: run.task_id, note: noteText ? true : false },
+      createdAt: now,
+    });
+    return { status: 200, body: { agent_run: findAgentRun(runId) } };
+  }
+
+  function cancelAgentRun({ actorId, runId }) {
+    if (!actorId) return error(401, "AUTH_REQUIRED", "A valid session is required.");
+    const run = findAgentRun(runId);
+    if (!run) return error(404, "AGENT_RUN_NOT_FOUND", "Agent run not found.");
+    if (!projectMember(database, run.project_id, actorId)) {
+      return error(403, "AGENT_RUN_FORBIDDEN", "Only project members can cancel this agent run.");
+    }
+    const project = findProject(database, run.project_id);
+    if (run.triggered_by !== actorId && project.originator_id !== actorId) {
+      return error(403, "AGENT_CANCEL_FORBIDDEN", "Only the trigger or project originator can cancel this run.");
+    }
+    if (!["QUEUED", "RUNNING"].includes(run.status)) {
+      return error(409, "AGENT_RUN_NOT_CANCELLABLE", "Only queued or running agent runs can be cancelled.");
+    }
+    const now = clock().toISOString();
+    const ok = transitionAgentRunStatus({
+      runId,
+      fromStatus: run.status,
+      toStatus: "CANCELLED",
+      patch: { completed_at: now },
+      now,
+    });
+    if (!ok) {
+      return error(409, "AGENT_RUN_NOT_CANCELLABLE", "The run status changed. Refresh and try again.");
+    }
+    appendEventLog(database, {
+      eventId: project.event_id,
+      actorId,
+      type: "agent_run_cancelled",
+      objectType: "agent_run",
+      objectId: runId,
+      source: "mobile",
+      payload: { task_id: run.task_id },
+      createdAt: now,
+    });
+    return { status: 200, body: { agent_run: findAgentRun(runId) } };
+  }
+
+  function listAgentRunsForProject({ actorId, projectId }) {
+    if (!actorId) return error(401, "AUTH_REQUIRED", "A valid session is required.");
+    const project = findProject(database, projectId);
+    if (!project) return error(404, "PROJECT_NOT_FOUND", "Project not found.");
+    if (!projectMember(database, projectId, actorId)) {
+      return error(403, "PROJECT_FORBIDDEN", "Only project members can list agent runs.");
+    }
+    const now = clock().toISOString();
+    return {
+      status: 200,
+      body: {
+        agent_runs: listRecentAgentRuns(projectId, 10),
+        agent_daily_budget: readBudgetSnapshot(projectId, now),
       },
     };
   }
@@ -2939,6 +3479,59 @@ export function createProductModule(database, {
           actorId,
           taskId: decodeURIComponent(taskMatch[1]),
           action: parsed.value.action,
+        });
+      }
+
+      const taskAgentRunMatch = url.pathname.match(/^\/api\/tasks\/([^/]+)\/agent-runs$/);
+      if (request.method === "POST" && taskAgentRunMatch) {
+        const idempotencyHeader = request.headers["x-idempotency-key"];
+        const idempotencyKey = typeof idempotencyHeader === "string"
+          ? idempotencyHeader.slice(0, 120)
+          : null;
+        return requestAgentRun({
+          actorId,
+          taskId: decodeURIComponent(taskAgentRunMatch[1]),
+          idempotencyKey,
+        });
+      }
+
+      const projectAgentRunsMatch = url.pathname.match(/^\/api\/projects\/([^/]+)\/agent-runs$/);
+      if (request.method === "GET" && projectAgentRunsMatch) {
+        return listAgentRunsForProject({
+          actorId,
+          projectId: decodeURIComponent(projectAgentRunsMatch[1]),
+        });
+      }
+
+      const agentRunMatch = url.pathname.match(/^\/api\/agent-runs\/([^/]+)$/);
+      if (request.method === "GET" && agentRunMatch) {
+        return readAgentRun({
+          actorId,
+          runId: decodeURIComponent(agentRunMatch[1]),
+        });
+      }
+
+      const agentRunReviewMatch = url.pathname.match(/^\/api\/agent-runs\/([^/]+)\/review$/);
+      if (request.method === "POST" && agentRunReviewMatch) {
+        const parsed = await readJson(request);
+        const readError = jsonReadError(parsed);
+        if (readError) return readError;
+        if (!parseObject(parsed.value)) {
+          return error(400, "INVALID_REQUEST", "Request body must be a JSON object.");
+        }
+        return reviewAgentRun({
+          actorId,
+          runId: decodeURIComponent(agentRunReviewMatch[1]),
+          decision: parsed.value.decision,
+          note: parsed.value.note,
+        });
+      }
+
+      const agentRunCancelMatch = url.pathname.match(/^\/api\/agent-runs\/([^/]+)\/cancel$/);
+      if (request.method === "POST" && agentRunCancelMatch) {
+        return cancelAgentRun({
+          actorId,
+          runId: decodeURIComponent(agentRunCancelMatch[1]),
         });
       }
 
