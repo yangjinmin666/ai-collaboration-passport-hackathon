@@ -56,7 +56,13 @@ const localOtpTestMode = process.env.NODE_ENV === "test"
   && new Set(["127.0.0.1", "::1", "localhost"]).has(host)
   && typeof fixedTestOtpCode === "string"
   && /^\d{6}$/.test(fixedTestOtpCode);
-const otpSender = localOtpTestMode
+const fixedDemoOtpCode = process.env.AUTH_OTP_FIXED_DEMO_CODE;
+const fixedDemoOtpMode = process.env.AUTH_OTP_FIXED_DEMO === "1"
+  && new Set(["127.0.0.1", "::1", "localhost"]).has(host)
+  && typeof fixedDemoOtpCode === "string"
+  && /^\d{6}$/.test(fixedDemoOtpCode);
+const fixedOtpMode = localOtpTestMode || fixedDemoOtpMode;
+const otpSender = fixedOtpMode
   ? async () => {}
   : missingSmsSettings.length === 0
     ? createTencentSmsSender(tencentSmsConfig)
@@ -90,7 +96,9 @@ const api = createApi({
   oauthStateSecret,
   oauthProviders,
   androidAppLinkReady,
-  ...(localOtpTestMode ? { otpCodeGenerator: () => fixedTestOtpCode } : {}),
+  ...(fixedOtpMode
+    ? { otpCodeGenerator: () => (fixedDemoOtpMode ? fixedDemoOtpCode : fixedTestOtpCode) }
+    : {}),
 });
 const address = await api.start(port, host);
 console.log(`COSPAN API listening on http://${host}:${address.port}`);
@@ -101,8 +109,11 @@ if (!demoAccessKey) {
 if (!touchDeviceAccessKey) {
   console.warn("Physical mutual touch is disabled because TOUCH_DEVICE_ACCESS_KEY is not set.");
 }
-if (!localOtpTestMode && missingSmsSettings.length > 0) {
+if (!fixedOtpMode && missingSmsSettings.length > 0) {
   console.warn(`SMS login is disabled; missing settings: ${missingSmsSettings.join(", ")}.`);
+}
+if (fixedDemoOtpMode) {
+  console.warn("Fixed roadshow OTP mode is enabled; no SMS message will be sent.");
 }
 if (!analyticsAdminToken || analyticsAdminToken.length < 32) {
   console.warn("Analytics summary and CSV export are disabled because ANALYTICS_ADMIN_TOKEN is missing or too short.");

@@ -109,23 +109,38 @@ do
   append_secret_from_environment "${oauth_secret}"
 done
 append_secret_from_environment ANDROID_APP_SHA256_CERT_FINGERPRINT
+append_secret_from_environment AUTH_OTP_FIXED_DEMO
+append_secret_from_environment AUTH_OTP_FIXED_DEMO_CODE
 chown root:root /etc/rally/rally.env
 chmod 0600 /etc/rally/rally.env
 
 missing_sms_settings=()
-for sms_setting in \
-  AUTH_OTP_SECRET \
-  TENCENT_SMS_SECRET_ID \
-  TENCENT_SMS_SECRET_KEY \
-  TENCENT_SMS_SDK_APP_ID \
-  TENCENT_SMS_SIGN_NAME \
-  TENCENT_SMS_TEMPLATE_ID \
-  TENCENT_SMS_REGION
-do
+for sms_setting in AUTH_OTP_SECRET; do
   if ! grep -Eq "^${sms_setting}=.+$" /etc/rally/rally.env; then
     missing_sms_settings+=("${sms_setting}")
   fi
 done
+fixed_demo_mode="$(sed -n 's/^AUTH_OTP_FIXED_DEMO=//p' /etc/rally/rally.env | tail -n 1)"
+fixed_demo_code="$(sed -n 's/^AUTH_OTP_FIXED_DEMO_CODE=//p' /etc/rally/rally.env | tail -n 1)"
+if [[ "${fixed_demo_mode}" == "1" ]]; then
+  if [[ ! "${fixed_demo_code}" =~ ^[0-9]{6}$ ]]; then
+    printf 'AUTH_OTP_FIXED_DEMO_CODE must contain exactly six digits.\n' >&2
+    exit 1
+  fi
+else
+  for sms_setting in \
+    TENCENT_SMS_SECRET_ID \
+    TENCENT_SMS_SECRET_KEY \
+    TENCENT_SMS_SDK_APP_ID \
+    TENCENT_SMS_SIGN_NAME \
+    TENCENT_SMS_TEMPLATE_ID \
+    TENCENT_SMS_REGION
+  do
+    if ! grep -Eq "^${sms_setting}=.+$" /etc/rally/rally.env; then
+      missing_sms_settings+=("${sms_setting}")
+    fi
+  done
+fi
 if (( ${#missing_sms_settings[@]} > 0 )); then
   printf 'SMS login configuration is incomplete: %s\n' "${missing_sms_settings[*]}" >&2
   exit 1

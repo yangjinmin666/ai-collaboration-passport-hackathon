@@ -130,6 +130,8 @@ http://localhost:4173/?variant=B&live=1&apiBase=http://127.0.0.1:8787&demoUser=u
 
 签名和模板必须是腾讯云已审核状态；短信 API 子用户只授予发送所需的最小权限。`TENCENT_SMS_SECRET_ID`、`TENCENT_SMS_SECRET_KEY` 和 `AUTH_OTP_SECRET` 只写入服务器 `/etc/rally/rally.env`，不要放进前端、APK、Git 或聊天记录。发送限制为同手机号 60 秒冷却、每小时 5 条，同客户端地址每小时 20 条；每个验证码最多错误 5 次。
 
+运营商签名尚未完成报备时，可在仅监听环回地址的路演服务器上临时设置 `AUTH_OTP_FIXED_DEMO=1` 和六位 `AUTH_OTP_FIXED_DEMO_CODE`。此模式不会发送短信，也不会开启 `ALLOW_INSECURE_DEMO_AUTH`；路演结束后应从 `/etc/rally/rally.env` 删除这两个变量并切回已审核的腾讯云短信配置。
+
 ```bash
 curl -X POST http://127.0.0.1:8787/api/auth/otp/challenges \
   -H 'content-type: application/json' \
