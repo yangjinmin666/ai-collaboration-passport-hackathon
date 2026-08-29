@@ -2467,7 +2467,6 @@ function renderDiscoveryFilterSheet() {
   const draft = state.discoveryFilterDraft;
   const sourcePeople = discoveryPeople();
   const previewCount = filterDiscoveryPeople(sourcePeople, draft).length;
-  const activeCount = activeDiscoveryFilterCount(draft);
   const statusOptions = [
     ["seeking", "正在找队伍"],
     ["recruiting", "团队正在招人"],
@@ -2488,34 +2487,28 @@ function renderDiscoveryFilterSheet() {
     <section class="bottom-sheet discovery-filter-sheet" aria-label="筛选偏好设置">
       <header class="discovery-filter-head">
         <button class="filter-sheet-close" data-action="close-discovery-filters" aria-label="返回发现页">←</button>
-        <div><p class="micro-label">DISCOVERY FILTERS</p><h3>筛选偏好</h3></div>
+        <div><h3>筛选偏好</h3></div>
         <button class="filter-reset-link" data-action="reset-discovery-filters">重置</button>
       </header>
-      <section class="filter-impact" aria-live="polite">
-        <span>本场公开成员</span>
-        <div><strong>${sourcePeople.length}</strong><i>→</i><strong>${previewCount}</strong><em>人符合</em></div>
-        <p>${activeCount ? `已启用 ${activeCount} 类筛选条件，需同时满足才会出现。` : "尚未设置筛选条件，当前展示全部授权成员。"}</p>
-      </section>
       <section class="filter-setting-block">
-        <header><div><strong>协作状态</strong><small>至少满足一个所选状态</small></div><em>必须满足</em></header>
+        <header><div><strong>协作状态</strong><small>可多选</small></div></header>
         <div class="discovery-filter-chips">${statusOptions.map(([value, label]) => renderDiscoveryFilterChip("statuses", value, label)).join("")}</div>
       </section>
       <section class="filter-setting-block">
-        <header><div><strong>需要的职能</strong><small>按能力与当前角色共同判断</small></div><em>必须满足</em></header>
+        <header><div><strong>需要的职能</strong><small>可多选</small></div></header>
         <div class="discovery-filter-chips">${roleOptions.map(([value, label]) => renderDiscoveryFilterChip("roles", value, label)).join("")}</div>
       </section>
       <section class="filter-setting-block">
-        <header><div><strong>最低可投入时间</strong><small>未标注投入时间的人不会纳入结果</small></div><em>必须满足</em></header>
+        <header><div><strong>最低投入时间</strong></div></header>
         <div class="discovery-filter-segments">${hourOptions.map(([value, label]) => `<button class="${draft.minimumHours === value ? "selected" : ""}" data-action="set-discovery-filter" data-filter="minimumHours" data-value="${value}" aria-pressed="${draft.minimumHours === value}">${label}</button>`).join("")}</div>
       </section>
       <section class="filter-setting-block">
-        <header><div><strong>现场范围</strong><small>只改变发现结果，不公开精确位置</small></div><em>必须满足</em></header>
+        <header><div><strong>现场范围</strong><small>不公开精确位置</small></div></header>
         <div class="discovery-filter-segments">${distanceOptions.map(([value, label]) => `<button class="${draft.distance === value ? "selected" : ""}" data-action="set-discovery-filter" data-filter="distance" data-value="${value}" aria-pressed="${draft.distance === value}">${label}</button>`).join("")}</div>
       </section>
       <button class="filter-switch-row ${draft.evidenceRequired ? "selected" : ""}" data-action="toggle-discovery-evidence" aria-pressed="${draft.evidenceRequired}">
-        <span><strong>必须有公开项目证据</strong><small>仅自述能力但没有可查看证据的人将被排除</small></span><i><b></b></i>
+        <span><strong>只看有公开项目的人</strong><small>有公开作品或项目</small></span><i><b></b></i>
       </button>
-      <aside class="filter-boundary-note"><b>筛选条件只决定“是否出现”</b><span>AI 仍可解释推荐顺序，但不会替你修改条件，也不会给人生成匹配百分比。</span></aside>
       <footer class="discovery-filter-actions">
         <button class="secondary-button" data-action="close-discovery-filters">取消</button>
         <button class="primary-button" data-action="apply-discovery-filters">查看 ${previewCount} 人</button>

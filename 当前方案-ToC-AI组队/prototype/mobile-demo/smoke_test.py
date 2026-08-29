@@ -635,6 +635,38 @@ def main():
             "筛选偏好", exact=True
         ).is_visible()
         assert report["flow"]["discovery_filter_sheet_opens"]
+        filter_surface = page.locator(".filter-setting-block").first.evaluate(
+            """element => {
+                const style = getComputedStyle(element);
+                return {
+                    borderLeftWidth: style.borderLeftWidth,
+                    borderRadius: style.borderRadius,
+                    backgroundColor: style.backgroundColor,
+                };
+            }"""
+        )
+        segment_surface = page.locator(".discovery-filter-segments").first.evaluate(
+            """element => {
+                const style = getComputedStyle(element);
+                return {
+                    backgroundColor: style.backgroundColor,
+                    borderRadius: style.borderRadius,
+                };
+            }"""
+        )
+        report["flow"]["discovery_filters_use_flat_sections"] = (
+            filter_surface["borderLeftWidth"] == "0px"
+            and filter_surface["borderRadius"] == "0px"
+            and filter_surface["backgroundColor"] == "rgba(0, 0, 0, 0)"
+            and segment_surface["backgroundColor"] == "rgba(0, 0, 0, 0)"
+            and segment_surface["borderRadius"] == "0px"
+            and page.locator(".filter-impact").count() == 0
+            and page.locator(".filter-setting-block header em").count() == 0
+        )
+        assert report["flow"]["discovery_filters_use_flat_sections"], {
+            "filter": filter_surface,
+            "segments": segment_surface,
+        }
         page.get_by_role("button", name="正在找队伍", exact=True).click()
         page.get_by_role("button", name="硬件／结构", exact=True).click()
         page.get_by_role("button", name="≥ 8h", exact=True).click()
