@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-PUBLIC_IP="${PUBLIC_IP:-49.233.197.225}"
+PUBLIC_IP="${PUBLIC_IP:-101.43.172.166}"
 WEBROOT="${WEBROOT:-/var/www/rally}"
 NGINX_SITE="${NGINX_SITE:-/etc/nginx/sites-available/rally}"
 CERTBOT_MIN_VERSION="5.4"

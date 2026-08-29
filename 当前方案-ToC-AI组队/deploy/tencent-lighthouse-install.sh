@@ -5,7 +5,7 @@ ARCHIVE="${ARCHIVE:-/home/ubuntu/rally-deploy.tar.gz}"
 RELEASE_ID="${RELEASE_ID:-$(date -u +%Y%m%d%H%M%S)}"
 RELEASE_DIR="/opt/rally/releases/${RELEASE_ID}"
 NODE_BIN="$(command -v node)"
-PUBLIC_IP="${PUBLIC_IP:-49.233.197.225}"
+PUBLIC_IP="${PUBLIC_IP:-101.43.172.166}"
 CERT_DIR="${CERT_DIR:-/etc/letsencrypt/live/${PUBLIC_IP}}"
 NGINX_SITE="/etc/nginx/sites-available/rally"
 
