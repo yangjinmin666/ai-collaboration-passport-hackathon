@@ -229,6 +229,98 @@ const people = [
 const rankedPeople = [...people];
 const radarPeople = rankedPeople;
 
+// These fields represent participant-authored profile content. They are kept
+// separate from Agent-generated ranking reasons so the UI never presents a
+// model summary as something the participant wrote.
+const participantProfiles = {
+  lin: {
+    bio: "我喜欢把屏幕里的概念做成真正能被拿起来、戴在身上的东西。这次带了 ESP32、几块小屏和 NFC 模块，希望找懂 AI 或产品的队友，一起在现场做出可以演示的完整闭环。",
+    location: "上海",
+    availability: "今天可投入 12 小时",
+    collaboration: "喜欢先定义接口和验收标准，再快速打样。",
+    projects: [
+      { title: "离线会议提醒器", detail: "ESP32 + 墨水屏，48 小时完成硬件与外壳打样。", tags: ["ESP32", "E-ink"] },
+      { title: "桌面空气质终端", detail: "完成传感器选型、PCB 联调与小批量组装。", tags: ["IoT", "结构打样"] },
+    ],
+  },
+  su: {
+    bio: "我是交互设计师，关心复杂技术如何在三十秒内被人看懂。习惯边画、边问、边改，也可以帮团队整理路演叙事。",
+    location: "杭州",
+    availability: "本次活动可投入 8 小时",
+    collaboration: "偏好用可点击原型尽早验证，不在第一版追求视觉细节。",
+    projects: [
+      { title: "无障碍导览地图", detail: "负责现场调研、交互原型与 Demo Day 表达。", tags: ["用户研究", "路演"] },
+      { title: "AI 学习伙伴", detail: "设计从对话到学习计划的可解释转化流程。", tags: ["AI UX", "原型"] },
+    ],
+  },
+  qixi: {
+    bio: "我用代码做视觉、声音和空间交互。比起在屏幕上再加一个按钮，我更想让一个动作本身变成有记忆点的反馈。",
+    location: "北京",
+    availability: "今天可投入 10 小时",
+    collaboration: "先做一个能被感知的核心瞬间，再向外补全功能。",
+    projects: [
+      { title: "Breath Canvas", detail: "让现场声音实时驱动 WebGL 粒子与灯光。", tags: ["WebGL", "声音交互"] },
+      { title: "Touch Echo", detail: "通过触摸与振动构建双人互动装置。", tags: ["生成艺术", "传感器"] },
+    ],
+  },
+  shenlan: {
+    bio: "我专注数字身份和隐私设计，尤其关心用户到底授权了什么、授权多久、如何撤回。这次主要提供短时审查和边界检查。",
+    location: "深圳",
+    availability: "可提供 1 小时定点支援",
+    collaboration: "请先给出数据流和权限清单，我会返回可执行的修改项。",
+    projects: [{ title: "匿名社区权限模型", detail: "设计分层公开、授权到期和拉黑后的数据隔离。", tags: ["权限", "隐私"] }],
+  },
+  baiyu: {
+    bio: "我在做轻量级语义检索和可解释推荐，希望系统告诉用户‘为什么’，而不是只丢出一个百分比。",
+    location: "上海",
+    availability: "可投入 4 小时",
+    collaboration: "适合快速评审检索、排序与评估方案。",
+    projects: [{ title: "Tiny Semantic Search", detail: "开源端侧语义检索 Demo，支持证据反查。", tags: ["Embedding", "RAG"] }],
+  },
+  miya: {
+    bio: "我帮早期团队找到一句话能讲清的价值，再把这句话变成品牌、Demo 和路演节奏。",
+    location: "香港",
+    availability: "今晚彩排时段可投入 2 小时",
+    collaboration: "带着可运行的 Demo 和真实用户反馈来，我会帮你们压缩叙事。",
+    projects: [{ title: "6 支黑客松团队路演", detail: "从核心冲突、现场演示到 90 秒叙事完成辅导。", tags: ["品牌", "Demo Day"] }],
+  },
+  qiaohe: {
+    bio: "我做现场用户研究和活动运营，擅长在很短时间里把一个模糊问题变成可观察的行为。",
+    location: "广州",
+    availability: "可投入 4 小时",
+    collaboration: "请先冻结三个验证问题，再一起去现场拉人测试。",
+    projects: [{ title: "30 人快速概念测试", detail: "在一天内完成招募、访谈、记录与问题排序。", tags: ["访谈", "可用性测试"] }],
+  },
+  alan: {
+    bio: "我在做开发者协作产品，关心新团队如何从‘认识’走到真正开工。这次也想交换现场验证方法。",
+    location: "北京",
+    availability: "可投入 8 小时",
+    collaboration: "喜欢先明确假设、证据和停止条件。",
+    projects: [{ title: "开发者共创社区", detail: "从 0 到 1 搭建项目匹配与共创活动流程。", tags: ["产品", "社区"] }],
+  },
+  aguang: {
+    bio: "我做开发者社区和内容增长，尤其关心一个好产品如何让第一批用户愿意带来下一个人。",
+    location: "成都",
+    availability: "可投入 6 小时",
+    collaboration: "我可以帮忙拆解现场获客、分享和邀请链路。",
+    projects: [{ title: "AI 开发者社群", detail: "运营 8000 人社群，建立内容、活动与邀请增长机制。", tags: ["社区", "增长"] }],
+  },
+  hanche: {
+    bio: "我做社交产品的滥用防护和红队测试。如果你们有明确的建联、撤回或拉黑流程，我可以快速找出最危险的缺口。",
+    location: "深圳",
+    availability: "可提供 1 小时安全审查",
+    collaboration: "需要一份明确的安全问题清单和当前流程。",
+    projects: [{ title: "社交产品反骚扰系统", detail: "建立举报、拉黑、限频与审计链路。", tags: ["风控", "红队"] }],
+  },
+  carlo: {
+    bio: "我做工业设计和快速结构打样，喜欢让一个原本只有线框图的产品在 48 小时内变成真正能拿在手里的原型。",
+    location: "苏州",
+    availability: "可投入 10 小时",
+    collaboration: "今天内需要冻结尺寸、器件和佩戴方式。",
+    projects: [{ title: "48h 可穿戴设备外壳", detail: "完成 CMF、内部堆叠、3D 打印与佩戴测试。", tags: ["CMF", "结构"] }],
+  },
+};
+
 const availabilityHoursByPerson = {
   lin: 12,
   su: 8,
@@ -333,6 +425,7 @@ const state = {
   },
   toast: "",
   overlay: null,
+  personDetailExpanded: false,
 };
 
 const app = document.querySelector("#app");
@@ -354,6 +447,16 @@ function selectedPerson() {
   return people.find((person) => person.id === state.selectedId)
     || state.live?.nearby.find((person) => person.id === state.selectedId)
     || people[0];
+}
+
+function selectedParticipantProfile(person = selectedPerson()) {
+  return participantProfiles[person.id] || {
+    bio: "这位参与者还没有填写公开的个人简介。",
+    location: "本场活动",
+    availability: "投入时间待确认",
+    collaboration: "协作偏好待确认",
+    projects: [],
+  };
 }
 
 function escapeHtml(value) {
@@ -1220,12 +1323,48 @@ function renderOverlay() {
   const person = selectedPerson();
   if (state.overlay === "person") {
     const greeted = state.greeted.includes(person.id);
-    return `<div class="overlay"><button class="overlay-backdrop" data-action="close-overlay" aria-label="关闭"></button><section class="bottom-sheet person-sheet">
-      <div class="sheet-handle"></div>
-      <div class="person-sheet-head">${glyph(person, "lg")}<div><span class="status-pill">${person.status}</span><h3>${person.name}</h3><p>${person.role} · ${person.proximity}</p></div><strong class="large-fit">${person.fit}<small>${person.fitDetail}</small></strong></div>
-      <div class="skill-line">${person.skills.map((skill) => `<span>${skill}</span>`).join("")}</div>
-      <article class="ai-reason"><p class="micro-label">WHY THIS PERSON</p><h4>为什么值得当面认识</h4><p>${person.reason}</p><div><span>项目证据</span><strong>${person.evidence}</strong></div><div class="caution"><span>先确认</span><strong>${person.caution}</strong></div></article>
-      <div class="sheet-actions"><button class="secondary-button" data-action="greet" data-person="${person.id}">${greeted ? "已表达想认识" : "想认识"}</button><button class="primary-button" data-action="direct-tap" data-person="${person.id}">模拟碰卡直连</button></div>
+    const profile = selectedParticipantProfile(person);
+    const expandedClass = state.personDetailExpanded ? "is-expanded" : "is-preview";
+    return `<div class="overlay person-overlay ${expandedClass}"><button class="overlay-backdrop" data-action="close-overlay" aria-label="关闭"></button><section class="bottom-sheet person-sheet ${expandedClass}" data-person-sheet-surface aria-label="${person.name} 的个人资料">
+      <div class="person-sheet-drag-zone" data-person-sheet-drag role="button" tabindex="0" aria-label="${state.personDetailExpanded ? "下滑收起完整资料" : "上滑查看完整资料"}">
+        <div class="sheet-handle"></div>
+        ${state.personDetailExpanded ? `<div class="person-sheet-nav"><button data-action="collapse-person" aria-label="返回发现页">↓</button><span>个人资料</span><small>顶部下滑收起</small></div>` : ""}
+      </div>
+      <div class="person-sheet-content">
+        <div class="person-sheet-head">${glyph(person, "lg")}<div><span class="status-pill">${person.status}</span><h3>${person.name}</h3><p>${person.role} · ${person.proximity}</p></div><strong class="large-fit">${person.fit}<small>${person.fitDetail}</small></strong></div>
+        <div class="skill-line">${person.skills.map((skill) => `<span>${skill}</span>`).join("")}</div>
+        <article class="participant-bio">
+          <header><span>本人简介</span><em>原文</em></header>
+          <p>${profile.bio}</p>
+        </article>
+        ${state.personDetailExpanded ? `
+          <section class="profile-facts" aria-label="基本信息">
+            <article><span>所在地</span><strong>${profile.location}</strong></article>
+            <article><span>可投入时间</span><strong>${profile.availability}</strong></article>
+          </section>
+          <section class="profile-section profile-projects">
+            <header><span>SELECTED WORK</span><h4>过往项目</h4></header>
+            ${profile.projects.length ? profile.projects.map((project, index) => `<article>
+              <span>${String(index + 1).padStart(2, "0")}</span>
+              <div><h5>${project.title}</h5><p>${project.detail}</p><div>${project.tags.map((tag) => `<em>${tag}</em>`).join("")}</div></div>
+            </article>`).join("") : `<p class="profile-empty-copy">尚未公开过往项目。</p>`}
+          </section>
+          <section class="profile-section collaboration-style">
+            <header><span>WORKING TOGETHER</span><h4>协作方式</h4></header>
+            <p>${profile.collaboration}</p>
+          </section>
+          <section class="profile-section evidence-section">
+            <header><span>PUBLIC EVIDENCE</span><h4>能力证据</h4></header>
+            <strong>${person.evidence}</strong>
+          </section>
+          <article class="ai-reason ai-reference"><p class="micro-label">AGENT REFERENCE</p><h4>系统推荐参考</h4><p>${person.reason}</p><div class="caution"><span>见面前建议确认</span><strong>${person.caution}</strong></div></article>
+        ` : `
+          <button class="person-expand-cue" data-action="expand-person">
+            <span>继续上滑</span><strong>查看过往项目与全部资料</strong><i>↑</i>
+          </button>
+        `}
+      </div>
+      <div class="sheet-actions person-sheet-actions"><button class="secondary-button" data-action="greet" data-person="${person.id}">${greeted ? "已表达想认识" : "想认识"}</button><button class="primary-button" data-action="direct-tap" data-person="${person.id}">模拟碰卡直连</button></div>
     </section></div>`;
   }
   if (state.overlay === "tap") {
@@ -1293,6 +1432,7 @@ function bindEvents() {
     element.addEventListener("click", () => {
       state.selectedId = element.dataset.person;
       state.overlay = "person";
+      state.personDetailExpanded = false;
       render();
     });
   });
@@ -1305,6 +1445,81 @@ function bindEvents() {
   document.querySelectorAll("[data-task]").forEach((element) => element.addEventListener("click", () => toggleTask(element.dataset.task)));
   document.querySelectorAll("[data-discovery-view]").forEach((element) => element.addEventListener("click", () => setVariant(element.dataset.discoveryView)));
   bindRecommendationSwipe();
+  bindPersonSheetGesture();
+}
+
+function bindPersonSheetGesture() {
+  const dragZone = document.querySelector("[data-person-sheet-drag]");
+  const sheet = document.querySelector(".person-sheet");
+  if (!dragZone || !sheet) return;
+
+  let startY = 0;
+  let deltaY = 0;
+  let dragging = false;
+
+  const finish = () => {
+    if (!dragging) return;
+    dragging = false;
+    sheet.classList.remove("is-dragging");
+    sheet.style.removeProperty("--sheet-drag-y");
+    if (!state.personDetailExpanded && deltaY < -42) {
+      transitionPersonDetail(true);
+    } else if (state.personDetailExpanded && deltaY > 52) {
+      transitionPersonDetail(false);
+    }
+  };
+
+  const start = (event) => {
+    const startedFromHandle = Boolean(event.target.closest?.("[data-person-sheet-drag]"));
+    if (state.personDetailExpanded && !startedFromHandle) return;
+    if (!startedFromHandle && event.target.closest?.("button, a, input, select, textarea")) return;
+    startY = event.clientY;
+    deltaY = 0;
+    dragging = true;
+    sheet.classList.add("is-dragging");
+    try {
+      sheet.setPointerCapture?.(event.pointerId);
+    } catch {
+      // Synthetic prototype gestures may not create an active browser pointer.
+    }
+  };
+  const move = (event) => {
+    if (!dragging) return;
+    deltaY = event.clientY - startY;
+    const resisted = state.personDetailExpanded
+      ? Math.max(-8, Math.min(deltaY * .82, 116))
+      : Math.max(deltaY * .72, -112);
+    sheet.style.setProperty("--sheet-drag-y", `${resisted}px`);
+  };
+  sheet.addEventListener("pointerdown", start);
+  sheet.addEventListener("pointermove", move);
+  sheet.addEventListener("pointerup", finish);
+  sheet.addEventListener("pointercancel", finish);
+  dragZone.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowUp" && !state.personDetailExpanded) {
+      transitionPersonDetail(true);
+    }
+    if ((event.key === "ArrowDown" || event.key === "Escape") && state.personDetailExpanded) {
+      transitionPersonDetail(false);
+    }
+  });
+}
+
+function transitionPersonDetail(expanded) {
+  const update = () => {
+    state.personDetailExpanded = expanded;
+    render();
+  };
+  const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  if (!document.startViewTransition || reducedMotion) {
+    update();
+    return;
+  }
+  document.documentElement.dataset.personTransition = expanded ? "expanding" : "collapsing";
+  const transition = document.startViewTransition(update);
+  transition.finished.finally(() => {
+    delete document.documentElement.dataset.personTransition;
+  });
 }
 
 function bindRecommendationSwipe() {
@@ -1361,6 +1576,7 @@ function bindRecommendationSwipe() {
     else if (Math.abs(deltaX) < 7) {
       state.selectedId = card.dataset.personId;
       state.overlay = "person";
+      state.personDetailExpanded = false;
       render();
     } else resetCard();
   });
@@ -1386,6 +1602,7 @@ function bindRecommendationSwipe() {
       event.stopPropagation();
       state.selectedId = card.dataset.personId;
       state.overlay = "person";
+      state.personDetailExpanded = false;
       render();
     }
   });
@@ -1482,6 +1699,15 @@ function handleAction(action, element) {
   if (action === "open-person") {
     state.selectedId = element.dataset.person || state.selectedId;
     state.overlay = "person";
+    state.personDetailExpanded = false;
+  }
+  if (action === "expand-person") {
+    transitionPersonDetail(true);
+    return;
+  }
+  if (action === "collapse-person") {
+    transitionPersonDetail(false);
+    return;
   }
   if (action === "dismiss-recommendation") dismissRecommendation();
   if (action === "like-recommendation") expressRecommendationInterest(element.dataset.person);

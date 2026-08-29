@@ -401,8 +401,60 @@ def main():
         page.goto(f"{BASE_URL}/?variant=A")
         page.wait_for_load_state("networkidle")
         page.locator(".recommendation-card-active").click()
+        report["flow"]["person_preview_shows_authored_bio_not_agent_summary"] = (
+            page.get_by_text("本人简介", exact=True).is_visible()
+            and page.get_by_text("原文", exact=True).is_visible()
+            and page.locator(".person-sheet.is-preview").count() == 1
+            and page.locator(".person-sheet.is-preview .ai-reason").count() == 0
+        )
+        assert report["flow"]["person_preview_shows_authored_bio_not_agent_summary"]
         assert_mobile_visual_baseline(page, report["visual_baseline"], "person_detail_sheet")
         page.screenshot(path=str(OUTPUT_DIR / "step-1-match-reason.png"), full_page=True)
+        page.locator("[data-person-sheet-drag]").evaluate(
+            """zone => {
+                const box = zone.getBoundingClientRect();
+                const x = box.left + box.width / 2;
+                const startY = box.top + Math.min(box.height / 2, 28);
+                zone.dispatchEvent(new PointerEvent('pointerdown', {bubbles:true, pointerId:9, clientX:x, clientY:startY}));
+                zone.dispatchEvent(new PointerEvent('pointermove', {bubbles:true, pointerId:9, clientX:x, clientY:startY - 80}));
+                zone.dispatchEvent(new PointerEvent('pointerup', {bubbles:true, pointerId:9, clientX:x, clientY:startY - 80}));
+            }"""
+        )
+        page.locator(".person-sheet.is-expanded").wait_for()
+        report["flow"]["person_sheet_swipes_to_full_profile"] = (
+            page.locator(".person-sheet.is-expanded").count() == 1
+            and page.get_by_text("过往项目", exact=True).is_visible()
+            and page.get_by_text("协作方式", exact=True).is_visible()
+            and page.get_by_text("系统推荐参考", exact=True).count() == 1
+        )
+        assert report["flow"]["person_sheet_swipes_to_full_profile"]
+        profile_scroll = page.locator(".person-sheet-content").evaluate(
+            """content => {
+                const before = content.scrollTop;
+                content.scrollTop = content.scrollHeight;
+                return {before, after: content.scrollTop, scrollHeight: content.scrollHeight, clientHeight: content.clientHeight};
+            }"""
+        )
+        report["flow"]["full_profile_scrolls_independently"] = (
+            profile_scroll["scrollHeight"] > profile_scroll["clientHeight"]
+            and profile_scroll["after"] > profile_scroll["before"]
+        )
+        assert report["flow"]["full_profile_scrolls_independently"], profile_scroll
+        page.locator("[data-person-sheet-drag]").evaluate(
+            """zone => {
+                const box = zone.getBoundingClientRect();
+                const x = box.left + box.width / 2;
+                const startY = box.top + Math.min(box.height / 2, 28);
+                zone.dispatchEvent(new PointerEvent('pointerdown', {bubbles:true, pointerId:10, clientX:x, clientY:startY}));
+                zone.dispatchEvent(new PointerEvent('pointermove', {bubbles:true, pointerId:10, clientX:x, clientY:startY + 90}));
+                zone.dispatchEvent(new PointerEvent('pointerup', {bubbles:true, pointerId:10, clientX:x, clientY:startY + 90}));
+            }"""
+        )
+        page.locator(".person-sheet.is-preview").wait_for()
+        report["flow"]["full_profile_top_swipe_returns_to_discovery_sheet"] = (
+            page.locator(".person-sheet.is-preview").count() == 1
+        )
+        assert report["flow"]["full_profile_top_swipe_returns_to_discovery_sheet"]
         page.get_by_role("button", name="想认识", exact=True).click()
         page.get_by_role("button", name="模拟碰卡直连").click()
         page.screenshot(path=str(OUTPUT_DIR / "step-2-card-handshake.png"), full_page=True)
