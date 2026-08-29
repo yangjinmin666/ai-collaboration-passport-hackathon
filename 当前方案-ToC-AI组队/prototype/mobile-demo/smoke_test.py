@@ -413,7 +413,7 @@ def main():
         page.get_by_role("button", name="≥ 8h", exact=True).click()
         page.get_by_role("button", name="查看 0 人", exact=True).click()
         report["flow"]["hard_filters_never_silently_relax"] = page.get_by_text(
-            "RALLY 不会自动放宽你的筛选条件。调整状态、职能或投入时间后再查看。",
+            "COSPAN 不会自动放宽你的筛选条件。调整状态、职能或投入时间后再查看。",
             exact=True,
         ).is_visible()
         assert report["flow"]["hard_filters_never_silently_relax"]
@@ -782,22 +782,28 @@ def main():
         assert report["flow"]["team_invite_requires_recipient_confirmation"]
         page.get_by_role("button", name="模拟对方确认加入").click()
         page.screenshot(path=str(OUTPUT_DIR / "step-4-team-joined.png"), full_page=True)
-        page.get_by_role("button", name="进入项目启动舱").click()
+        page.get_by_role("button", name="进入人机协作空间").click()
         report["flow"]["launch_room_created"] = page.locator(".workspace-view").is_visible()
         report["flow"]["mobile_launch_progress_visible"] = page.locator(
-            ".workspace-launch-track"
-        ).is_visible()
+            ".workspace-launch-summary[role='progressbar']"
+        ).is_visible() and page.locator(
+            ".workspace-launch-summary"
+        ).get_attribute("aria-valuenow") == "2"
+        report["flow"]["mobile_workspace_tabs_are_navigation"] = page.locator(
+            ".workspace-tabs button"
+        ).all_inner_texts() == ["概览", "任务", "记录"]
         report["flow"]["mobile_starts_with_one_clear_action"] = page.get_by_role(
-            "button", name="查看并确认分工"
+            "button", name="查看分工建议"
         ).is_visible()
         report["flow"]["mobile_avoids_permission_dashboard"] = not page.locator(
             ".workspace-mobile-content .workspace-members"
         ).is_visible()
         assert report["flow"]["launch_room_created"]
         assert report["flow"]["mobile_launch_progress_visible"]
+        assert report["flow"]["mobile_workspace_tabs_are_navigation"]
         assert report["flow"]["mobile_starts_with_one_clear_action"]
         assert report["flow"]["mobile_avoids_permission_dashboard"]
-        page.get_by_role("button", name="查看并确认分工").click()
+        page.get_by_role("button", name="查看分工建议").click()
         report["flow"]["human_confirmation_required"] = page.get_by_text(
             "Agent 只能提出建议。每位成员都可以认领真正想做的部分，最终选择权交给人。",
             exact=True,

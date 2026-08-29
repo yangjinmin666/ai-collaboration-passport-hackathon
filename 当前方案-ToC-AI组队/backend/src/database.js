@@ -51,6 +51,35 @@ export function openDatabase(databasePath) {
     CREATE INDEX IF NOT EXISTS auth_sessions_by_user
       ON auth_sessions (user_id, expires_at);
 
+    CREATE TABLE IF NOT EXISTS oauth_identities (
+      provider TEXT NOT NULL,
+      subject TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      email TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (provider, subject),
+      FOREIGN KEY (user_id) REFERENCES users(user_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS oauth_identities_by_user
+      ON oauth_identities (user_id, provider);
+
+    CREATE TABLE IF NOT EXISTS oauth_login_tickets (
+      ticket_hash TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      code_challenge TEXT NOT NULL,
+      is_new_user INTEGER NOT NULL CHECK (is_new_user IN (0, 1)),
+      created_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      consumed_at TEXT,
+      FOREIGN KEY (user_id) REFERENCES users(user_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS oauth_login_tickets_by_expiry
+      ON oauth_login_tickets (expires_at, consumed_at);
+
     CREATE TABLE IF NOT EXISTS otp_challenges (
       challenge_id TEXT PRIMARY KEY,
       phone TEXT NOT NULL,
@@ -223,6 +252,12 @@ export function openDatabase(databasePath) {
   const otpColumns = database.prepare("PRAGMA table_info(otp_challenges)").all();
   if (!otpColumns.some((column) => column.name === "request_ip")) {
     database.exec("ALTER TABLE otp_challenges ADD COLUMN request_ip TEXT NOT NULL DEFAULT 'unknown'");
+  }
+  const oauthTicketColumns = database.prepare("PRAGMA table_info(oauth_login_tickets)").all();
+  if (!oauthTicketColumns.some((column) => column.name === "code_challenge")) {
+    database.exec(
+      "ALTER TABLE oauth_login_tickets ADD COLUMN code_challenge TEXT NOT NULL DEFAULT ''",
+    );
   }
   const requestColumns = database
     .prepare("PRAGMA table_info(connection_requests)")
@@ -826,6 +861,37 @@ export function recordOtpFailure(database, { challengeId, now }) {
   `).run(challengeId, now);
 }
 
+function ensureMinimumEventProfile(database, { userId, eventId, now, newUser = false }) {
+  const event = database.prepare(`
+    SELECT ends_at FROM events WHERE event_id = ? AND ends_at > ?
+  `).get(eventId, now);
+  if (!event) return;
+  const insertedProfile = database.prepare(`
+    INSERT OR IGNORE INTO profiles (
+      user_id, event_id, role, status, skills_json, interests_json,
+      availability, collaboration_preferences_json, collaboration_need,
+      evidence_json
+    ) VALUES (?, ?, '待完善协作资料', '未组队', '[]', '[]', '待补充', '[]', '', '[]')
+  `).run(userId, eventId);
+  database.prepare(`
+    INSERT OR IGNORE INTO visibility_grants (
+      user_id, event_id, state, public_fields_json, starts_at, expires_at
+    ) VALUES (?, ?, 'HIDDEN', '[]', ?, ?)
+  `).run(userId, eventId, now, event.ends_at);
+  if (insertedProfile.changes > 0) {
+    appendEventLog(database, {
+      eventId,
+      actorId: userId,
+      type: "event_joined",
+      objectType: "profile",
+      objectId: userId,
+      source: "mobile",
+      payload: { event_id: eventId, new_user: Boolean(newUser) },
+      createdAt: now,
+    });
+  }
+}
+
 export function findOrCreateOtpUser(
   database,
   { phone, displayName, eventId, now },
@@ -842,41 +908,111 @@ export function findOrCreateOtpUser(
     database.prepare(`
       INSERT INTO users (user_id, display_name, avatar, email, phone)
       VALUES (?, ?, ?, NULL, ?)
-    `).run(userId, displayName, `memoji-${avatarNumber}`, phone);
+    `).run(userId, displayName || "COSPAN 新朋友", `memoji-${avatarNumber}`, phone);
     row = { user_id: userId };
   }
 
-  const event = database.prepare(`
-    SELECT ends_at FROM events WHERE event_id = ? AND ends_at > ?
-  `).get(eventId, now);
-  if (event) {
-    const insertedProfile = database.prepare(`
-      INSERT OR IGNORE INTO profiles (
-        user_id, event_id, role, status, skills_json, interests_json,
-        availability, collaboration_preferences_json, collaboration_need,
-        evidence_json
-      ) VALUES (?, ?, '待完善协作资料', '未组队', '[]', '[]', '待补充', '[]', '', '[]')
-    `).run(row.user_id, eventId);
-    database.prepare(`
-      INSERT OR IGNORE INTO visibility_grants (
-        user_id, event_id, state, public_fields_json, starts_at, expires_at
-      ) VALUES (?, ?, 'HIDDEN', '[]', ?, ?)
-    `).run(row.user_id, eventId, now, event.ends_at);
-    if (insertedProfile.changes > 0) {
-      appendEventLog(database, {
-        eventId,
-        actorId: row.user_id,
-        type: "event_joined",
-        objectType: "profile",
-        objectId: row.user_id,
-        source: "mobile",
-        payload: { event_id: eventId },
-        createdAt: now,
-      });
-    }
-  }
+  ensureMinimumEventProfile(database, {
+    userId: row.user_id,
+    eventId,
+    now,
+    newUser: isNewUser,
+  });
 
   return { userId: row.user_id, isNewUser };
+}
+
+export function findOrCreateOAuthUser(
+  database,
+  { provider, subject, email, emailVerified, displayName, eventId, now },
+) {
+  let identity = database.prepare(`
+    SELECT user_id FROM oauth_identities WHERE provider = ? AND subject = ?
+  `).get(provider, subject);
+  const isNewUser = !identity;
+  if (!identity) {
+    const userId = `user_${randomUUID()}`;
+    const identityKey = `${provider}:${subject}`;
+    const avatarNumber = 1 + (
+      Number.parseInt(createHash("sha256").update(identityKey).digest("hex").slice(0, 2), 16) % 10
+    );
+    const normalizedName = typeof displayName === "string"
+      ? displayName.trim().replace(/\s+/g, " ").slice(0, 40)
+      : "";
+    const storedEmail = emailVerified && typeof email === "string" ? email : null;
+    database.exec("BEGIN IMMEDIATE");
+    try {
+      database.prepare(`
+        INSERT INTO users (user_id, display_name, avatar, email, phone)
+        VALUES (?, ?, ?, ?, NULL)
+      `).run(userId, normalizedName || "COSPAN 新朋友", `memoji-${avatarNumber}`, storedEmail);
+      database.prepare(`
+        INSERT INTO oauth_identities (
+          provider, subject, user_id, email, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?)
+      `).run(provider, subject, userId, storedEmail, now, now);
+      database.exec("COMMIT");
+    } catch (error) {
+      database.exec("ROLLBACK");
+      throw error;
+    }
+    identity = { user_id: userId };
+  } else {
+    const storedEmail = emailVerified && typeof email === "string" ? email : null;
+    database.prepare(`
+      UPDATE oauth_identities
+      SET email = COALESCE(?, email), updated_at = ?
+      WHERE provider = ? AND subject = ?
+    `).run(storedEmail, now, provider, subject);
+  }
+
+  ensureMinimumEventProfile(database, {
+    userId: identity.user_id,
+    eventId,
+    now,
+    newUser: isNewUser,
+  });
+  return { userId: identity.user_id, isNewUser };
+}
+
+export function createOAuthLoginTicket(
+  database,
+  { userId, provider, codeChallenge, isNewUser, now, expiresAt },
+) {
+  const ticket = randomBytes(32).toString("base64url");
+  database.prepare(`
+    INSERT INTO oauth_login_tickets (
+      ticket_hash, user_id, provider, code_challenge, is_new_user,
+      created_at, expires_at, consumed_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL)
+  `).run(
+    hashSessionToken(ticket),
+    userId,
+    provider,
+    codeChallenge,
+    isNewUser ? 1 : 0,
+    now,
+    expiresAt,
+  );
+  return ticket;
+}
+
+export function consumeOAuthLoginTicket(database, { ticket, codeChallenge, now }) {
+  const row = database.prepare(`
+    UPDATE oauth_login_tickets
+    SET consumed_at = ?
+    WHERE ticket_hash = ?
+      AND code_challenge = ?
+      AND consumed_at IS NULL
+      AND expires_at > ?
+    RETURNING user_id, provider, is_new_user
+  `).get(now, hashSessionToken(ticket), codeChallenge, now);
+  if (!row) return null;
+  return {
+    userId: row.user_id,
+    provider: row.provider,
+    isNewUser: Boolean(row.is_new_user),
+  };
 }
 
 export function findSessionUserId(database, { token, now }) {
@@ -996,7 +1132,16 @@ export function countRecentConnectionRequests(
 
 export function createConnectionRequest(
   database,
-  { requesterId, recipientId, eventId, source, message, expiresAt, now },
+  {
+    requesterId,
+    recipientId,
+    eventId,
+    source,
+    message,
+    expiresAt,
+    now,
+    analyticsAttribution = null,
+  },
 ) {
   const request = {
     id: `req_${randomUUID()}`,
@@ -1040,6 +1185,7 @@ export function createConnectionRequest(
         requester_id: requesterId,
         recipient_id: recipientId,
         event_id: eventId,
+        ...(analyticsAttribution ?? {}),
       },
       createdAt: now,
     });

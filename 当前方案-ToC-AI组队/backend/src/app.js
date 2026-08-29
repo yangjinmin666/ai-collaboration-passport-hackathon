@@ -1,5 +1,7 @@
 import { createServer } from "node:http";
+import { randomUUID } from "node:crypto";
 
+import { AnalyticsRequestError, createAnalyticsService } from "./analytics.js";
 import { createProductModule } from "./product-module.js";
 
 import {
@@ -9,6 +11,7 @@ import {
   cancelConnectionRequest,
   countRecentConnectionRequests,
   createAuthSession,
+  createOAuthLoginTicket,
   createOtpChallenge,
   deleteOtpChallenge,
   createConnectionRequest,
@@ -24,6 +27,7 @@ import {
   findPublicCardProfile,
   findSessionUserId,
   findUserIdentity,
+  findOrCreateOAuthUser,
   findOrCreateOtpUser,
   isParticipantVisible,
   isConnectionBlocked,
@@ -34,6 +38,7 @@ import {
   readOtpPhoneWindow,
   readOtpIpWindow,
   revokeAuthSession,
+  consumeOAuthLoginTicket,
   consumeOtpChallenge,
   userExists,
 } from "./database.js";
@@ -45,8 +50,23 @@ import {
   normalizeChinaMobile,
   otpCodeHashesEqual,
 } from "./otp-auth.js";
+import {
+  appendOAuthResult,
+  buildOAuthAuthorizationUrl,
+  createOAuthState,
+  exchangeOAuthCode,
+  normalizeOAuthReturnTo,
+  oauthCodeChallenge,
+  oauthCallbackUri,
+  oauthPublicOriginIsSecure,
+  oauthProviderIsConfigured,
+  oauthStateSecretIsStrong,
+  OAUTH_PROVIDERS,
+  verifyOAuthState,
+} from "./oauth-auth.js";
 
 const SOURCES = new Set(["nfc", "qr", "link"]);
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const CONNECTION_REQUEST_STATUSES = new Set([
   "REQUESTED",
   "ACCEPTED",
@@ -54,6 +74,20 @@ const CONNECTION_REQUEST_STATUSES = new Set([
   "CANCELLED",
   "EXPIRED",
   "BLOCKED",
+]);
+const analyticsConnectionSource = (source) => (
+  source === "link" ? "online_recommendation" : source
+);
+const PRODUCT_GUARDRAIL_CODES = new Map([
+  ["ALREADY_PROJECT_MEMBER", "duplicate_membership"],
+  ["INVITATION_EXPIRED", "expired_invitation"],
+  ["INVITATION_FORBIDDEN", "unauthorized_team_action"],
+  ["PROJECT_FORBIDDEN", "unauthorized_project_access"],
+  ["ROLE_NEED_FILLED", "role_capacity_protected"],
+  ["TASK_FORBIDDEN", "unauthorized_task_action"],
+  ["TASK_OWNER_ONLY", "task_owner_confirmation_required"],
+  ["TEAM_NOT_READY", "team_confirmation_required"],
+  ["VISIBILITY_REQUIRED", "visibility_required"],
 ]);
 const CONNECTION_REQUEST_RESOLVERS = {
   block: {
@@ -94,7 +128,18 @@ function matchCardRoute(url) {
 
 function sendJson(response, status, body, extraHeaders = {}) {
   response.writeHead(status, {
-    "access-control-allow-headers": "authorization, content-type, x-demo-access-key, x-demo-user-id, x-touch-device-key",
+    "access-control-allow-headers": [
+      "authorization",
+      "content-type",
+      "x-analytics-admin-token",
+      "x-demo-access-key",
+      "x-demo-user-id",
+      "x-rally-anonymous-id",
+      "x-rally-app-version",
+      "x-rally-client-type",
+      "x-rally-session-id",
+      "x-touch-device-key",
+    ].join(", "),
     "access-control-allow-methods": "DELETE, GET, POST, PUT, PATCH, OPTIONS",
     "access-control-allow-origin": "*",
     "cache-control": "no-store",
@@ -104,8 +149,27 @@ function sendJson(response, status, body, extraHeaders = {}) {
   response.end(JSON.stringify(body));
 }
 
+function sendCsv(response, filename, body) {
+  response.writeHead(200, {
+    "access-control-allow-origin": "*",
+    "cache-control": "no-store",
+    "content-disposition": `attachment; filename="${filename}"`,
+    "content-type": "text/csv; charset=utf-8",
+  });
+  response.end(body);
+}
+
 function sendError(response, status, code, message, extraHeaders) {
   sendJson(response, status, { error: { code, message } }, extraHeaders);
+}
+
+function sendRedirect(response, location) {
+  response.writeHead(302, {
+    "cache-control": "no-store",
+    location,
+    "referrer-policy": "no-referrer",
+  });
+  response.end();
 }
 
 function readPathParameter(response, encodedValue) {
@@ -145,8 +209,16 @@ async function readJsonBody(request, response) {
       isLarge ? "PAYLOAD_TOO_LARGE" : "INVALID_JSON",
       isLarge ? "Request payload is too large." : "Request body must be valid JSON.",
     );
-    return { ok: false };
+    return { ok: false, errorCode: isLarge ? "PAYLOAD_TOO_LARGE" : "INVALID_JSON" };
   }
+}
+
+function analyticsCountBucket(payload) {
+  const count = Array.isArray(payload?.events) ? payload.events.length : 1;
+  if (count <= 1) return "1";
+  if (count <= 5) return "2-5";
+  if (count <= 20) return "6-20";
+  return "21+";
 }
 
 function readBearerToken(request) {
@@ -193,17 +265,108 @@ export function createApi({
   otpSender = null,
   otpEventId = "hackathon-2026",
   otpCodeGenerator = createOtpCode,
+  publicAppOrigin = null,
+  publicApiOrigin = null,
+  oauthStateSecret = null,
+  oauthProviders = {},
+  androidAppLinkReady = false,
+  oauthIdentityResolver = exchangeOAuthCode,
+  analyticsAdminToken = null,
+  analyticsAppVersion = "development",
+  analyticsDebugEnabled = false,
 }) {
-  const smsLoginConfigured = typeof otpSecret === "string"
+  const smsLoginReady = typeof otpSecret === "string"
     && otpSecret.length > 0
     && typeof otpSender === "function";
   const database = openDatabase(databasePath);
+  const analytics = createAnalyticsService(database, {
+    clock,
+    adminToken: analyticsAdminToken,
+    appVersion: analyticsAppVersion,
+  });
   const productModule = createProductModule(database, {
     clock,
     presenceTtlMs,
     platformMetadataFetcher,
     demoAccessKey,
     eventPolicyOverrides,
+  });
+  const enabledOAuthProviders = Object.fromEntries(
+    OAUTH_PROVIDERS.map((provider) => [
+      provider,
+      Boolean(
+        oauthStateSecretIsStrong(oauthStateSecret)
+        && oauthPublicOriginIsSecure(publicAppOrigin)
+        && oauthPublicOriginIsSecure(publicApiOrigin)
+        && oauthProviderIsConfigured(oauthProviders[provider]),
+      ),
+    ]),
+  );
+  const trackBackendAnalytics = (event) => {
+    try {
+      analytics.recordBackendEvent(event);
+    } catch (error) {
+      console.error("Analytics event could not be recorded", error);
+    }
+  };
+  const trackOtpFailure = (request, eventName, failureCode, {
+    challengeId = null,
+    attemptBucket = null,
+    retryable = true,
+  } = {}) => {
+    const properties = eventName === "login_otp_request_failed"
+      ? { failure_code: failureCode, retryable }
+      : {
+          ...(challengeId ? { challenge_id: challengeId } : {}),
+          failure_code: failureCode,
+          ...(attemptBucket ? { attempt_bucket: attemptBucket } : {}),
+        };
+    trackBackendAnalytics({
+      eventName,
+      exhibitionId: otpEventId,
+      source: "sms_login",
+      objectType: challengeId ? "otp_challenge" : null,
+      objectId: challengeId,
+      properties,
+      request,
+      occurredAt: clock().toISOString(),
+    });
+  };
+  const trackGuardrail = (request, {
+    userId = null,
+    exhibitionId = otpEventId,
+    guardrailCode,
+    objectType = "request",
+    objectId = null,
+    source = "system",
+  }) => trackBackendAnalytics({
+    eventName: "guardrail_blocked",
+    exhibitionId,
+    userId,
+    source,
+    objectType,
+    objectId,
+    properties: {
+      guardrail_code: guardrailCode,
+      object_type: objectType,
+      source,
+    },
+    request,
+    occurredAt: clock().toISOString(),
+  });
+  const trackTouchFailure = (request, failureCode, {
+    exhibitionId = otpEventId,
+    handshakeId = randomUUID(),
+  } = {}) => trackBackendAnalytics({
+    eventName: "touch_handshake_failed",
+    exhibitionId,
+    source: "physical_mutual",
+    objectType: "touch_handshake",
+    objectId: handshakeId,
+    properties: { handshake_id: handshakeId, failure_code: failureCode },
+    request,
+    occurredAt: clock().toISOString(),
+    dedupeKey: `touch_handshake_failed:${handshakeId}:${failureCode}`,
   });
   const handleRequest = async (request, response) => {
     if (request.method === "OPTIONS") {
@@ -216,28 +379,338 @@ export function createApi({
       sendJson(response, 200, {
         status: "ok",
         service: "rally-api",
-        sms_login: smsLoginConfigured ? "ready" : "disabled",
+        sms_login: smsLoginReady ? "ready" : "disabled",
+        analytics: "ready",
+      });
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/analytics/events") {
+      const parsedBody = await readJsonBody(request, response);
+      if (!parsedBody.ok) {
+        console.warn("Analytics batch rejected", JSON.stringify({
+          event: "analytics_batch_rejected",
+          failure_code: parsedBody.errorCode,
+          event_count_bucket: "unknown",
+        }));
+        return;
+      }
+      try {
+        const result = analytics.ingestClientEvents(parsedBody.value, {
+          actorId: resolveActorId(
+            database,
+            request,
+            clock().toISOString(),
+            allowInsecureDemoAuth,
+          ),
+          request,
+        });
+        sendJson(response, 202, result);
+      } catch (error) {
+        if (error instanceof AnalyticsRequestError) {
+          console.warn("Analytics batch rejected", JSON.stringify({
+            event: "analytics_batch_rejected",
+            failure_code: error.code,
+            event_count_bucket: analyticsCountBucket(parsedBody.value),
+          }));
+          sendError(response, error.status, error.code, error.message);
+          return;
+        }
+        throw error;
+      }
+      return;
+    }
+
+    const analyticsUserMatch = url.pathname.match(/^\/api\/admin\/analytics\/users\/([^/]+)$/);
+    if (request.method === "DELETE" && analyticsUserMatch) {
+      if (!analytics.adminAuthorized(request.headers["x-analytics-admin-token"])) {
+        sendError(response, 401, "ANALYTICS_ADMIN_REQUIRED", "A valid analytics admin token is required.");
+        return;
+      }
+      const userId = readPathParameter(response, analyticsUserMatch[1]);
+      if (userId === null) return;
+      if (!userId || userId.length > 128) {
+        sendError(response, 400, "INVALID_ANALYTICS_USER", "A valid internal user ID is required.");
+        return;
+      }
+      const exhibitionId = url.searchParams.get("exhibition_id") || otpEventId;
+      if (!database.prepare("SELECT 1 FROM events WHERE event_id = ?").get(exhibitionId)) {
+        sendError(response, 404, "EXHIBITION_NOT_FOUND", "Exhibition not found.");
+        return;
+      }
+      sendJson(response, 200, {
+        exhibition_id: exhibitionId,
+        user_id: userId,
+        deleted_events: analytics.deleteUserEvents(exhibitionId, userId),
+      });
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/admin/analytics/events") {
+      if (!analyticsDebugEnabled) {
+        sendError(response, 404, "NOT_FOUND", "Route not found.");
+        return;
+      }
+      if (!analytics.adminAuthorized(request.headers["x-analytics-admin-token"])) {
+        sendError(response, 401, "ANALYTICS_ADMIN_REQUIRED", "A valid analytics admin token is required.");
+        return;
+      }
+      const exhibitionId = url.searchParams.get("exhibition_id") || otpEventId;
+      if (!database.prepare("SELECT 1 FROM events WHERE event_id = ?").get(exhibitionId)) {
+        sendError(response, 404, "EXHIBITION_NOT_FOUND", "Exhibition not found.");
+        return;
+      }
+      const rawLimit = url.searchParams.get("limit") || "100";
+      const limit = Number.parseInt(rawLimit, 10);
+      if (!/^\d+$/.test(rawLimit) || limit < 1 || limit > 100) {
+        sendError(response, 400, "INVALID_ANALYTICS_LIMIT", "limit must be between 1 and 100.");
+        return;
+      }
+      sendJson(response, 200, {
+        exhibition_id: exhibitionId,
+        events: analytics.recentEvents(exhibitionId, limit),
+      });
+      return;
+    }
+
+    if (
+      request.method === "GET"
+      && new Set([
+        "/api/admin/analytics/summary",
+        "/api/admin/analytics/export",
+      ]).has(url.pathname)
+    ) {
+      if (!analytics.adminAuthorized(request.headers["x-analytics-admin-token"])) {
+        sendError(response, 401, "ANALYTICS_ADMIN_REQUIRED", "A valid analytics admin token is required.");
+        return;
+      }
+      const exhibitionId = url.searchParams.get("exhibition_id") || otpEventId;
+      if (!database.prepare("SELECT 1 FROM events WHERE event_id = ?").get(exhibitionId)) {
+        sendError(response, 404, "EXHIBITION_NOT_FOUND", "Exhibition not found.");
+        return;
+      }
+      if (url.pathname.endsWith("/summary")) {
+        sendJson(response, 200, analytics.summary(exhibitionId));
+      } else {
+        sendCsv(
+          response,
+          `rally-analytics-${exhibitionId}.csv`,
+          analytics.exportCsv(exhibitionId),
+        );
+      }
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/auth/oauth/providers") {
+      sendJson(response, 200, {
+        providers: Object.fromEntries(
+          OAUTH_PROVIDERS.map((provider) => [provider, {
+            enabled: enabledOAuthProviders[provider],
+            android_enabled: provider === "google"
+              && enabledOAuthProviders[provider]
+              && androidAppLinkReady === true,
+          }]),
+        ),
+      });
+      return;
+    }
+
+    const oauthStartMatch = url.pathname.match(/^\/api\/auth\/oauth\/(google|wechat)\/start$/);
+    if (request.method === "GET" && oauthStartMatch) {
+      const provider = oauthStartMatch[1];
+      if (!enabledOAuthProviders[provider]) {
+        sendError(response, 503, "OAUTH_UNAVAILABLE", `${provider} login is not configured.`);
+        return;
+      }
+      const returnTo = normalizeOAuthReturnTo(url.searchParams.get("return_to"), publicAppOrigin);
+      const codeChallenge = url.searchParams.get("code_challenge");
+      if (!returnTo) {
+        sendError(response, 400, "INVALID_OAUTH_RETURN", "The OAuth return URL is not allowed.");
+        return;
+      }
+      if (typeof codeChallenge !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(codeChallenge)) {
+        sendError(response, 400, "INVALID_OAUTH_CHALLENGE", "A valid OAuth client challenge is required.");
+        return;
+      }
+      const redirectUri = oauthCallbackUri(publicApiOrigin, provider);
+      const state = createOAuthState({
+        secret: oauthStateSecret,
+        provider,
+        returnTo,
+        codeChallenge,
+        now: clock(),
+      });
+      sendRedirect(response, buildOAuthAuthorizationUrl({
+        provider,
+        config: oauthProviders[provider],
+        redirectUri,
+        state,
+      }));
+      return;
+    }
+
+    const oauthCallbackMatch = url.pathname.match(/^\/api\/auth\/oauth\/(google|wechat)\/callback$/);
+    if (request.method === "GET" && oauthCallbackMatch) {
+      const provider = oauthCallbackMatch[1];
+      if (!enabledOAuthProviders[provider]) {
+        sendError(response, 503, "OAUTH_UNAVAILABLE", `${provider} login is not configured.`);
+        return;
+      }
+      const nowDate = clock();
+      const verifiedState = verifyOAuthState({
+        secret: oauthStateSecret,
+        state: url.searchParams.get("state"),
+        provider,
+        now: nowDate,
+      });
+      if (!verifiedState) {
+        sendError(response, 400, "INVALID_OAUTH_STATE", "The OAuth state is invalid or expired.");
+        return;
+      }
+      if (url.searchParams.has("error")) {
+        const oauthError = url.searchParams.get("error") === "access_denied"
+          ? "cancelled"
+          : "provider_failed";
+        sendRedirect(response, appendOAuthResult(verifiedState.returnTo, {
+          provider,
+          error: oauthError,
+        }));
+        return;
+      }
+      const code = url.searchParams.get("code");
+      if (provider === "wechat" && code === "authdeny") {
+        sendRedirect(response, appendOAuthResult(verifiedState.returnTo, {
+          provider,
+          error: "cancelled",
+        }));
+        return;
+      }
+      if (typeof code !== "string" || !code || code.length > 2048) {
+        sendError(response, 400, "INVALID_OAUTH_CODE", "The OAuth authorization code is missing.");
+        return;
+      }
+      const redirectUri = oauthCallbackUri(publicApiOrigin, provider);
+      let identity;
+      try {
+        identity = await oauthIdentityResolver({
+          provider,
+          code,
+          redirectUri,
+          config: oauthProviders[provider],
+        });
+      } catch {
+        sendRedirect(response, appendOAuthResult(verifiedState.returnTo, {
+          provider,
+          error: "provider_failed",
+        }));
+        return;
+      }
+      if (
+        !identity
+        || typeof identity.subject !== "string"
+        || !identity.subject
+        || identity.subject.length > 255
+        || (identity.email !== null && identity.email !== undefined
+          && (typeof identity.email !== "string" || identity.email.length > 320))
+        || (identity.displayName !== null && identity.displayName !== undefined
+          && (typeof identity.displayName !== "string" || identity.displayName.length > 200))
+      ) {
+        sendRedirect(response, appendOAuthResult(verifiedState.returnTo, {
+          provider,
+          error: "identity_invalid",
+        }));
+        return;
+      }
+      const now = nowDate.toISOString();
+      const { userId, isNewUser } = findOrCreateOAuthUser(database, {
+        provider,
+        subject: identity.subject,
+        email: identity.email ?? null,
+        emailVerified: identity.emailVerified === true,
+        displayName: identity.displayName ?? null,
+        eventId: otpEventId,
+        now,
+      });
+      const ticket = createOAuthLoginTicket(database, {
+        userId,
+        provider,
+        codeChallenge: verifiedState.codeChallenge,
+        isNewUser,
+        now,
+        expiresAt: new Date(nowDate.getTime() + 2 * 60 * 1000).toISOString(),
+      });
+      sendRedirect(response, appendOAuthResult(verifiedState.returnTo, { provider, ticket }));
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/auth/oauth/sessions") {
+      const parsedBody = await readJsonBody(request, response);
+      if (!parsedBody.ok) return;
+      const ticket = parsedBody.value?.ticket;
+      const verifier = parsedBody.value?.verifier;
+      if (
+        typeof ticket !== "string"
+        || !/^[A-Za-z0-9_-]{40,128}$/.test(ticket)
+        || typeof verifier !== "string"
+        || !/^[A-Za-z0-9_-]{43,128}$/.test(verifier)
+      ) {
+        sendError(response, 400, "INVALID_OAUTH_TICKET", "The OAuth login ticket is invalid or expired.");
+        return;
+      }
+      const nowDate = clock();
+      const now = nowDate.toISOString();
+      const exchange = consumeOAuthLoginTicket(database, {
+        ticket,
+        codeChallenge: oauthCodeChallenge(verifier),
+        now,
+      });
+      if (!exchange) {
+        sendError(response, 400, "INVALID_OAUTH_TICKET", "The OAuth login ticket is invalid or expired.");
+        return;
+      }
+      const expiresAt = new Date(nowDate.getTime() + sessionTtlMs).toISOString();
+      const session = createAuthSession(database, {
+        userId: exchange.userId,
+        now,
+        expiresAt,
+      });
+      sendJson(response, 201, {
+        access_token: session.token,
+        token_type: "Bearer",
+        expires_at: session.expiresAt,
+        is_new_user: exchange.isNewUser,
+        provider: exchange.provider,
+        user: findUserIdentity(database, exchange.userId),
       });
       return;
     }
 
     if (request.method === "POST" && url.pathname === "/api/auth/otp/challenges") {
-      if (!smsLoginConfigured) {
+      if (!smsLoginReady) {
+        trackOtpFailure(request, "login_otp_request_failed", "unavailable");
         sendError(response, 503, "OTP_UNAVAILABLE", "SMS login is temporarily unavailable.");
         return;
       }
       const parsedBody = await readJsonBody(request, response);
-      if (!parsedBody.ok) return;
+      if (!parsedBody.ok) {
+        trackOtpFailure(request, "login_otp_request_failed", "invalid_request", {
+          retryable: false,
+        });
+        return;
+      }
       const phone = normalizeChinaMobile(parsedBody.value?.phone);
       const displayName = typeof parsedBody.value?.display_name === "string"
         ? parsedBody.value.display_name.trim()
         : "";
-      if (!phone || !displayName || displayName.length > 40) {
+      if (!phone || displayName.length > 40) {
+        trackOtpFailure(request, "login_otp_request_failed", "invalid_request", {
+          retryable: false,
+        });
         sendError(
           response,
           400,
           "INVALID_OTP_REQUEST",
-          "A valid mainland China mobile number and display name are required.",
+          "A valid mainland China mobile number is required.",
         );
         return;
       }
@@ -250,6 +723,7 @@ export function createApi({
         const retryAfterSeconds = Math.max(1, Math.ceil(
           (new Date(ipWindow.oldestCreatedAt).getTime() + 60 * 60 * 1000 - nowDate.getTime()) / 1000,
         ));
+        trackOtpFailure(request, "login_otp_request_failed", "rate_limited");
         sendError(
           response,
           429,
@@ -267,6 +741,7 @@ export function createApi({
         const retryAfterSeconds = Math.max(1, Math.ceil(
           (new Date(phoneWindow.oldestCreatedAt).getTime() + 60 * 60 * 1000 - nowDate.getTime()) / 1000,
         ));
+        trackOtpFailure(request, "login_otp_request_failed", "rate_limited");
         sendError(
           response,
           429,
@@ -281,6 +756,7 @@ export function createApi({
         const elapsedMs = nowDate.getTime() - new Date(latestChallengeAt).getTime();
         if (elapsedMs < 60_000) {
           const retryAfterSeconds = Math.ceil((60_000 - elapsedMs) / 1000);
+          trackOtpFailure(request, "login_otp_request_failed", "rate_limited");
           sendError(
             response,
             429,
@@ -307,6 +783,7 @@ export function createApi({
         await otpSender({ phone, code });
       } catch {
         deleteOtpChallenge(database, challengeId);
+        trackOtpFailure(request, "login_otp_request_failed", "provider_error");
         sendError(
           response,
           502,
@@ -315,6 +792,17 @@ export function createApi({
         );
         return;
       }
+      trackBackendAnalytics({
+        eventName: "login_otp_requested",
+        exhibitionId: otpEventId,
+        source: "sms_login",
+        objectType: "otp_challenge",
+        objectId: challengeId,
+        properties: { challenge_id: challengeId, provider: "tencent_cloud" },
+        request,
+        occurredAt: now,
+        dedupeKey: `login_otp_requested:${challengeId}`,
+      });
       sendJson(response, 201, {
         challenge_id: challengeId,
         masked_phone: maskChinaMobile(phone),
@@ -326,11 +814,17 @@ export function createApi({
 
     if (request.method === "POST" && url.pathname === "/api/auth/otp/sessions") {
       if (typeof otpSecret !== "string" || !otpSecret) {
+        trackOtpFailure(request, "login_otp_verification_failed", "unavailable");
         sendError(response, 503, "OTP_UNAVAILABLE", "SMS login is temporarily unavailable.");
         return;
       }
       const parsedBody = await readJsonBody(request, response);
-      if (!parsedBody.ok) return;
+      if (!parsedBody.ok) {
+        trackOtpFailure(request, "login_otp_verification_failed", "invalid_request", {
+          retryable: false,
+        });
+        return;
+      }
       const challengeId = parsedBody.value?.challenge_id;
       const code = parsedBody.value?.code;
       if (
@@ -339,6 +833,10 @@ export function createApi({
         || typeof code !== "string"
         || !/^\d{6}$/.test(code)
       ) {
+        trackOtpFailure(request, "login_otp_verification_failed", "invalid_code", {
+          challengeId: typeof challengeId === "string" ? challengeId : null,
+          retryable: false,
+        });
         sendError(response, 400, "INVALID_OTP", "The verification code is invalid or expired.");
         return;
       }
@@ -354,6 +852,16 @@ export function createApi({
         && !otpCodeHashesEqual(challenge.codeHash, suppliedHash)
       ) {
         recordOtpFailure(database, { challengeId, now });
+        trackOtpFailure(
+          request,
+          "login_otp_verification_failed",
+          challenge.attemptsRemaining <= 1 ? "locked" : "invalid_code",
+          {
+            challengeId,
+            attemptBucket: challenge.attemptsRemaining >= 4 ? "1-2" : "3-5",
+            retryable: challenge.attemptsRemaining > 1,
+          },
+        );
         sendError(response, 400, "INVALID_OTP", "The verification code is invalid or expired.");
         return;
       }
@@ -364,6 +872,17 @@ export function createApi({
         || challenge.attemptsRemaining <= 0
         || !otpCodeHashesEqual(challenge.codeHash, suppliedHash)
       ) {
+        const failureCode = !challenge || challenge.consumedAt
+          ? "invalid_code"
+          : challenge.expiresAt <= now
+            ? "expired"
+            : challenge.attemptsRemaining <= 0
+              ? "locked"
+              : "invalid_code";
+        trackOtpFailure(request, "login_otp_verification_failed", failureCode, {
+          challengeId,
+          retryable: false,
+        });
         sendError(response, 400, "INVALID_OTP", "The verification code is invalid or expired.");
         return;
       }
@@ -375,6 +894,10 @@ export function createApi({
       try {
         if (!consumeOtpChallenge(database, { challengeId, now })) {
           database.exec("ROLLBACK");
+          trackOtpFailure(request, "login_otp_verification_failed", "expired", {
+            challengeId,
+            retryable: false,
+          });
           sendError(response, 400, "INVALID_OTP", "The verification code is invalid or expired.");
           return;
         }
@@ -390,6 +913,18 @@ export function createApi({
         database.exec("ROLLBACK");
         throw error;
       }
+      trackBackendAnalytics({
+        eventName: "login_otp_verified",
+        exhibitionId: otpEventId,
+        userId,
+        source: "sms_login",
+        objectType: "otp_challenge",
+        objectId: challengeId,
+        properties: { challenge_id: challengeId, new_user: isNewUser },
+        request,
+        occurredAt: now,
+        dedupeKey: `login_otp_verified:${challengeId}`,
+      });
       sendJson(response, 201, {
         access_token: session.token,
         token_type: "Bearer",
@@ -507,12 +1042,14 @@ export function createApi({
     }
 
     if (request.method === "POST" && url.pathname === "/api/connections/physical-mutual") {
+      const handshakeId = randomUUID();
       const suppliedAccessKey = request.headers["x-touch-device-key"];
       if (
         typeof touchDeviceAccessKey !== "string"
         || typeof suppliedAccessKey !== "string"
         || suppliedAccessKey !== touchDeviceAccessKey
       ) {
+        trackTouchFailure(request, "permission_denied", { handshakeId });
         sendError(
           response,
           403,
@@ -522,7 +1059,10 @@ export function createApi({
         return;
       }
       const parsedBody = await readJsonBody(request, response);
-      if (!parsedBody.ok) return;
+      if (!parsedBody.ok) {
+        trackTouchFailure(request, "invalid", { handshakeId });
+        return;
+      }
       const payload = parsedBody.value;
       if (
         payload === null
@@ -533,6 +1073,10 @@ export function createApi({
         || typeof payload.card_b_token !== "string"
         || payload.card_a_token === payload.card_b_token
       ) {
+        trackTouchFailure(request, "invalid", {
+          exhibitionId: typeof payload?.event_id === "string" ? payload.event_id : otpEventId,
+          handshakeId,
+        });
         sendError(
           response,
           400,
@@ -553,6 +1097,10 @@ export function createApi({
         now,
       });
       if (!firstCard || !secondCard || firstCard.ownerId === secondCard.ownerId) {
+        trackTouchFailure(request, "invalid", {
+          exhibitionId: payload.event_id,
+          handshakeId,
+        });
         sendError(
           response,
           409,
@@ -566,6 +1114,16 @@ export function createApi({
         secondUserId: secondCard.ownerId,
         eventId: payload.event_id,
       })) {
+        trackTouchFailure(request, "permission_denied", {
+          exhibitionId: payload.event_id,
+          handshakeId,
+        });
+        trackGuardrail(request, {
+          exhibitionId: payload.event_id,
+          guardrailCode: "blocked_pair_connection",
+          objectType: "user_pair",
+          source: "physical_mutual",
+        });
         sendError(response, 409, "CONNECTION_BLOCKED", "This participant pair cannot connect.");
         return;
       }
@@ -575,6 +1133,10 @@ export function createApi({
         eventId: payload.event_id,
       });
       if (existingConnection) {
+        trackTouchFailure(request, "duplicate", {
+          exhibitionId: payload.event_id,
+          handshakeId,
+        });
         appendEventLog(database, {
           eventId: payload.event_id,
           type: "physical_mutual_touch_attributed",
@@ -658,6 +1220,8 @@ export function createApi({
         event_id: eventId,
         source,
         message: rawMessage,
+        candidate_id: candidateId,
+        list_request_id: listRequestId,
       } = payload;
       if (!recipientId || !eventId || !SOURCES.has(source)) {
         sendError(
@@ -665,6 +1229,20 @@ export function createApi({
           400,
           "INVALID_REQUEST",
           "recipient_id, event_id, and a valid source are required.",
+        );
+        return;
+      }
+      const hasAnalyticsAttribution = candidateId !== undefined || listRequestId !== undefined;
+      if (hasAnalyticsAttribution && (
+        candidateId !== recipientId
+        || typeof listRequestId !== "string"
+        || !UUID_PATTERN.test(listRequestId)
+      )) {
+        sendError(
+          response,
+          400,
+          "INVALID_CONNECTION_ATTRIBUTION",
+          "Connection attribution must match the selected candidate and discovery request.",
         );
         return;
       }
@@ -690,6 +1268,14 @@ export function createApi({
         secondUserId: recipientId,
         eventId,
       })) {
+        trackGuardrail(request, {
+          userId: requesterId,
+          exhibitionId: eventId,
+          guardrailCode: "blocked_pair_connection",
+          objectType: "user_pair",
+          objectId: [requesterId, recipientId].sort().join(":"),
+          source: analyticsConnectionSource(source),
+        });
         sendError(
           response,
           409,
@@ -788,6 +1374,11 @@ export function createApi({
           new Date(findEventEndsAt(database, eventId)).getTime(),
         )).toISOString(),
         now,
+        analyticsAttribution: hasAnalyticsAttribution ? {
+          analytics_session_id: analytics.requestContext(request).sessionId,
+          candidate_id: candidateId,
+          list_request_id: listRequestId,
+        } : null,
       });
       sendJson(response, 201, {
         request: connectionRequest,
@@ -980,6 +1571,16 @@ export function createApi({
 
       const result = acceptConnectionRequest(database, { requestId, actorId, now });
       if (result.blocked) {
+        trackGuardrail(request, {
+          userId: actorId,
+          exhibitionId: connectionRequest.event_id,
+          guardrailCode: "blocked_pair_connection",
+          objectType: "connection_request",
+          objectId: requestId,
+          source: connectionRequest.source === "link"
+            ? "online_recommendation"
+            : connectionRequest.source,
+        });
         sendError(
           response,
           409,
@@ -1037,17 +1638,38 @@ export function createApi({
       return;
     }
 
+    const productActorId = resolveActorId(
+      database,
+      request,
+      clock().toISOString(),
+      allowInsecureDemoAuth,
+    );
     const productResult = await productModule.handle({
       request,
       url,
-      actorId: resolveActorId(
-        database,
-        request,
-        clock().toISOString(),
-        allowInsecureDemoAuth,
-      ),
+      actorId: productActorId,
     });
     if (productResult) {
+      const guardrailCode = PRODUCT_GUARDRAIL_CODES.get(productResult.body?.error?.code);
+      if (guardrailCode) {
+        trackGuardrail(request, {
+          userId: productActorId,
+          guardrailCode,
+          objectType: "api_route",
+          objectId: url.pathname.slice(0, 128),
+          source: url.pathname.includes("/room") || url.pathname.includes("/projects")
+            ? "project_room"
+            : "system",
+        });
+      }
+      if (
+        request.method === "POST"
+        && url.pathname === "/api/demo/reset"
+        && productResult.status >= 200
+        && productResult.status < 300
+      ) {
+        analytics.reset();
+      }
       sendJson(response, productResult.status, productResult.body, productResult.headers);
       return;
     }
@@ -1055,14 +1677,22 @@ export function createApi({
     sendError(response, 404, "NOT_FOUND", "Route not found.");
   };
   const server = createServer((request, response) => {
-    handleRequest(request, response).catch((error) => {
-      console.error("Unhandled API error", error);
-      if (!response.headersSent) {
-        sendError(response, 500, "INTERNAL_ERROR", "The server could not complete the request.");
-      } else if (!response.writableEnded) {
-        response.end();
-      }
-    });
+    handleRequest(request, response)
+      .catch((error) => {
+        console.error("Unhandled API error", error);
+        if (!response.headersSent) {
+          sendError(response, 500, "INTERNAL_ERROR", "The server could not complete the request.");
+        } else if (!response.writableEnded) {
+          response.end();
+        }
+      })
+      .finally(() => {
+        try {
+          analytics.syncBusinessEvents();
+        } catch (error) {
+          console.error("Business analytics events could not be synchronized", error);
+        }
+      });
   });
 
   return {

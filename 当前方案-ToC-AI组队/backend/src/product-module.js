@@ -369,7 +369,7 @@ export async function fetchPublicPlatformMetadata({ platform, url }) {
   const username = new URL(url).pathname.split("/").filter(Boolean)[0];
   const headers = {
     accept: "application/vnd.github+json",
-    "user-agent": "RALLY-Hackathon-MVP",
+    "user-agent": "COSPAN-Hackathon-MVP",
     "x-github-api-version": "2022-11-28",
   };
   if (process.env.GITHUB_TOKEN) headers.authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
@@ -722,6 +722,9 @@ export function createProductModule(database, {
     const readError = jsonReadError(parsed);
     if (readError) return readError;
     const payload = parseObject(parsed.value);
+    const displayName = typeof payload?.display_name === "string"
+      ? payload.display_name.trim()
+      : null;
     const skills = parseStringArray(payload?.skills, { maximumItems: 5, maximumLength: 40 });
     const interests = parseStringArray(payload?.interests, { maximumItems: 5, maximumLength: 60 });
     const collaborationPreferences = parseStringArray(
@@ -731,6 +734,7 @@ export function createProductModule(database, {
     const evidence = parseStringArray(payload?.evidence, { maximumItems: 12, maximumLength: 160 });
     if (
       !payload
+      || (payload.display_name !== undefined && (!displayName || displayName.length > 40))
       || typeof payload.role !== "string"
       || !payload.role.trim()
       || payload.role.length > 80
@@ -755,6 +759,11 @@ export function createProductModule(database, {
     `).get(actorId, eventId);
     if (!existing) return error(404, "PROFILE_NOT_FOUND", "Join this event before editing a profile.");
     const now = clock().toISOString();
+    if (displayName) {
+      database.prepare(`
+        UPDATE users SET display_name = ? WHERE user_id = ?
+      `).run(displayName, actorId);
+    }
     database.prepare(`
       UPDATE profiles
       SET role = ?, status = ?, skills_json = ?, interests_json = ?, availability = ?,
@@ -781,6 +790,7 @@ export function createProductModule(database, {
       source: "mobile",
       payload: {
         fields: [
+          ...(displayName ? ["display_name"] : []),
           "role",
           "status",
           "skills",
@@ -798,6 +808,7 @@ export function createProductModule(database, {
       body: {
         profile: {
           user_id: actorId,
+          ...(displayName ? { display_name: displayName } : {}),
           role: payload.role.trim(),
           status: payload.status.trim(),
           skills,
@@ -841,6 +852,13 @@ export function createProductModule(database, {
     }
     let expiresAt = payload.expires_at ?? current.expires_at;
     if (payload.state === "VISIBLE") {
+      if (publicFields.length === 0) {
+        return error(
+          400,
+          "PUBLIC_FIELDS_REQUIRED",
+          "At least one authorized public field is required before enabling visibility.",
+        );
+      }
       const expiresTime = new Date(expiresAt).getTime();
       if (!Number.isFinite(expiresTime) || expiresTime <= new Date(now).getTime()) {
         return error(400, "INVALID_VISIBILITY_EXPIRY", "A visible profile needs a future expires_at.");
@@ -1181,6 +1199,7 @@ export function createProductModule(database, {
     if (readError) return readError;
     const payload = parseObject(parsed.value);
     const roleNeed = parseObject(payload?.role_need);
+    const originConnectionId = payload?.origin_connection_id;
     const skills = parseStringArray(roleNeed?.skills, { maximumItems: 8, maximumLength: 40 });
     if (
       !payload
@@ -1190,6 +1209,9 @@ export function createProductModule(database, {
       || payload.title.length > 100
       || typeof payload.summary !== "string"
       || payload.summary.length > 500
+      || (originConnectionId !== undefined && (
+        typeof originConnectionId !== "string" || !originConnectionId || originConnectionId.length > 128
+      ))
       || !roleNeed
       || typeof roleNeed.title !== "string"
       || !roleNeed.title.trim()
@@ -1210,6 +1232,20 @@ export function createProductModule(database, {
         AND event.starts_at <= ? AND event.ends_at > ?
     `).get(actorId, payload.event_id, now, now);
     if (!participant) return error(403, "EVENT_MEMBERSHIP_REQUIRED", "Join the active event first.");
+    if (originConnectionId) {
+      const originConnection = database.prepare(`
+        SELECT 1 FROM connections
+        WHERE connection_id = ? AND event_id = ? AND status = 'ACTIVE'
+          AND (user_a_id = ? OR user_b_id = ?)
+      `).get(originConnectionId, payload.event_id, actorId, actorId);
+      if (!originConnection) {
+        return error(
+          400,
+          "INVALID_ORIGIN_CONNECTION",
+          "origin_connection_id must name the creator's active connection in this event.",
+        );
+      }
+    }
 
     const projectId = `prj_${randomUUID()}`;
     const roleNeedId = `need_${randomUUID()}`;
@@ -1252,7 +1288,10 @@ export function createProductModule(database, {
         objectType: "project",
         objectId: projectId,
         source: "mobile",
-        payload: { role_need_id: roleNeedId },
+        payload: {
+          role_need_id: roleNeedId,
+          ...(originConnectionId ? { origin_connection_id: originConnectionId } : {}),
+        },
         createdAt: now,
       });
       database.exec("COMMIT");
@@ -1540,7 +1579,11 @@ export function createProductModule(database, {
         objectType: "project_membership",
         objectId: `${current.project_id}:${actorId}`,
         source: "mobile",
-        payload: { project_id: current.project_id, role_need_id: current.role_need_id },
+        payload: {
+          project_id: current.project_id,
+          invitation_id: invitationId,
+          role_need_id: current.role_need_id,
+        },
         createdAt: now,
       });
       if (starterPack) {
@@ -1934,7 +1977,7 @@ export function createProductModule(database, {
     const project = findProject(database, projectId);
     if (!project) return error(404, "PROJECT_NOT_FOUND", "Project not found.");
     if (!projectMember(database, projectId, actorId)) {
-      return error(403, "PROJECT_FORBIDDEN", "Only project members can view this RALLY Room.");
+      return error(403, "PROJECT_FORBIDDEN", "Only project members can view this COSPAN Space.");
     }
     const pack = findStarterPack(database, projectId);
     const required = listMembers(database, projectId).length;
@@ -2351,7 +2394,7 @@ export function createProductModule(database, {
         ? { description: reward.description.trim() }
         : {}),
       payment_state: "NOT_PROCESSED",
-      disclaimer: "RALLY only records reward intent and does not process or escrow payment.",
+      disclaimer: "COSPAN only records reward intent and does not process or escrow payment.",
     } : null;
     const sosId = `sos_${randomUUID()}`;
     database.prepare(`

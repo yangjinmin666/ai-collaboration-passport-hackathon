@@ -1,11 +1,11 @@
 openapi: 3.1.0
 info:
-  title: RALLY API
+  title: COSPAN API
   version: 0.8.0
   description: >-
     HTTP/JSON contract for activity-scoped identity, authorized external
     evidence, short-lived nearby presence, NFC/QR connections, confirmed team
-    formation, the human-controlled RALLY Room, project SOS, audit activity,
+    formation, the human-controlled COSPAN Space, project SOS, audit activity,
     and protected demo reset.
 servers:
   - url: http://127.0.0.1:8787
@@ -17,6 +17,7 @@ tags:
   - name: Projects
   - name: Room
   - name: SOS
+  - name: Analytics
 paths:
   /health:
     get:
@@ -24,10 +25,129 @@ paths:
       summary: Check service readiness
       responses:
         "200":
-          description: API status and whether the public SMS login flow is configured for sending
+          description: API status and whether the public SMS login flow is usable
           content:
             application/json:
               schema: { $ref: "#/components/schemas/HealthResponse" }
+  /api/analytics/events:
+    post:
+      tags: [Analytics]
+      summary: Ingest allowlisted first-party client analytics events
+      description: >-
+        Accepts only discovery, match impression, detail, and Room view events.
+        Business outcomes and SMS events are produced by the backend. Phone numbers,
+        verification codes, tokens, names, free text, and precise location are rejected.
+      security: [{ BearerAuth: [] }, { DemoHeader: [] }, {}]
+      parameters:
+        - $ref: "#/components/parameters/AnalyticsAnonymousId"
+        - $ref: "#/components/parameters/AnalyticsSessionId"
+        - $ref: "#/components/parameters/AnalyticsClientType"
+        - $ref: "#/components/parameters/AnalyticsAppVersion"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AnalyticsBatch" }
+      responses:
+        "202":
+          description: Batch validated and de-duplicated
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [accepted, duplicates]
+                properties:
+                  accepted: { type: integer, minimum: 0, maximum: 20 }
+                  duplicates: { type: integer, minimum: 0, maximum: 20 }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
+  /api/admin/analytics/summary:
+    get:
+      tags: [Analytics]
+      summary: Read protected event counts, funnels, sources, and data quality
+      security: [{ AnalyticsAdminToken: [] }]
+      parameters:
+        - $ref: "#/components/parameters/AnalyticsExhibitionId"
+      responses:
+        "200":
+          description: First-party analytics summary
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AnalyticsSummary" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/admin/analytics/export:
+    get:
+      tags: [Analytics]
+      summary: Export protected raw first-party events as CSV
+      security: [{ AnalyticsAdminToken: [] }]
+      parameters:
+        - $ref: "#/components/parameters/AnalyticsExhibitionId"
+      responses:
+        "200":
+          description: CSV without phone numbers, verification codes, tokens, names, or free text
+          content:
+            text/csv:
+              schema: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/admin/analytics/events:
+    get:
+      tags: [Analytics]
+      summary: Read up to 100 recent first-party events in a protected debug environment
+      description: Returns 404 unless ANALYTICS_DEBUG_ENABLED=1; production demo deployments leave it disabled.
+      security: [{ AnalyticsAdminToken: [] }]
+      parameters:
+        - $ref: "#/components/parameters/AnalyticsExhibitionId"
+        - in: query
+          name: limit
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100, default: 100 }
+      responses:
+        "200":
+          description: Recent allowlisted events
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [exhibition_id, events]
+                properties:
+                  exhibition_id: { type: string }
+                  events:
+                    type: array
+                    maxItems: 100
+                    items: { type: object, additionalProperties: true }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/admin/analytics/users/{userId}:
+    delete:
+      tags: [Analytics]
+      summary: Delete one user's analytics and linked pre-login anonymous events
+      description: Does not delete business audit logs or another authenticated user's events.
+      security: [{ AnalyticsAdminToken: [] }]
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+        - $ref: "#/components/parameters/AnalyticsExhibitionId"
+      responses:
+        "200":
+          description: Deletion result
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [exhibition_id, user_id, deleted_events]
+                properties:
+                  exhibition_id: { type: string }
+                  user_id: { type: string }
+                  deleted_events: { type: integer, minimum: 0 }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /api/auth/demo-sessions:
     post:
       tags: [System]
@@ -58,10 +178,9 @@ paths:
           application/json:
             schema:
               type: object
-              required: [phone, display_name]
+              required: [phone]
               properties:
                 phone: { type: string, examples: ["13800138000"] }
-                display_name: { type: string, minLength: 1, maxLength: 40 }
       responses:
         "201":
           description: Verification challenge created and SMS accepted for delivery
@@ -78,7 +197,7 @@ paths:
       tags: [Identity]
       summary: Verify a one-time code and issue a revocable Bearer session
       description: >-
-        The first successful verification for a phone creates a RALLY identity and
+        The first successful verification for a phone creates a COSPAN identity and
         a hidden minimum profile in 2026 AI Hardware Hackathon (`hackathon-2026`). Challenges expire
         after five minutes, allow five failed attempts, and are consumed once.
       security: []
@@ -90,7 +209,7 @@ paths:
               type: object
               required: [challenge_id, code]
               properties:
-                challenge_id: { $ref: "#/components/schemas/OtpChallengeId" }
+                challenge_id: { type: string }
                 code: { type: string, pattern: "^[0-9]{6}$" }
       responses:
         "201":
@@ -100,6 +219,88 @@ paths:
               schema: { $ref: "#/components/schemas/OtpSessionResponse" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "503": { description: SMS login is not configured }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
+  /api/auth/oauth/providers:
+    get:
+      tags: [Identity]
+      summary: List server-configured OAuth login providers
+      security: []
+      responses:
+        "200":
+          description: Provider readiness without credentials
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OAuthProvidersResponse" }
+  /api/auth/oauth/{provider}/start:
+    get:
+      tags: [Identity]
+      summary: Start a Google or WeChat authorization-code flow
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/OAuthProvider"
+        - in: query
+          name: return_to
+          required: true
+          description: Same-origin web URL; Android uses the verified `/auth/android` HTTPS App Link.
+          schema: { type: string, format: uri }
+        - in: query
+          name: code_challenge
+          required: true
+          description: Base64url SHA-256 challenge derived from the initiating client's secret verifier.
+          schema: { type: string, pattern: "^[A-Za-z0-9_-]{43}$" }
+      responses:
+        "302": { description: Redirect to the selected provider }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "503": { description: Provider or base OAuth settings are incomplete }
+  /api/auth/oauth/{provider}/callback:
+    get:
+      tags: [Identity]
+      summary: Receive the provider callback and return a short-lived one-time ticket
+      description: >-
+        The callback validates a signed expiring state, resolves the provider identity,
+        then redirects to the approved return URL. Bearer tokens are never included in
+        this redirect.
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/OAuthProvider"
+        - in: query
+          name: state
+          required: true
+          schema: { type: string }
+        - in: query
+          name: code
+          required: false
+          schema: { type: string }
+        - in: query
+          name: error
+          required: false
+          schema: { type: string }
+      responses:
+        "302": { description: Redirect with oauth_ticket or a normalized oauth_error }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "503": { description: Provider or base OAuth settings are incomplete }
+  /api/auth/oauth/sessions:
+    post:
+      tags: [Identity]
+      summary: Exchange an OAuth login ticket for a revocable Bearer session
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ticket, verifier]
+              properties:
+                ticket: { type: string, minLength: 40, maxLength: 128 }
+                verifier: { type: string, minLength: 43, maxLength: 128, pattern: "^[A-Za-z0-9_-]+$" }
+      responses:
+        "201":
+          description: Bearer session issued; the ticket is consumed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OAuthSessionResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
         "413": { $ref: "#/components/responses/PayloadTooLarge" }
   /api/auth/session:
     delete:
@@ -246,7 +447,7 @@ paths:
         "413": { $ref: "#/components/responses/PayloadTooLarge" }
     delete:
       tags: [Identity]
-      summary: Remove one linked platform from RALLY
+      summary: Remove one linked platform from COSPAN
       security: [{ BearerAuth: [] }, { DemoHeader: [] }]
       parameters:
         - $ref: "#/components/parameters/Platform"
@@ -403,6 +604,13 @@ paths:
                 event_id: { type: string }
                 source: { type: string, enum: [nfc, qr, link] }
                 message: { type: string, maxLength: 240 }
+                candidate_id:
+                  type: string
+                  description: Selected internal candidate ID; must equal recipient_id when supplied.
+                list_request_id:
+                  type: string
+                  format: uuid
+                  description: Discovery list request used for first-party funnel attribution.
       responses:
         "201": { description: Request created }
         "200": { description: Existing request or connection returned idempotently }
@@ -625,7 +833,7 @@ paths:
     post:
       tags: [SOS]
       summary: Publish one structured active SOS for a project
-      description: A reward is an intent record only; RALLY does not process money.
+      description: A reward is an intent record only; COSPAN does not process money.
       security: [{ BearerAuth: [] }, { DemoHeader: [] }]
       parameters:
         - $ref: "#/components/parameters/ProjectId"
@@ -757,7 +965,37 @@ components:
       in: header
       name: x-touch-device-key
       description: Trusted hardware or handshake-simulator secret; never expose it to the public mobile client.
+    AnalyticsAdminToken:
+      type: apiKey
+      in: header
+      name: x-analytics-admin-token
+      description: Independent server-only secret; never expose it to the public mobile client or APK.
   parameters:
+    AnalyticsAnonymousId:
+      in: header
+      name: x-rally-anonymous-id
+      required: true
+      schema: { type: string, format: uuid }
+    AnalyticsSessionId:
+      in: header
+      name: x-rally-session-id
+      required: true
+      schema: { type: string, format: uuid }
+    AnalyticsClientType:
+      in: header
+      name: x-rally-client-type
+      required: true
+      schema: { type: string, enum: [android_webview, mobile_web] }
+    AnalyticsAppVersion:
+      in: header
+      name: x-rally-app-version
+      required: true
+      schema: { type: string, pattern: "^[A-Za-z0-9._:+-]{1,64}$" }
+    AnalyticsExhibitionId:
+      in: query
+      name: exhibition_id
+      required: false
+      schema: { type: string, default: hackathon-2026 }
     EventId:
       in: path
       name: eventId
@@ -800,14 +1038,88 @@ components:
       schema:
         type: string
         enum: [github, website, xiaohongshu, douyin, jike, linkedin, other]
+    OAuthProvider:
+      in: path
+      name: provider
+      required: true
+      schema:
+        type: string
+        enum: [google, wechat]
   schemas:
     HealthResponse:
       type: object
-      required: [status, service, sms_login]
+      required: [status, service, sms_login, analytics]
       properties:
         status: { type: string, const: ok }
         service: { type: string, const: rally-api }
         sms_login: { type: string, enum: [ready, disabled] }
+        analytics: { type: string, const: ready }
+    AnalyticsBatch:
+      type: object
+      required: [events]
+      additionalProperties: false
+      properties:
+        events:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items: { $ref: "#/components/schemas/AnalyticsClientEvent" }
+    AnalyticsClientEvent:
+      type: object
+      additionalProperties: false
+      required:
+        - analytics_event_id
+        - event_name
+        - anonymous_id
+        - exhibition_id
+        - session_id
+        - source
+        - client_type
+        - app_version
+        - properties
+        - occurred_at
+      properties:
+        analytics_event_id: { type: string, format: uuid }
+        event_name:
+          type: string
+          enum: [discovery_viewed, match_impression, match_detail_opened, room_viewed]
+        anonymous_id: { type: string, format: uuid }
+        exhibition_id: { type: string }
+        session_id: { type: string, format: uuid }
+        source:
+          type: string
+          enum: [online_recommendation, nearby, project_room]
+        client_type: { type: string, enum: [android_webview, mobile_web] }
+        app_version: { type: string, pattern: "^[A-Za-z0-9._:+-]{1,64}$" }
+        object_type: { type: string, maxLength: 64 }
+        object_id: { type: string, maxLength: 128 }
+        properties:
+          type: object
+          description: Exact property set is selected by event_name and enforced by the server allowlist.
+          additionalProperties: false
+          properties:
+            result_count_bucket: { type: string, enum: ["0", "1-5", "6-20", "21+"] }
+            filter_count: { type: integer, minimum: 0, maximum: 20 }
+            list_request_id: { type: string, format: uuid }
+            candidate_id: { type: string, maxLength: 128 }
+            rank: { type: integer, minimum: 1, maximum: 1000 }
+            rule_score_bucket: { type: string, enum: [low, medium, high, unknown] }
+            reason_count: { type: integer, minimum: 0, maximum: 20 }
+            project_id: { type: string, maxLength: 128 }
+            member_count: { type: integer, minimum: 0, maximum: 100 }
+            pack_status: { type: string, enum: [none, PROPOSED, CONFIRMED, ARCHIVED] }
+        occurred_at: { type: string, format: date-time }
+    AnalyticsSummary:
+      type: object
+      required: [exhibition_id, generated_at, event_counts, funnels, sources, app_versions, data_quality]
+      properties:
+        exhibition_id: { type: string }
+        generated_at: { type: string, format: date-time }
+        event_counts: { type: array, items: { type: object, additionalProperties: true } }
+        funnels: { type: array, items: { type: object, additionalProperties: true } }
+        sources: { type: array, items: { type: object, additionalProperties: true } }
+        app_versions: { type: array, items: { type: object, additionalProperties: true } }
+        data_quality: { type: object, additionalProperties: true }
     UserIdentity:
       type: object
       required: [id, display_name, avatar]
@@ -815,14 +1127,11 @@ components:
         id: { type: string }
         display_name: { type: string, minLength: 1, maxLength: 40 }
         avatar: { type: string }
-    OtpChallengeId:
-      type: string
-      pattern: "^otp_[0-9a-f-]+$"
     OtpChallengeResponse:
       type: object
       required: [challenge_id, masked_phone, expires_at, retry_after_seconds]
       properties:
-        challenge_id: { $ref: "#/components/schemas/OtpChallengeId" }
+        challenge_id: { type: string, pattern: "^otp_[0-9a-f-]+$" }
         masked_phone: { type: string, pattern: "^[0-9]{3}\\*{4}[0-9]{4}$" }
         expires_at: { type: string, format: date-time }
         retry_after_seconds: { type: integer, minimum: 1 }
@@ -835,10 +1144,40 @@ components:
         expires_at: { type: string, format: date-time }
         is_new_user: { type: boolean }
         user: { $ref: "#/components/schemas/UserIdentity" }
+    OAuthProvidersResponse:
+      type: object
+      required: [providers]
+      properties:
+        providers:
+          type: object
+          required: [google, wechat]
+          properties:
+            google: { $ref: "#/components/schemas/OAuthProviderReadiness" }
+            wechat: { $ref: "#/components/schemas/OAuthProviderReadiness" }
+    OAuthProviderReadiness:
+      type: object
+      required: [enabled, android_enabled]
+      properties:
+        enabled: { type: boolean }
+        android_enabled:
+          type: boolean
+          description: True only when this provider is supported in the APK and its HTTPS App Link is configured.
+    OAuthSessionResponse:
+      allOf:
+        - $ref: "#/components/schemas/OtpSessionResponse"
+        - type: object
+          required: [provider]
+          properties:
+            provider: { type: string, enum: [google, wechat] }
     ProfileInput:
       type: object
       required: [role, status, skills, interests, availability, collaboration_preferences, collaboration_need, evidence]
       properties:
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 40
+          description: Optional account display name; login itself does not require a nickname.
         role: { type: string, maxLength: 80 }
         status:
           type: string
@@ -876,6 +1215,10 @@ components:
       required: [event_id, title, summary, role_need]
       properties:
         event_id: { type: string }
+        origin_connection_id:
+          type: string
+          maxLength: 128
+          description: Optional active Connection used to attribute the 72-hour collaboration funnel.
         title: { type: string, maxLength: 100 }
         summary: { type: string, maxLength: 500 }
         role_need:
@@ -915,7 +1258,7 @@ components:
           required: [type]
           description: >-
             PAID_INTENT also requires amount, currency, delivery_standard, and
-            payment_note. RALLY records intent only and never processes payment.
+            payment_note. COSPAN records intent only and never processes payment.
           properties:
             type: { type: string, enum: [VOLUNTEER, GIFT, POINTS, PAID_INTENT] }
             description: { type: string, maxLength: 500 }

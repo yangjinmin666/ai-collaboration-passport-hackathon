@@ -25,6 +25,7 @@ describe("NFC card public profile", () => {
       status: "ok",
       service: "rally-api",
       sms_login: "disabled",
+      analytics: "ready",
     });
   });
 

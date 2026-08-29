@@ -1,5 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="RALLY">
-  <rect width="512" height="512" rx="116" fill="#155acb"/>
-  <path d="M128 116h137c91 0 137 40 137 119 0 54-24 89-71 106l74 55h-99l-61-47h-32v47h-85V116Zm85 72v91h48c38 0 57-15 57-46 0-30-19-45-57-45h-48Z" fill="#fff"/>
-  <circle cx="384" cy="128" r="24" fill="#ff735f"/>
-</svg>

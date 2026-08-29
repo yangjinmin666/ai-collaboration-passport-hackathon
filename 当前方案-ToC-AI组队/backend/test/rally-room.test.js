@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, test } from "node:test";
 
 import { createApi } from "../src/app.js";
 
-describe("human-confirmed RALLY Room starter pack", () => {
+describe("human-confirmed COSPAN Space starter pack", () => {
   let api;
   let baseUrl;
 

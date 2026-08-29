@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, test } from "node:test";
 
 import { createApi } from "../src/app.js";
 
+const ANALYTICS_ADMIN_TOKEN = "touch-analytics-admin-token-000000000000000000000000";
+
 describe("connection confirmation", () => {
   let api;
   let baseUrl;
@@ -12,6 +14,7 @@ describe("connection confirmation", () => {
       databasePath: ":memory:",
       allowInsecureDemoAuth: true,
       touchDeviceAccessKey: "touch-secret",
+      analyticsAdminToken: ANALYTICS_ADMIN_TOKEN,
     });
     const address = await api.start(0);
     baseUrl = `http://127.0.0.1:${address.port}`;
@@ -142,6 +145,29 @@ describe("connection confirmation", () => {
       body: "{}",
     });
     assert.equal(untrusted.status, 403);
+
+    const summaryResponse = await fetch(
+      `${baseUrl}/api/admin/analytics/summary?exhibition_id=hackathon-2026`,
+      { headers: { "x-analytics-admin-token": ANALYTICS_ADMIN_TOKEN } },
+    );
+    const summary = await summaryResponse.json();
+    const counts = Object.fromEntries(
+      summary.event_counts.map((event) => [event.event_name, event.total]),
+    );
+    assert.equal(counts.touch_handshake_completed, 1);
+    assert.equal(counts.touch_handshake_failed, 2);
+    assert.equal(
+      summary.sources.some((row) => (
+        row.event_name === "connection_requested" && row.source === "nfc"
+      )),
+      false,
+    );
+    assert.equal(
+      summary.sources.some((row) => (
+        row.event_name === "connection_requested" && row.source === "physical_mutual"
+      )),
+      true,
+    );
   });
 
   test("repeating a request in either direction returns the pair's existing connection", async () => {

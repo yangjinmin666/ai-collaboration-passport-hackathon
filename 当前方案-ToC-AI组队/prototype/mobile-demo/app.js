@@ -367,6 +367,11 @@ const initialTab = ["discover", "connections", "collaboration", "profile"].inclu
 const storedAccessToken = localStorage.getItem("rally_access_token");
 const storedSessionExpiry = localStorage.getItem("rally_session_expires_at");
 const storedSwipeSoundEnabled = localStorage.getItem("rally_swipe_sound_enabled") !== "false";
+const initialOAuthTicket = initialParams.get("oauth_ticket");
+const initialOAuthError = initialParams.get("oauth_error");
+const initialOAuthProvider = initialParams.get("oauth_provider");
+const oauthVerifierStorageKey = "rally_oauth_client_verifier";
+const oauthProviderStorageKey = "rally_oauth_client_provider";
 const packagedApiBase = (() => {
   const value = document.querySelector('meta[name="rally-api-origin"]')?.content.trim();
   if (!value) return null;
@@ -374,6 +379,17 @@ const packagedApiBase = (() => {
     const url = new URL(value);
     if (url.protocol !== "https:" || url.username || url.password) return null;
     return url.href.replace(/\/$/, "");
+  } catch {
+    return null;
+  }
+})();
+const packagedAppOrigin = (() => {
+  const value = document.querySelector('meta[name="rally-app-origin"]')?.content.trim();
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:" || url.username || url.password) return null;
+    return url.origin;
   } catch {
     return null;
   }
@@ -453,7 +469,7 @@ const profileBlockCatalog = Object.freeze({
     mark: "T",
     signature: "【项目证据·标题】",
     titleLabel: "证据标题",
-    titleHint: "例如：RALLY 现场协作终端",
+    titleHint: "例如：COSPAN 现场协作终端",
     detailLabel: "一句话证据",
     detailHint: "你完成了什么，结果是什么",
   }),
@@ -491,7 +507,7 @@ const profileBlockCatalog = Object.freeze({
     mark: "▶",
     signature: "【项目证据·Demo】",
     titleLabel: "证据标题",
-    titleHint: "例如：RALLY Live 真机闭环",
+    titleHint: "例如：COSPAN Live 真机闭环",
     detailLabel: "你完成了什么",
     detailHint: "例如：双设备建联、组队与刷新恢复",
     urlLabel: "公开链接",
@@ -624,6 +640,8 @@ const publicFieldCatalog = {
   platform_links: "外部平台链接",
 };
 
+let liveOtpCountdownTimer = null;
+
 const state = {
   variant: readVariant(),
   onboarding: startsInOnboarding,
@@ -657,7 +675,11 @@ const state = {
   acceptedTasks: [],
   live: {
     enabled: liveConfig.enabled,
-    authStatus: storedAccessToken || liveConfig.demoUserId ? "ready" : "required",
+    authStatus: storedAccessToken || liveConfig.demoUserId
+      ? "ready"
+      : initialOAuthTicket
+        ? "exchanging"
+        : "required",
     sessionExpiresAt: storedSessionExpiry,
     currentUserId: null,
     started: false,
@@ -676,12 +698,20 @@ const state = {
     platformLinks: [],
     currentProfile: null,
     meLoaded: false,
-    meLoading: false,
+    meLoading: Boolean(initialOAuthTicket),
     otpChallengeId: null,
     otpMaskedPhone: "",
     otpPhone: "",
-    otpDisplayName: "",
     otpRetryAt: null,
+    oauthProviders: {
+      google: false,
+      wechat: false,
+    },
+    androidOAuthProviders: {
+      google: false,
+      wechat: false,
+    },
+    oauthProvidersLoaded: false,
     error: "",
     syncError: "",
     syncInFlight: false,
@@ -1081,7 +1111,7 @@ function livePerson(person) {
     ),
     fit: safeLiveText(person.recommendation?.ranking_factors?.[0], "同场协作", 40),
     fitDetail: person.recommendation?.generated_by === "RULE_FALLBACK" ? "规则推荐" : "真实资料",
-    pairLabel: "RALLY × LIVE",
+    pairLabel: "COSPAN × LIVE",
     teamRole: role,
     signal,
     participantProfile: {
@@ -1117,14 +1147,14 @@ function render() {
   document.body.dataset.tab = state.tab;
   const phone = `
     <main class="prototype-stage">
-      <section class="phone-shell" aria-label="RALLY 集结手机端原型">
+      <section class="phone-shell" aria-label="COSPAN 共域手机端原型">
         <div class="screen">
           ${state.onboarding ? renderOnboarding() : renderCurrentView()}
         </div>
         ${state.onboarding || !liveAppReady() ? "" : renderAppNav()}
       </section>
       <aside class="prototype-notes">
-        <p class="eyebrow">${state.onboarding ? "RALLY / PASSPORT ASSEMBLY" : `RALLY / MOBILE / ${state.variant}`}</p>
+        <p class="eyebrow">${state.onboarding ? "COSPAN / PASSPORT ASSEMBLY" : `COSPAN / MOBILE / ${state.variant}`}</p>
         <h1>${state.onboarding ? "协作护照引导" : variantNames[state.variant]}</h1>
         <p>${state.onboarding ? "借鉴 Bonjour 的低负担资料搭建方式，但把流程重心改成当下协作意图、能力证据和用户授权。" : variantDescription()}</p>
         ${renderStateLedger()}
@@ -1281,37 +1311,78 @@ function renderLiveGate() {
   if (state.live.authStatus === "required") {
     const verifyingCode = Boolean(state.live.otpChallengeId);
     const retrySeconds = otpRetrySeconds();
+    const isAndroidApp = initialParams.get("source") === "android-app";
+    const isWechatBrowser = /MicroMessenger/i.test(navigator.userAgent);
+    const oauthButton = (provider, label, mark) => {
+      const unsupportedAndroidWechat = isAndroidApp && provider === "wechat";
+      const unsupportedExternalWechat = provider === "wechat" && !isWechatBrowser;
+      const unsupportedEmbeddedGoogle = provider === "google" && isWechatBrowser;
+      const serverEnabled = isAndroidApp
+        ? state.live.androidOAuthProviders[provider]
+        : state.live.oauthProviders[provider];
+      const enabled = serverEnabled
+        && !unsupportedAndroidWechat
+        && !unsupportedExternalWechat
+        && !unsupportedEmbeddedGoogle;
+      const loading = !state.live.oauthProvidersLoaded;
+      const availability = unsupportedAndroidWechat
+        ? "请从微信打开网页版"
+        : unsupportedExternalWechat
+          ? "请在微信内打开"
+          : unsupportedEmbeddedGoogle
+            ? "请用系统浏览器打开"
+            : loading
+              ? "正在检测…"
+              : enabled
+                ? ""
+                : "服务器尚未配置";
+      return `<button class="live-oauth-button live-oauth-${provider}" type="button" data-action="start-oauth-login" data-provider="${provider}" ${enabled ? "" : "disabled"}>
+        <span aria-hidden="true">${mark}</span><b>${label}</b><small>${availability}</small>
+      </button>`;
+    };
     return `<div class="live-gate">
-      <div class="live-gate-brand"><strong>RALLY</strong><span>集结 · 手机号登录</span></div>
+      <div class="live-gate-brand"><strong>COSPAN</strong><span>共域 · 安全登录</span></div>
       <section class="live-login-card">
         <p class="micro-label">${verifyingCode ? "SMS VERIFICATION" : "REAL MOBILE SESSION"}</p>
-        <h2>${verifyingCode ? "输入短信验证码" : "用手机号进入现场"}</h2>
+        <h2>${verifyingCode ? "输入短信验证码" : "选择登录方式"}</h2>
         <p>${verifyingCode
           ? `验证码已发送至 ${escapeHtml(state.live.otpMaskedPhone)}，5 分钟内有效。`
-          : "未注册手机号验证后会自动创建 RALLY 身份；不需要账号或现场访问码。"}</p>
+          : isAndroidApp
+            ? "体验包可使用手机号或 Google；微信登录请从微信内打开 COSPAN 网页版。昵称和协作资料在进入后再完善。"
+            : isWechatBrowser
+              ? "当前可使用手机号或微信登录；Google 登录请用系统浏览器打开本页。昵称和协作资料在进入后再完善。"
+              : "当前可使用手机号或 Google；微信登录请在微信内打开本页。昵称和协作资料在进入后再完善。"}</p>
         ${verifyingCode ? `
           <form data-live-otp-verify>
             <label><span>6 位验证码</span><input name="code" required inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" placeholder="请输入短信验证码"></label>
-            <button class="primary-button full" type="submit" ${state.live.meLoading ? "disabled" : ""}>${state.live.meLoading ? "正在验证…" : "验证并进入 RALLY"}</button>
+            <button class="primary-button full" type="submit" ${state.live.meLoading ? "disabled" : ""}>${state.live.meLoading ? "正在验证…" : "验证并进入 COSPAN"}</button>
           </form>
           <div class="live-otp-actions">
             <button type="button" data-action="edit-live-phone">更换手机号</button>
             <button type="button" data-action="resend-live-otp" ${retrySeconds > 0 || state.live.meLoading ? "disabled" : ""}>${retrySeconds > 0 ? `${retrySeconds} 秒后可重发` : "重新获取验证码"}</button>
           </div>
         ` : `
+          <div class="live-oauth-options" aria-label="第三方登录方式">
+            ${oauthButton("wechat", "使用微信登录", "微")}
+            ${oauthButton("google", "使用 Google 登录", "G")}
+          </div>
+          <div class="live-login-divider"><span>或使用手机号</span></div>
           <form data-live-otp-request>
             <label><span>手机号</span><input name="phone" type="tel" required inputmode="tel" autocomplete="tel" placeholder="请输入中国大陆手机号" value="${escapeHtml(state.live.otpPhone)}"></label>
-            <label><span>怎么称呼你</span><input name="display-name" required autocomplete="name" maxlength="40" placeholder="例如 小雨" value="${escapeHtml(state.live.otpDisplayName)}"></label>
             <button class="primary-button full" type="submit" ${state.live.meLoading ? "disabled" : ""}>${state.live.meLoading ? "正在发送…" : "获取短信验证码"}</button>
           </form>
-          <p class="live-login-consent">继续即表示你同意本次活动使用手机号完成身份验证；手机号不会出现在公开协作资料中。</p>
+          <p class="live-login-consent">继续即表示你同意使用所选账号完成身份验证；手机号和邮箱不会自动出现在公开协作资料中。</p>
         `}
+        <aside class="live-analytics-privacy" data-analytics-privacy-notice>
+          <b>第一方体验数据说明</b>
+          <span>为改进登录、发现和组队体验，COSPAN 仅收集页面浏览与关键协作结果等白名单事件，不收集手机号、验证码、Token、姓名、自由文本或精确位置。原始事件保留 30 天，如需提前删除，请联系现场工作人员按当前账户处理。演示阶段不向第三方统计平台发送数据。</span>
+        </aside>
         ${state.live.error ? `<div class="live-error" role="alert">${escapeHtml(state.live.error)}</div>` : ""}
       </section>
     </div>`;
   }
   return `<div class="live-gate">
-    <div class="live-gate-brand"><strong>RALLY</strong><span>集结 · Live</span></div>
+    <div class="live-gate-brand"><strong>COSPAN</strong><span>共域 · Live</span></div>
     <section class="live-login-card live-retry-card">
       <p class="micro-label">${state.live.meLoading ? "CONNECTING" : "CONNECTION ERROR"}</p>
       <h2>${state.live.meLoading ? "正在恢复现场状态" : "暂时无法连接"}</h2>
@@ -1338,7 +1409,7 @@ function commonHeader(title = "发现", utility = null) {
       : "";
   return `
     <header class="app-header">
-      <div class="app-header-start">${utilityButton}<div class="app-brand"><strong>RALLY</strong><span>集结 · ${title}</span></div></div>
+      <div class="app-header-start">${utilityButton}<div class="app-brand"><strong>COSPAN</strong><span>共域 · ${title}</span></div></div>
       ${exhibitionContext}
     </header>
   `;
@@ -1424,7 +1495,7 @@ function renderDiscoveryEmpty(mode) {
       <span class="empty-symbol">⌁</span>
       <p class="micro-label">STRICT FILTERS / 0 RESULT</p>
       <h3>当前筛选下暂无${mode}结果</h3>
-      <p>RALLY 不会自动放宽你的筛选条件。调整状态、职能或投入时间后再查看。</p>
+      <p>COSPAN 不会自动放宽你的筛选条件。调整状态、职能或投入时间后再查看。</p>
       <button class="primary-button" data-action="open-discovery-filters">调整筛选</button>
     </section>
   </div>`;
@@ -1514,7 +1585,7 @@ function renderVariantB() {
           <button class="secondary-button" data-action="next-person">换一个</button>
           <button class="primary-button" data-action="open-person" data-person="${person.id}">查看为什么</button>
         </div>
-      </section>` : `<section class="radar-ticket"><p class="ticket-reason">${activeDiscoveryFilterCount() ? "附近暂时没有同时满足当前筛选条件的人，RALLY 没有自动放宽条件。" : "暂未发现仍在展会内公开位置的协作者。定位只在本页前台开启，并会在离开后立即停止。"}</p>${activeDiscoveryFilterCount() ? `<button class="secondary-button full" data-action="open-discovery-filters">调整筛选</button>` : ""}</section>`}
+      </section>` : `<section class="radar-ticket"><p class="ticket-reason">${activeDiscoveryFilterCount() ? "附近暂时没有同时满足当前筛选条件的人，COSPAN 没有自动放宽条件。" : "暂未发现仍在展会内公开位置的协作者。定位只在本页前台开启，并会在离开后立即停止。"}</p>${activeDiscoveryFilterCount() ? `<button class="secondary-button full" data-action="open-discovery-filters">调整筛选</button>` : ""}</section>`}
     </div>
   `;
 }
@@ -1637,7 +1708,7 @@ function renderLiveConnections() {
         const person = request.counterpartPerson;
         return `<article class="connection-card incoming-request-card">
           <div class="connection-card-head">${glyph(person, "md")}<div><h4>${person.name}</h4><p>${person.role}</p></div><span class="source-chip">想认识你</span></div>
-          <div class="connection-context"><span>来自</span><strong>${currentExhibition?.name || "RALLY 现场"}</strong><small>${safeLiveText(request.message, "对方希望和你聊聊协作可能", 180)}</small></div>
+          <div class="connection-context"><span>来自</span><strong>${currentExhibition?.name || "COSPAN 现场"}</strong><small>${safeLiveText(request.message, "对方希望和你聊聊协作可能", 180)}</small></div>
           <div class="request-actions"><button class="primary-button" data-action="resolve-connection" data-request-id="${request.id}" data-resolution="accept" ${liveBusyAttributes(`connection-request:${request.id}`)}>接受</button><button class="secondary-button" data-action="resolve-connection" data-request-id="${request.id}" data-resolution="reject" ${liveBusyAttributes(`connection-request:${request.id}`)}>拒绝</button><button class="text-action" data-action="resolve-connection" data-request-id="${request.id}" data-resolution="block" ${liveBusyAttributes(`connection-request:${request.id}`)}>拉黑</button></div>
         </article>`;
       }).join("")}
@@ -1645,7 +1716,7 @@ function renderLiveConnections() {
         const person = request.counterpartPerson;
         return `<article class="connection-card">
           <div class="connection-card-head">${glyph(person, "md")}<div><h4>${person.name}</h4><p>${person.role}</p></div><span class="source-chip">已建联</span></div>
-          <div class="connection-context"><span>认识于</span><strong>${currentExhibition?.name || "RALLY 现场"}</strong><small>${request.source === "nfc" ? "碰卡建联" : "双方确认"}</small></div>
+          <div class="connection-context"><span>认识于</span><strong>${currentExhibition?.name || "COSPAN 现场"}</strong><small>${request.source === "nfc" ? "碰卡建联" : "双方确认"}</small></div>
           <button class="primary-button full" data-action="resume-direction" data-person="${person.id}">继续项目协作</button>
         </article>`;
       }).join("")}
@@ -1675,9 +1746,9 @@ function renderLiveCollaboration() {
       ${commonHeader("协作")}
       ${pendingInvitations.length ? `<section class="collaboration-inbox"><div><p class="micro-label">TEAM INVITATIONS</p><h3>入队邀请</h3></div>${pendingInvitations.map((invitation) => `<article class="team-invitation-row">${glyph(invitation.counterpartPerson, "sm")}<span><strong>${safeLiveText(invitation.project?.title, "未命名项目", 100)}</strong><small>${safeLiveText(invitation.counterpart?.display_name, "展会成员", 40)} 邀请你担任${safeLiveText(invitation.role_need?.title, "协作成员", 80)}</small></span><div><button class="primary-button" data-action="resolve-team-invitation" data-invitation-id="${invitation.id}" data-resolution="accept" ${liveBusyAttributes(`team-invitation:${invitation.id}`)}>确认入队</button><button class="text-action" data-action="resolve-team-invitation" data-invitation-id="${invitation.id}" data-resolution="decline" ${liveBusyAttributes(`team-invitation:${invitation.id}`)}>拒绝</button></div></article>`).join("")}</section>` : ""}
       <section class="collaboration-empty">
-        <span class="collaboration-empty-mark">＋</span><p class="micro-label">RALLY ROOM</p>
-        <h3>${pendingInvitations.length ? "先处理入队邀请" : "还没有进行中的项目启动舱"}</h3>
-        <p>项目与成员状态来自服务端。完成连接、方向确认与入队后，两台设备都能恢复同一个启动舱。</p>
+        <span class="collaboration-empty-mark">＋</span><p class="micro-label">COSPAN SPACE</p>
+        <h3>${pendingInvitations.length ? "先处理入队邀请" : "还没有进行中的人机协作空间"}</h3>
+        <p>项目与成员状态来自服务端。完成连接、方向确认与入队后，两台设备都能恢复同一个协作空间。</p>
         <button class="primary-button" data-tab="connections">查看连接</button>
       </section>
     </div>`;
@@ -1691,7 +1762,7 @@ function renderLiveCollaboration() {
   return `<div class="view utility-view live-workspace-view">
     ${commonHeader("协作")}
     <section class="project-card live-project-summary">
-      <p class="micro-label">RALLY ROOM / LIVE</p><h3>${escapeHtml(project.title)}</h3><p>${escapeHtml(project.summary)}</p>
+      <p class="micro-label">COSPAN SPACE / LIVE</p><h3>${escapeHtml(project.title)}</h3><p>${escapeHtml(project.summary)}</p>
       <div class="live-member-list">${project.members.map((member) => `<span>${escapeHtml(member.display_name)}<small>${escapeHtml(member.profile_role || member.membership_role)}</small></span>`).join("")}</div>
       ${state.live.syncError ? `<div class="inline-sync-error"><span>${state.live.syncError}</span><button data-action="sync-live-now">重试</button></div>` : ""}
     </section>
@@ -1719,9 +1790,9 @@ function renderCollaborationLobby() {
       ${commonHeader("协作")}
       <section class="collaboration-empty">
         <span class="collaboration-empty-mark">＋</span>
-        <p class="micro-label">RALLY ROOM</p>
-        <h3>还没有进行中的项目启动舱</h3>
-        <p>完成建联并确认入队后，RALLY 会创建临时启动舱；成员确认 Agent 建议后，再把执行同步到常用工具。</p>
+        <p class="micro-label">COSPAN SPACE</p>
+        <h3>还没有进行中的人机协作空间</h3>
+        <p>完成建联并确认入队后，COSPAN 会创建共享空间；当前薄闭环只提供固定启动建议，成员确认后再进入后续人与 Agent 的协作执行。</p>
         <button class="primary-button" data-tab="discover">去发现队友</button>
       </section>
       ${(connectedPeople.length || pendingPeople.length) ? `<section class="collaboration-inbox"><div><p class="micro-label">COLLABORATION INBOX</p><h3>协作收件箱</h3></div>${connectedPeople.map((person) => `<article>${glyph(person, "sm")}<span><strong>${person.name}</strong><small>已碰卡建联 · 待加入明确项目</small></span><em>已建联</em></article>`).join("")}${pendingPeople.map((person) => `<article>${glyph(person, "sm")}<span><strong>${person.name}</strong><small>已表达想认识 · 等待回应</small></span><em>待回应</em></article>`).join("")}</section>` : ""}
@@ -1762,22 +1833,27 @@ function renderWorkspace(joinedPeople) {
     <div class="view utility-view workspace-view">
       ${commonHeader("协作")}
       <section class="workspace-project-head">
-        <div class="workspace-live"><i></i>${state.workspaceStarted ? "执行中" : "等待团队确认"}</div>
-        <span class="workspace-room-label">RALLY ROOM · 项目启动舱</span>
+        <div class="workspace-project-top">
+          <div class="workspace-live"><i></i>${state.workspaceStarted ? "执行中" : "等待首次分工"}</div>
+          <span class="workspace-room-label">人机协作空间</span>
+        </div>
         <h3>离线会议洞察终端</h3>
         <p>让线下讨论自动沉淀为可检索的决策、分歧与行动项。</p>
         <div class="workspace-project-meta">
           <div class="workspace-avatar-stack" aria-label="${memberCount} 位项目成员"><span>ZW</span><span>YK</span>${joinedPeople.map((person) => `<span>${person.monogram}</span>`).join("")}</div>
-          <strong>${memberCount} 位成员</strong><span>${state.workspaceStarted ? "方案已确认" : "还差首次分工"}</span><b>剩余 68h</b>
+          <span><strong>${memberCount} 位成员</strong><small>成员已到齐</small></span><b>剩余 68h</b>
         </div>
-        <div class="workspace-launch-track" aria-label="项目启动进度">
-          <article class="is-done"><i>✓</i><span><b>成员已到齐</b><small>${memberCount} 人已入队</small></span></article>
-          <article class="${state.workspaceStarted ? "is-done" : "is-current"}"><i>${state.workspaceStarted ? "✓" : "2"}</i><span><b>分工确认</b><small>${state.workspaceStarted ? "团队已确认" : "等待人来决定"}</small></span></article>
-          <article class="${state.workspaceStarted ? "is-current" : ""}"><i>3</i><span><b>进入执行</b><small>${state.workspaceStarted ? "可同步工具" : "确认后开始"}</small></span></article>
+        <div class="workspace-launch-summary" role="progressbar" aria-label="项目启动进度" aria-valuemin="1" aria-valuemax="3" aria-valuenow="${state.workspaceStarted ? "3" : "2"}">
+          <div><span>启动进度</span><strong>${state.workspaceStarted ? "3 / 3 · 已进入执行" : "2 / 3 · 当前确认分工"}</strong></div>
+          <small>${state.workspaceStarted ? "首次分工已确认，可继续执行" : "团队确认后进入执行阶段"}</small>
+          <i aria-hidden="true"><b style="width:${state.workspaceStarted ? "100" : "66.666"}%"></b></i>
         </div>
       </section>
       <nav class="workspace-tabs" aria-label="协作空间内容">
-        ${[["overview", "启动"], ["tasks", "分工"], ["records", "动态"]].map(([id, label]) => `<button class="${state.workspaceSection === id ? "active" : ""}" data-action="workspace-section" data-section="${id}">${label}</button>`).join("")}
+        ${[["overview", "概览"], ["tasks", "任务"], ["records", "记录"]].map(([id, label]) => {
+          const active = state.workspaceSection === id;
+          return `<button class="${active ? "active" : ""}" data-action="workspace-section" data-section="${id}" ${active ? 'aria-current="page"' : ""}>${label}</button>`;
+        }).join("")}
       </nav>
       <div class="workspace-mobile-content">${state.workspaceSection === "tasks" ? renderWorkspaceTasks(tasks) : state.workspaceSection === "records" ? renderWorkspaceRecords(latestMember) : renderWorkspaceOverview(joinedPeople, tasks, latestMember)}</div>
       ${renderDesktopWorkspace(joinedPeople, tasks, latestMember)}
@@ -1832,25 +1908,27 @@ function renderWorkspaceOverview(joinedPeople, tasks, latestMember) {
           <span class="workspace-started-mark">✓</span>
           <p class="micro-label">PROJECT STARTED</p>
           <h3>项目已经正式启动</h3>
-          <p>${memberCount} 位成员完成首次分工。RALLY 只保留关键确认与贡献记录，日常执行继续使用团队已有工具。</p>
+          <p>${memberCount} 位成员完成首次分工。COSPAN 只保留关键确认与贡献记录，日常执行继续使用团队已有工具。</p>
           <div><button class="secondary-button" data-action="open-workspace-tasks">查看我的任务</button><button class="secondary-button" data-action="trigger-project-sos">发起项目 SOS</button></div>
         </section>
       ` : `
         <section class="workspace-next-action">
-          <header><div><p class="micro-label">NEXT STEP</p><h3>确认 Agent 分工建议</h3></div><span>约 1 分钟</span></header>
-          <p>Agent 已根据成员能力和项目目标生成 V1 草案。成员可以主动认领，最终方案必须由人确认。</p>
-          <div class="workspace-assignment-preview">
-            ${tasks.slice(0, 2).map((task) => `<article><i></i><span><strong>${task.title}</strong><small>建议负责人：${taskOwner(task)}</small></span></article>`).join("")}
-            <small>另有 ${Math.max(tasks.length - 2, 0)} 项启动任务</small>
+          <header><div><p class="micro-label">当前行动</p><h3>确认首次分工</h3></div><span>约 1 分钟</span></header>
+          <p>Agent 已根据成员能力生成 V1 建议。先查看负责人和交付边界，再由团队确认是否开始。</p>
+          <div class="workspace-action-facts" aria-label="分工建议摘要">
+            <span><b>${tasks.length}</b> 项建议</span>
+            <span><b>${new Set(tasks.map((task) => taskOwner(task))).size}</b> 位负责人</span>
+            <span><b>V1</b> 可调整</span>
           </div>
-          <button class="primary-button full" data-action="open-workspace-tasks">查看并确认分工</button>
+          <button class="primary-button full" data-action="open-workspace-tasks">查看分工建议</button>
+          <small class="workspace-human-note">最终由团队确认，Agent 不会自动开始任务</small>
         </section>
       `}
 
       ${state.workspaceSos ? `<article class="workspace-sos-live"><span>SOS 已发布</span><strong>需要一位熟悉端侧数据同步的开发者</strong><small>已向当前展会中明确开放协作的成员展示</small></article>` : ""}
 
       <section class="workspace-activity-preview">
-        <header><div><p class="micro-label">RECENT ACTIVITY</p><h3>最近动态</h3></div><button data-action="workspace-section" data-section="records">查看全部</button></header>
+        <header><div><h3>最近动态</h3><p>只记录会影响协作的关键变化</p></div><button data-action="workspace-section" data-section="records">查看全部</button></header>
         <article><i></i><span><strong>${latestMember.name} 已确认加入团队</strong><small>线下碰卡 · 刚刚</small></span></article>
         <article><i></i><span><strong>Agent 生成分工建议 V1</strong><small>${state.workspaceStarted ? "已由团队确认" : "等待成员确认"}</small></span></article>
         ${state.workspaceStarted ? `<article><i></i><span><strong>项目进入执行阶段</strong><small>当前有效版本 · 刚刚</small></span></article>` : ""}
@@ -2108,19 +2186,19 @@ function renderProfileSettingsSheet() {
     <section class="bottom-sheet profile-settings-sheet" aria-label="我的设置">
       <header class="profile-settings-head">
         <button data-action="close-profile-settings" aria-label="返回我的页面">←</button>
-        <div><p class="micro-label">RALLY SETTINGS</p><h3>设置</h3></div>
+        <div><p class="micro-label">COSPAN SETTINGS</p><h3>设置</h3></div>
       </header>
       <p class="profile-settings-copy">管理设备、隐私和展会账号。这些次级选项不会打断你的协作身份编辑。</p>
       <div class="profile-settings-list"><button class="settings-sound-toggle" data-action="toggle-swipe-sound" aria-pressed="${state.swipeSoundEnabled}">
         <span class="settings-row-mark" aria-hidden="true">SFX</span>
-        <span><strong>滑动声效</strong><small>${state.swipeSoundEnabled ? "左右滑动使用 RALLY 方向声纹" : "已关闭，仅保留视觉反馈"}</small></span>
+        <span><strong>滑动声效</strong><small>${state.swipeSoundEnabled ? "左右滑动使用 COSPAN 方向声纹" : "已关闭，仅保留视觉反馈"}</small></span>
         <i class="settings-toggle ${state.swipeSoundEnabled ? "on" : ""}" aria-hidden="true"><b></b></i>
       </button>${settings.map(([id, label, detail, mark]) => `<button data-action="profile-setting-detail" data-setting="${id}" data-label="${label}">
         <span class="settings-row-mark" aria-hidden="true">${mark}</span>
         <span><strong>${label}</strong><small>${detail}</small></span>
         <b>›</b>
       </button>`).join("")}</div>
-      <aside class="settings-privacy-note"><b>默认最小公开</b><span>${currentExhibition ? "RALLY 只展示你在本场展会主动授权的字段，展会结束后自动隐藏。" : "RALLY 只在你主动开启附近发现时展示授权字段，关闭后立即隐藏。"}</span></aside>
+      <aside class="settings-privacy-note"><b>默认最小公开</b><span>${currentExhibition ? "COSPAN 只展示你在本场展会主动授权的字段，展会结束后自动隐藏。" : "COSPAN 只在你主动开启附近发现时展示授权字段，关闭后立即隐藏。"}</span></aside>
     </section>
   </div>`;
 }
@@ -2138,7 +2216,7 @@ function renderProfileBlockLibrary() {
     <section class="bottom-sheet profile-block-library" data-profile-block-library aria-label="添加协作证据内容">
       <header class="profile-block-sheet-head">
         <button data-action="close-profile-block-library" aria-label="返回我的页面">←</button>
-        <div><p class="micro-label">ADD A RALLY BLOCK</p><h3>添加内容</h3></div>
+        <div><p class="micro-label">ADD A COSPAN BLOCK</p><h3>添加内容</h3></div>
       </header>
       <aside class="profile-block-intro"><span>只放真实、可追问的协作证据</span><p>像搭积木一样补充对外卡片；每项都会先预览，再由你明确授权公开。</p></aside>
       <div class="profile-block-groups">
@@ -2150,7 +2228,7 @@ function renderProfileBlockLibrary() {
           </section>`;
         }).join("")}
       </div>
-      <p class="profile-block-library-boundary">RALLY 不读取平台私信、草稿或非公开资料；保存后仍可在“编辑协作资料”撤回对应公开字段。</p>
+      <p class="profile-block-library-boundary">COSPAN 不读取平台私信、草稿或非公开资料；保存后仍可在“编辑协作资料”撤回对应公开字段。</p>
     </section>
   </div>`;
 }
@@ -2214,6 +2292,7 @@ function renderLiveProfileEditor() {
     <section class="bottom-sheet live-profile-editor" aria-label="编辑公开协作资料">
       <header class="profile-settings-head"><button data-action="close-profile-editor" aria-label="返回我的页面">←</button><div><p class="micro-label">PROFILE / AUTHORIZATION</p><h3>编辑协作资料</h3></div></header>
       <form data-live-profile-form>
+        <label><span>怎么称呼你</span><input name="display-name" required autocomplete="name" maxlength="40" value="${escapeHtml(currentUser.name)}"></label>
         <label><span>当前角色</span><input name="role" required maxlength="80" value="${escapeHtml(profile.role)}"></label>
         <label><span>协作状态</span><select name="status">${["未组队", "有 Idea 找人", "团队缺人", "已组队但可交流"].map((status) => `<option ${profile.status === status ? "selected" : ""}>${status}</option>`).join("")}</select></label>
         <label><span>能力标签（3–5 项，用逗号分隔）</span><input name="skills" required value="${arrayValue(profile.skills)}"></label>
@@ -2367,7 +2446,7 @@ function renderOverlay() {
     return `<div class="overlay success-overlay"><section class="success-card team-success">
       <div class="success-mark">＋</div><p class="micro-label">TEAM UPDATED</p><h3>${person.name} 已加入项目</h3>
       <p>AI 已根据三位成员的能力，生成角色覆盖、一个风险提示和三个启动任务。</p>
-      <button class="primary-button full" data-action="view-project">进入项目启动舱</button>
+      <button class="primary-button full" data-action="view-project">进入人机协作空间</button>
     </section></div>`;
   }
   return "";
@@ -2838,8 +2917,11 @@ function handleAction(action, element) {
   if (action === "resend-live-otp") {
     requestLiveOtp(null, {
       phone: state.live.otpPhone,
-      displayName: state.live.otpDisplayName,
     });
+    return;
+  }
+  if (action === "start-oauth-login") {
+    startOAuthLogin(element.dataset.provider);
     return;
   }
   if (action === "retry-live") {
@@ -3239,6 +3321,176 @@ window.addEventListener("keydown", (event) => {
 render();
 writeAppHistory({ replace: true });
 
+function clearOAuthCallbackParameters() {
+  const url = new URL(location.href);
+  url.searchParams.delete("oauth_ticket");
+  url.searchParams.delete("oauth_provider");
+  url.searchParams.delete("oauth_error");
+  history.replaceState(history.state, "", url);
+}
+
+async function loadOAuthProviders() {
+  if (!state.live.enabled) return;
+  try {
+    const payload = await api.get("/api/auth/oauth/providers", {
+      authenticate: false,
+      retryDelaysMs: [],
+    });
+    for (const provider of ["wechat", "google"]) {
+      state.live.oauthProviders[provider] = payload.providers?.[provider]?.enabled === true;
+      state.live.androidOAuthProviders[provider] = payload.providers?.[provider]?.android_enabled === true;
+    }
+  } catch {
+    state.live.oauthProviders.wechat = false;
+    state.live.oauthProviders.google = false;
+    state.live.androidOAuthProviders.wechat = false;
+    state.live.androidOAuthProviders.google = false;
+  } finally {
+    state.live.oauthProvidersLoaded = true;
+    render();
+  }
+}
+
+function encodeOAuthBytes(bytes) {
+  let binary = "";
+  for (const value of bytes) binary += String.fromCharCode(value);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+async function createOAuthClientBinding(provider) {
+  if (!globalThis.crypto?.subtle) throw new Error("OAUTH_SECURE_CONTEXT_REQUIRED");
+  const verifierBytes = new Uint8Array(32);
+  globalThis.crypto.getRandomValues(verifierBytes);
+  const verifier = encodeOAuthBytes(verifierBytes);
+  const digest = await globalThis.crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(verifier),
+  );
+  sessionStorage.setItem(oauthVerifierStorageKey, verifier);
+  sessionStorage.setItem(oauthProviderStorageKey, provider);
+  return encodeOAuthBytes(new Uint8Array(digest));
+}
+
+function clearOAuthClientBinding() {
+  sessionStorage.removeItem(oauthVerifierStorageKey);
+  sessionStorage.removeItem(oauthProviderStorageKey);
+}
+
+async function startOAuthLogin(provider) {
+  if (!["wechat", "google"].includes(provider)) return;
+  if (initialParams.get("source") === "android-app" && provider === "wechat") {
+    state.live.error = "Android 体验包的微信一键登录需要接入微信 OpenSDK；请先从微信内打开 COSPAN 网页版";
+    render();
+    return;
+  }
+  if (!state.live.oauthProviders[provider]) {
+    state.live.error = `${provider === "wechat" ? "微信" : "Google"}登录尚未在服务器配置`;
+    render();
+    return;
+  }
+  let codeChallenge;
+  try {
+    codeChallenge = await createOAuthClientBinding(provider);
+  } catch {
+    state.live.error = "当前环境无法建立安全登录校验，请使用 HTTPS 后重试";
+    render();
+    return;
+  }
+  const returnTo = initialParams.get("source") === "android-app"
+    ? `${packagedAppOrigin || liveConfig.apiBase}/auth/android`
+    : (() => {
+        const url = new URL(location.href);
+        url.searchParams.delete("oauth_ticket");
+        url.searchParams.delete("oauth_provider");
+        url.searchParams.delete("oauth_error");
+        url.hash = "";
+        return url.href;
+      })();
+  const startUrl = new URL(`${liveConfig.apiBase}/api/auth/oauth/${provider}/start`);
+  startUrl.searchParams.set("return_to", returnTo);
+  startUrl.searchParams.set("code_challenge", codeChallenge);
+  location.assign(startUrl.href);
+}
+
+async function finishLiveAuthentication(payload, successMessage) {
+  liveConfig.accessToken = payload.access_token;
+  state.live.sessionExpiresAt = payload.expires_at;
+  state.live.authStatus = "ready";
+  localStorage.setItem("rally_access_token", payload.access_token);
+  localStorage.setItem("rally_session_expires_at", payload.expires_at);
+  localStorage.setItem("rally_api_base", liveConfig.apiBase);
+  resetLiveOtpChallenge();
+  clearLiveOtpIdentity();
+  state.live.meLoading = false;
+  if (payload.is_new_user) state.tab = "profile";
+  await loadLiveMe({ force: true });
+  if (payload.is_new_user) {
+    state.overlay = "profile-editor";
+    showToast(`${successMessage}，再完善昵称和协作资料`);
+  }
+}
+
+async function exchangeOAuthTicket(ticket) {
+  state.live.authStatus = "exchanging";
+  state.live.meLoading = true;
+  state.live.error = "";
+  render();
+  try {
+    const verifier = sessionStorage.getItem(oauthVerifierStorageKey);
+    const expectedProvider = sessionStorage.getItem(oauthProviderStorageKey);
+    if (
+      typeof verifier !== "string"
+      || !/^[A-Za-z0-9_-]{43,128}$/.test(verifier)
+      || expectedProvider !== initialOAuthProvider
+    ) {
+      throw new ApiError("OAuth client binding is missing.", {
+        status: 400,
+        code: "INVALID_OAUTH_TICKET",
+      });
+    }
+    const payload = await api.post("/api/auth/oauth/sessions", { ticket, verifier }, {
+      authenticate: false,
+    });
+    const providerName = payload.provider === "wechat" ? "微信" : "Google";
+    await finishLiveAuthentication(payload, `${providerName}登录成功`);
+  } catch (error) {
+    state.live.authStatus = "required";
+    state.live.meLoading = false;
+    state.live.error = error instanceof ApiError && error.code === "INVALID_OAUTH_TICKET"
+      ? "登录回执已失效，请重新选择登录方式"
+      : "第三方登录暂时没有完成，请重试";
+  } finally {
+    clearOAuthClientBinding();
+    clearOAuthCallbackParameters();
+    render();
+  }
+}
+
+async function initializeLiveAuthentication() {
+  if (!state.live.enabled) return;
+  const hasOAuthCallbackParameters = initialParams.has("oauth_ticket")
+    || initialParams.has("oauth_provider")
+    || initialParams.has("oauth_error");
+  if (hasOAuthCallbackParameters) clearOAuthCallbackParameters();
+  await loadOAuthProviders();
+  if (initialOAuthTicket && !storedAccessToken) {
+    await exchangeOAuthTicket(initialOAuthTicket);
+    return;
+  }
+  if (initialOAuthError && !storedAccessToken) {
+    clearOAuthClientBinding();
+    state.live.authStatus = "required";
+    state.live.meLoading = false;
+    state.live.error = initialOAuthError === "cancelled"
+      ? "你已取消第三方登录"
+      : "第三方平台暂时没有完成登录，请重试";
+    clearOAuthCallbackParameters();
+    render();
+    return;
+  }
+  await loadLiveMe();
+}
+
 function otpRetrySeconds() {
   if (!state.live.otpRetryAt) return 0;
   return Math.max(0, Math.ceil((state.live.otpRetryAt - Date.now()) / 1000));
@@ -3272,7 +3524,6 @@ function resetLiveOtpChallenge() {
 
 function clearLiveOtpIdentity() {
   state.live.otpPhone = "";
-  state.live.otpDisplayName = "";
 }
 
 function clearLiveSession() {
@@ -3331,23 +3582,18 @@ async function requestLiveOtp(form, savedValues = null) {
   if (state.live.meLoading) return;
   const formData = form ? new FormData(form) : null;
   const phone = String(savedValues?.phone ?? formData?.get("phone") ?? "").trim();
-  const displayName = String(
-    savedValues?.displayName ?? formData?.get("display-name") ?? "",
-  ).trim();
   state.live.meLoading = true;
   state.live.error = "";
   render();
   try {
     const payload = await api.post("/api/auth/otp/challenges", {
       phone,
-      display_name: displayName,
     }, {
       authenticate: false,
     });
     state.live.otpChallengeId = payload.challenge_id;
     state.live.otpMaskedPhone = payload.masked_phone;
     state.live.otpPhone = phone;
-    state.live.otpDisplayName = displayName;
     state.live.otpRetryAt = Date.now() + Number(payload.retry_after_seconds || 60) * 1000;
     startLiveOtpCountdown();
   } catch (error) {
@@ -3356,7 +3602,7 @@ async function requestLiveOtp(form, savedValues = null) {
     } else if (error instanceof ApiError && error.code === "OTP_DELIVERY_FAILED") {
       state.live.error = "短信暂时没有发送成功，请重新获取";
     } else if (error instanceof ApiError && error.code === "INVALID_OTP_REQUEST") {
-      state.live.error = "请输入有效的中国大陆手机号和称呼";
+      state.live.error = "请输入有效的中国大陆手机号";
     } else {
       handleLiveFailure(error, "验证码发送失败，请稍后重试");
     }
@@ -3377,21 +3623,7 @@ async function verifyLiveOtp(form) {
       challenge_id: state.live.otpChallengeId,
       code,
     }, { authenticate: false });
-    liveConfig.accessToken = payload.access_token;
-    state.live.sessionExpiresAt = payload.expires_at;
-    state.live.authStatus = "ready";
-    localStorage.setItem("rally_access_token", payload.access_token);
-    localStorage.setItem("rally_session_expires_at", payload.expires_at);
-    localStorage.setItem("rally_api_base", liveConfig.apiBase);
-    resetLiveOtpChallenge();
-    clearLiveOtpIdentity();
-    state.live.meLoading = false;
-    if (payload.is_new_user) state.tab = "profile";
-    await loadLiveMe({ force: true });
-    if (payload.is_new_user) {
-      state.overlay = "profile-editor";
-      showToast("手机号验证成功，先完善你的协作资料");
-    }
+    await finishLiveAuthentication(payload, "手机号验证成功");
   } catch (error) {
     if (error instanceof ApiError && error.code === "INVALID_OTP") {
       state.live.error = "验证码错误、已过期或尝试次数已用完";
@@ -3551,6 +3783,7 @@ async function updateLiveProfile(form) {
     return;
   }
   const profileInput = {
+    display_name: String(formData.get("display-name") || "").trim(),
     role: String(formData.get("role") || "").trim(),
     status: String(formData.get("status") || ""),
     skills,
@@ -3637,6 +3870,7 @@ function normalizeConnectionRequest(request) {
 async function sendLiveConnectionRequest(person) {
   if (!person?.userId) return;
   try {
+    const analyticsAttribution = globalThis.__rallyDiscoveryAttribution?.(person.userId);
     const payload = await runLiveMutation(`connection:${person.userId}`, () => api.post(
       "/api/connections/requests",
       {
@@ -3644,6 +3878,7 @@ async function sendLiveConnectionRequest(person) {
         event_id: liveConfig.eventId,
         source: "link",
         message: "想和你当面聊聊当前的协作方向",
+        ...(analyticsAttribution ?? {}),
       },
     ));
     if (payload.connection) showToast(`你和 ${person.name} 已经建联`);
@@ -3680,10 +3915,16 @@ async function createAndInviteLiveProject(person) {
     let project = state.live.activeProject;
     let roleNeeds = project?.role_needs || [];
     if (!project) {
+      const originConnectionId = state.live.connectionRequests.find((request) => (
+        request.status === "ACCEPTED"
+        && request.connection_id
+        && request.counterpartPerson?.userId === person.userId
+      ))?.connection_id;
       const direction = directionAlignmentFor(person.id).draft;
       const hasDirection = direction.audience && direction.problem && direction.outcome;
       const created = await runLiveMutation("project:create", () => api.post("/api/projects", {
         event_id: liveConfig.eventId,
+        ...(originConnectionId ? { origin_connection_id: originConnectionId } : {}),
         title: "离线会议洞察终端",
         summary: hasDirection
           ? `为${direction.audience}解决${direction.problem}，验证${direction.outcome}`
@@ -3721,7 +3962,7 @@ async function resolveLiveTeamInvitation(invitationId, action) {
       `/api/team-invitations/${encodeURIComponent(invitationId)}`,
       { action },
     ));
-    showToast(action === "accept" ? "已确认入队，项目启动舱正在恢复" : "已拒绝入队邀请");
+    showToast(action === "accept" ? "已确认入队，人机协作空间正在恢复" : "已拒绝入队邀请");
     await refreshLiveState();
     if (action === "accept") {
       state.tab = "collaboration";
@@ -3859,7 +4100,6 @@ async function refreshLiveState() {
 }
 
 let livePollTimer = null;
-let liveOtpCountdownTimer = null;
 function startLivePolling() {
   if (livePollTimer || !state.live.meLoaded) return;
   livePollTimer = window.setInterval(() => {
@@ -4066,4 +4306,4 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 
-loadLiveMe();
+initializeLiveAuthentication();

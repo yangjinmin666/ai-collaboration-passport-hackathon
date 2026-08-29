@@ -33,8 +33,10 @@ import java.io.IOException;
 public final class MainActivity extends Activity {
     private static final int LOCATION_PERMISSION_REQUEST = 7001;
     private static final String ASSET_HOST = BuildConfig.RALLY_ASSET_HOST;
+    private static final String APP_LINK_HOST = BuildConfig.RALLY_APP_HOST;
     private static final String HOME_URL =
-            "https://" + ASSET_HOST + "/index.html?variant=A&source=android-app";
+            "https://" + ASSET_HOST + "/index.html?variant=A&source=android-app"
+                    + (BuildConfig.RALLY_DEMO_MODE ? "&workspace=1" : "");
 
     private WebView webView;
     private Object predictiveBackCallback;
@@ -68,11 +70,50 @@ public final class MainActivity extends Activity {
             predictiveBackCallback = Api33BackHandler.register(this, this::handleBackNavigation);
         }
 
+        String oauthReturnUrl = oauthAppLinkUrl(getIntent());
         if (savedInstanceState == null) {
-            webView.loadUrl(HOME_URL);
+            webView.loadUrl(oauthReturnUrl != null ? oauthReturnUrl : HOME_URL);
         } else {
             webView.restoreState(savedInstanceState);
+            if (oauthReturnUrl != null) webView.loadUrl(oauthReturnUrl);
         }
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        String oauthReturnUrl = oauthAppLinkUrl(intent);
+        if (oauthReturnUrl != null) webView.loadUrl(oauthReturnUrl);
+    }
+
+    private String oauthAppLinkUrl(Intent intent) {
+        Uri uri = intent == null ? null : intent.getData();
+        if (uri == null
+                || !"https".equals(uri.getScheme())
+                || !APP_LINK_HOST.equals(uri.getHost())
+                || uri.getPort() != -1
+                || uri.getUserInfo() != null
+                || !"/auth/android".equals(uri.getPath())
+                || uri.getFragment() != null) {
+            return null;
+        }
+
+        String ticket = uri.getQueryParameter("oauth_ticket");
+        String provider = uri.getQueryParameter("oauth_provider");
+        String error = uri.getQueryParameter("oauth_error");
+        if (provider != null && !"google".equals(provider) && !"wechat".equals(provider)) {
+            return null;
+        }
+        if (ticket != null && !ticket.matches("[A-Za-z0-9_-]{40,128}")) return null;
+        if (error != null && !error.matches("[a-z_]{1,64}")) return null;
+        if (ticket == null && error == null) return null;
+
+        Uri.Builder destination = Uri.parse(HOME_URL).buildUpon();
+        if (ticket != null) destination.appendQueryParameter("oauth_ticket", ticket);
+        if (provider != null) destination.appendQueryParameter("oauth_provider", provider);
+        if (error != null) destination.appendQueryParameter("oauth_error", error);
+        return destination.build().toString();
     }
 
     private void configureSystemBars() {

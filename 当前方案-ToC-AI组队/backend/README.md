@@ -1,6 +1,6 @@
-# RALLY Backend
+# COSPAN Backend
 
-RALLY 的 96 小时黑客松后端已经跑通一条完整、可复位的协作闭环：
+COSPAN 的 96 小时黑客松后端已经跑通一条完整、可复位的协作闭环：
 
 > 活动身份与授权公开 → 手机前台附近发现 → NFC／QR 双向建联 → 项目邀请与确认入队 → 人工确认启动包与任务 → 项目 SOS → 审计记录。
 
@@ -16,9 +16,10 @@ RALLY 的 96 小时黑客松后端已经跑通一条完整、可复位的协作�
 | 缺口匹配 | 按项目未满角色缺口、能力、兴趣、投入时间、协作偏好和证据做确定性排序；返回两条依据、证据引用、待确认点和模板降级标识，不显示成功概率 |
 | NFC／QR | 不透明卡片 Token、有限公开资料、受保护的双卡 `physical_mutual` 直连、普通连接请求箱、双方确认、撤回／拒绝／拉黑、幂等与限频 |
 | 项目与团队 | 创建项目与角色缺口、仅邀请已建联对象、受邀者确认入队、事务保护容量 |
-| RALLY Room | 三任务模板启动包、成员主动认领、任务状态机、全员确认后启动、项目动态 |
+| COSPAN Space | 三任务模板启动包、成员主动认领、任务状态机、全员确认后启动、项目动态 |
 | 项目 SOS | 结构化求助、活动内响应、四类回报表达、活动级 SOS／外援／付费意向开关、支援者带原因退出、发布者解决／关闭／重开；不自动入队、不处理支付 |
-| 手机号身份 | 腾讯云短信验证码、首次自动建号、活动隐藏资料、Bearer Session、5 分钟有效期、5 次错误锁定、手机号/IP 限频 |
+| 登录与身份 | 手机号短信、微信 OAuth、Google OAuth；首次自动建号、活动隐藏资料、Bearer Session、一次性登录回执与手机号/IP 限频 |
+| 数据埋点 | 第一方 `analytics_events`、短信/资料/发现/建联/组队/Room 漏斗、来源归因、幂等去重、30 天原始事件保留、受保护汇总与 CSV 导出 |
 | 演示可靠性 | 确定性种子数据、受保护 Demo Reset、HTTP 契约测试、真实浏览器端到端测试 |
 
 完整接口见 [openapi.yaml](./openapi.yaml)。
@@ -40,6 +41,16 @@ PORT=8788 \
 HOST=127.0.0.1 \
 DATABASE_PATH=:memory: \
 AUTH_OTP_SECRET='replace-with-a-long-random-secret' \
+ANALYTICS_ADMIN_TOKEN='replace-with-an-independent-32-char-secret' \
+RALLY_APP_VERSION='release-20260829' \
+PUBLIC_APP_ORIGIN='https://rally.example.com' \
+PUBLIC_API_ORIGIN='https://api.rally.example.com' \
+AUTH_OAUTH_STATE_SECRET='replace-with-an-independent-random-secret' \
+GOOGLE_OAUTH_CLIENT_ID='google-client-id' \
+GOOGLE_OAUTH_CLIENT_SECRET='google-client-secret' \
+WECHAT_OAUTH_APP_ID='wechat-app-id' \
+WECHAT_OAUTH_APP_SECRET='wechat-app-secret' \
+ANDROID_APP_SHA256_CERT_FINGERPRINT='AA:BB:...:FF' \
 TENCENT_SMS_SECRET_ID='rally-sms-sub-user-secret-id' \
 TENCENT_SMS_SECRET_KEY='rally-sms-sub-user-secret-key' \
 TENCENT_SMS_SDK_APP_ID='1401184659' \
@@ -58,6 +69,31 @@ npm start
 ```bash
 curl http://127.0.0.1:8787/health
 ```
+
+## 第一方数据埋点
+
+演示版不依赖 GA、Firebase、PostHog 等第三方统计服务。手机 H5／Android WebView 将允许的页面曝光事件发送到同源 `POST /api/analytics/events`；短信、建联、入队、启动包和任务等成功结果由后端写入。`event_logs` 仍是业务审计记录，`analytics_events` 只用于漏斗和来源分析，二者不会混作同一用途。
+
+客户端事件使用严格事件名和属性白名单。手机号、验证码、Token、姓名、资料正文、精确位置和腾讯云原始响应不能进入埋点。原始分析事件默认保留 30 天，Demo Reset 会同时清除分析事件；也可按内部 `user_id` 删除当前账户及已关联的登录前匿名事件，不会删除业务审计日志。
+
+汇总和 CSV 导出必须提供独立管理密钥；该密钥只保存在服务器，不进入 APK 或普通用户界面：
+
+```bash
+curl 'http://127.0.0.1:8787/api/admin/analytics/summary?exhibition_id=hackathon-2026' \
+  -H 'x-analytics-admin-token: replace-with-an-independent-32-char-secret'
+
+curl 'http://127.0.0.1:8787/api/admin/analytics/export?exhibition_id=hackathon-2026' \
+  -H 'x-analytics-admin-token: replace-with-an-independent-32-char-secret' \
+  -o rally-analytics.csv
+
+curl -X DELETE \
+  'http://127.0.0.1:8787/api/admin/analytics/users/user_internal_id?exhibition_id=hackathon-2026' \
+  -H 'x-analytics-admin-token: replace-with-an-independent-32-char-secret'
+```
+
+本地调试时可设置 `ANALYTICS_DEBUG_ENABLED=1` 后，使用受保护的 `GET /api/admin/analytics/events?limit=100` 查看最近事件。生产演示部署不设置该开关，该路由返回 404。
+
+完整事件、字段、隐私和验收规则见 [13-数据埋点与漏斗规范.md](../13-数据埋点与漏斗规范.md)。
 
 ## 手机 Live 模式
 
@@ -78,18 +114,18 @@ http://localhost:4173/?variant=B&live=1&apiBase=http://127.0.0.1:8787&demoUser=u
 
 `demoUser` 只在 `ALLOW_INSECURE_DEMO_AUTH=1` 时有效。这个开关允许任意客户端模拟预置账号，只能用于可信本地自动化测试，不得部署到公网。真实用户入口不读取它。
 
-`SOS_ENABLED`、`EXTERNAL_AID_ENABLED` 和 `PAID_AID_ENABLED` 可按活动关闭整个 SOS、外部支援或有偿悬赏意向。关闭有偿援助后，已有有偿 SOS 也会停止接受新响应。有偿字段只记录 `NOT_PROCESSED` 意向，必须包含金额、币种、交付标准和付款说明；RALLY 不托管、不代收、不担保。双卡握手使用独立的 `TOUCH_DEVICE_ACCESS_KEY`，不能与演示登录密钥复用，也不能写进公开手机前端；新建 Connection 会持久化 `consent_mode=physical_mutual`，与普通请求接受后的 `recipient_confirmed` 区分。
+`SOS_ENABLED`、`EXTERNAL_AID_ENABLED` 和 `PAID_AID_ENABLED` 可按活动关闭整个 SOS、外部支援或有偿悬赏意向。关闭有偿援助后，已有有偿 SOS 也会停止接受新响应。有偿字段只记录 `NOT_PROCESSED` 意向，必须包含金额、币种、交付标准和付款说明；COSPAN 不托管、不代收、不担保。双卡握手使用独立的 `TOUCH_DEVICE_ACCESS_KEY`，不能与演示登录密钥复用，也不能写进公开手机前端；新建 Connection 会持久化 `consent_mode=physical_mutual`，与普通请求接受后的 `recipient_confirmed` 区分。
 
 生产接入使用 `localStorage.rally_access_token` 的 Bearer Token。此时手机端会忽略 URL 查询参数中的 `apiBase` 并默认只访问同源 API，避免恶意分享链接把凭证转发到任意域名。若生产环境前后端确实分域，受信任的登录初始化代码必须先写入 `localStorage.rally_api_base`；不要通过分享 URL 配置带凭证的 API 地址。
 
 ## 手机号短信登录
 
-公网入口只需要“手机号＋称呼 → 6 位验证码”。`POST /api/auth/otp/challenges` 创建 5 分钟挑战并调用腾讯云 `SendSms 2021-01-11`，`POST /api/auth/otp/sessions` 一次性消费验证码并签发 Bearer Session。新手机号会自动创建身份和 2026 AI Hardware Hackathon（`hackathon-2026`）的隐藏资料，随后由用户主动完善和公开。
+公网入口只需要“手机号 → 6 位验证码”，登录页不要求昵称。`POST /api/auth/otp/challenges` 创建 5 分钟挑战并调用腾讯云 `SendSms 2021-01-11`，`POST /api/auth/otp/sessions` 一次性消费验证码并签发 Bearer Session。新手机号会以“COSPAN 新朋友”创建身份和 2026 AI Hardware Hackathon（`hackathon-2026`）的隐藏资料，验证成功后再由用户填写昵称、协作资料和公开范围。已有手机号登录不会被未认证请求改名。
 
 腾讯云验证码模板必须使用两个变量，顺序固定为 `{1}=6 位验证码`、`{2}=有效分钟数（5）`，例如：
 
 ```text
-您的 RALLY 验证码是{1}，{2}分钟内有效。请勿泄露给他人。
+您的 COSPAN 验证码是{1}，{2}分钟内有效。请勿泄露给他人。
 ```
 
 签名和模板必须是腾讯云已审核状态；短信 API 子用户只授予发送所需的最小权限。`TENCENT_SMS_SECRET_ID`、`TENCENT_SMS_SECRET_KEY` 和 `AUTH_OTP_SECRET` 只写入服务器 `/etc/rally/rally.env`，不要放进前端、APK、Git 或聊天记录。发送限制为同手机号 60 秒冷却、每小时 5 条，同客户端地址每小时 20 条；每个验证码最多错误 5 次。
@@ -97,12 +133,29 @@ http://localhost:4173/?variant=B&live=1&apiBase=http://127.0.0.1:8787&demoUser=u
 ```bash
 curl -X POST http://127.0.0.1:8787/api/auth/otp/challenges \
   -H 'content-type: application/json' \
-  -d '{"phone":"13800138000","display_name":"小雨"}'
+  -d '{"phone":"13800138000"}'
 
 curl -X POST http://127.0.0.1:8787/api/auth/otp/sessions \
   -H 'content-type: application/json' \
   -d '{"challenge_id":"otp_...","code":"123456"}'
 ```
+
+## 微信与 Google 登录
+
+`GET /api/auth/oauth/providers` 返回当前可用入口。某个平台的 App ID／Secret 或 OAuth 公共地址未配置完整时，该入口会明确显示“服务器尚未配置”，不会伪装可用。
+
+服务器配置中的 `PUBLIC_APP_ORIGIN` 是允许返回的网页源，`PUBLIC_API_ORIGIN` 是 OAuth Provider 能从公网访问的 API 源，`AUTH_OAUTH_STATE_SECRET` 必须使用独立高熵密钥。Provider 控制台登记的回调地址固定为：
+
+```text
+Google: https://<api-domain>/api/auth/oauth/google/callback
+微信:   https://<api-domain>/api/auth/oauth/wechat/callback
+```
+
+网页完成授权后返回同源页面；Android 的 Google 登录返回 `https://<app-domain>/auth/android`，由通过 `assetlinks.json` 验证的 HTTPS App Link 唯一交给 COSPAN。发起端还会生成只保存在本机的 verifier，并把 SHA-256 challenge 绑定进签名 state 和临时 ticket；回调 URL 只携带两分钟有效、只能消费一次的 ticket，前端必须同时提交原 verifier 才能换 Bearer Session。长期 Token 不进入 URL。Google 授权在系统浏览器中完成，避免嵌入式 WebView 被 Provider 拒绝。OAuth 提供的昵称仅作新账号初始值，用户可在资料编辑器修改；邮箱和手机号不会自动公开，也不会仅凭相同邮箱自动合并已有账号。
+
+Android App Link 只有在服务器设置 `ANDROID_APP_SHA256_CERT_FINGERPRINT` 后启用。部署脚本会据此生成 `/.well-known/assetlinks.json`；值必须是当前 APK 签名证书的 32 组大写十六进制 SHA-256 指纹。调试包与正式包签名不同，上线时必须替换为正式签名指纹。没有这项配置时，API 的 `android_enabled` 为 `false`，体验包会禁用 Google 按钮，避免把未验证 HTTPS 回调当成安全可用。
+
+当前微信实现是公众号网页授权（`snsapi_userinfo`），用于用户在微信内打开 COSPAN 网页版的场景。Android 原生一键微信登录需要另外接入微信 OpenSDK、应用签名与 Universal Link；在这套配置完成前，体验包会明确提示“请从微信打开网页版”，不会把系统浏览器流程伪装成可用的原生微信登录。
 
 ## 本地演示账号
 
@@ -239,7 +292,7 @@ curl -X POST http://127.0.0.1:8787/api/projects/{project_id}/sos \
   }'
 ```
 
-悬赏只记录意向，并固定返回 `payment_state: NOT_PROCESSED`。RALLY 不收款、不托管、不结算。外部支援者被接受后仍不会自动加入项目团队。
+悬赏只记录意向，并固定返回 `payment_state: NOT_PROCESSED`。COSPAN 不收款、不托管、不结算。外部支援者被接受后仍不会自动加入项目团队。
 
 ## 测试
 
@@ -271,5 +324,6 @@ python3 live_e2e_test.py
 - Demo Reset 必须配置独立密钥，且不能暴露在前端包中。
 - SQLite 适合单机 Demo；服务器化前应迁移到 PostgreSQL／Supabase 等托管数据库，并使用正式 Auth／OTP。
 - GitHub Token 只从服务器环境变量读取，不进入响应或日志；可不配置 Token，接口会安全降级。
+- OAuth App Secret 和 state 密钥只放服务器环境；OAuth ticket 短时且一次性，Bearer Token 不进入回调 URL；Google 授权不得在内嵌 WebView 中完成。
 - 附近功能不提供后台持续追踪，不返回精确坐标，也不让硬件工牌承担扫描。
-- 飞书、GitHub 等仍负责日常文档和代码执行；RALLY Room 只负责组队启动、首次分工、关键确认与记录。
+- 飞书、GitHub 等仍负责日常文档和代码执行；COSPAN Space 只负责组队启动、首次分工、关键确认与记录。

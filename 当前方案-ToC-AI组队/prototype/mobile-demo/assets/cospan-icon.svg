@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="COSPAN">
+  <rect width="512" height="512" rx="116" fill="#347CF8"/>
+  <path d="M236 128h-42c-67 0-106 53-106 128s39 128 106 128h42" fill="none" stroke="#fff" stroke-width="36" stroke-linecap="round"/>
+  <path d="M276 128h42c67 0 106 53 106 128s-39 128-106 128h-42" fill="none" stroke="#fff" stroke-width="36" stroke-linecap="round"/>
+  <path d="m256 210 46 46-46 46-46-46z" fill="#ff735f"/>
+</svg>

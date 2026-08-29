@@ -1,7 +1,7 @@
 {
-  "name": "RALLY 集结",
-  "short_name": "RALLY",
-  "description": "从现场发现、真实建联到项目启动的人机协作入口",
+  "name": "COSPAN 共域",
+  "short_name": "COSPAN",
+  "description": "从现场相遇、组队到人与 Agent 共同交付的人机协作入口",
   "start_url": "./?live=1&variant=A",
   "scope": "./",
   "display": "standalone",
@@ -10,7 +10,7 @@
   "orientation": "portrait-primary",
   "icons": [
     {
-      "src": "./assets/rally-icon.svg",
+      "src": "./assets/cospan-icon.svg",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any maskable"

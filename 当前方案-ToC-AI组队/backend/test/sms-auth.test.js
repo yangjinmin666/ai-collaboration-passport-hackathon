@@ -35,7 +35,7 @@ describe("SMS one-time-code sessions", () => {
     const response = await fetch(`${baseUrl}/api/auth/otp/challenges`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ phone: "138 0013 8000", display_name: "小雨" }),
+      body: JSON.stringify({ phone: "138 0013 8000" }),
     });
     const body = await response.json();
 
@@ -53,7 +53,7 @@ describe("SMS one-time-code sessions", () => {
     const challengeResponse = await fetch(`${baseUrl}/api/auth/otp/challenges`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ phone: "13800138000", display_name: "小雨" }),
+      body: JSON.stringify({ phone: "13800138000" }),
     });
     const challenge = await challengeResponse.json();
 
@@ -73,7 +73,7 @@ describe("SMS one-time-code sessions", () => {
     assert.equal(body.is_new_user, true);
     assert.deepEqual(body.user, {
       id: body.user.id,
-      display_name: "小雨",
+      display_name: "COSPAN 新朋友",
       avatar: body.user.avatar,
     });
 
@@ -82,7 +82,7 @@ describe("SMS one-time-code sessions", () => {
     });
     const me = await meResponse.json();
     assert.equal(meResponse.status, 200);
-    assert.equal(me.user.display_name, "小雨");
+    assert.equal(me.user.display_name, "COSPAN 新朋友");
     assert.deepEqual(me.profiles, [{
       event_id: "hackathon-2026",
       role: "待完善协作资料",
@@ -213,7 +213,7 @@ describe("SMS one-time-code sessions", () => {
     const challengeResponse = await fetch(`${baseUrl}/api/auth/otp/challenges`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ phone: "13800000001", display_name: "冒名改名" }),
+      body: JSON.stringify({ phone: "13800000001" }),
     });
     const challenge = await challengeResponse.json();
     const response = await fetch(`${baseUrl}/api/auth/otp/sessions`, {

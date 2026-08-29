@@ -29,6 +29,7 @@ describe("SMS login readiness", () => {
       status: "ok",
       service: "rally-api",
       sms_login: "ready",
+      analytics: "ready",
     });
   });
 });

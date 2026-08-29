@@ -1,4 +1,4 @@
-"""Focused regression test for the RALLY launch animation."""
+"""Focused regression test for the COSPAN launch animation."""
 
 from pathlib import Path
 
@@ -52,8 +52,8 @@ def main():
         page.goto(f"{BASE_URL}/?variant=A&splash=1", wait_until="domcontentloaded")
         splash = page.locator("#rally-splash")
         assert splash.is_visible()
-        assert page.get_by_text("找到队友，马上开工。", exact=True).is_visible()
-        assert page.get_by_text("Find your crew. Start building.", exact=True).is_visible()
+        assert page.get_by_text("人与人先相遇，人与 Agent 再共创。", exact=True).is_visible()
+        assert page.get_by_text("Meet as people. Build with agents.", exact=True).is_visible()
         assert splash.locator(".rally-splash-person").count() == 2
         assert splash.locator(".rally-room-line").count() == 2
         assert splash.evaluate("element => getComputedStyle(element).position") == "fixed"
@@ -72,7 +72,7 @@ def main():
         assert not errors, errors
         browser.close()
 
-    print("RALLY splash animation passed")
+    print("COSPAN splash animation passed")
 
 
 if __name__ == "__main__":

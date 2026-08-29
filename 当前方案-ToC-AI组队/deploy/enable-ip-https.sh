@@ -167,7 +167,7 @@ fi
 
 install -m 0644 /dev/stdin /etc/systemd/system/rally-certbot-renew.service <<EOF
 [Unit]
-Description=Renew the RALLY Let's Encrypt IP certificate
+Description=Renew the COSPAN Let's Encrypt IP certificate
 After=network-online.target nginx.service
 Wants=network-online.target
 
@@ -178,7 +178,7 @@ EOF
 
 install -m 0644 /dev/stdin /etc/systemd/system/rally-certbot-renew.timer <<'EOF'
 [Unit]
-Description=Check the RALLY IP certificate three times daily
+Description=Check the COSPAN IP certificate three times daily
 
 [Timer]
 OnCalendar=*-*-* 03,11,19:17:00

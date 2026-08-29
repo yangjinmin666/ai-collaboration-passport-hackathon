@@ -65,7 +65,7 @@ describe("project SOS aid lifecycle", () => {
           currency: "CNY",
           amount: 200,
           delivery_standard: "完成抓包定位并让 10 次上报全部通过",
-          payment_note: "发布者线下验收后自行结算，RALLY 不托管或担保",
+          payment_note: "发布者线下验收后自行结算，COSPAN 不托管或担保",
         },
       }),
     });

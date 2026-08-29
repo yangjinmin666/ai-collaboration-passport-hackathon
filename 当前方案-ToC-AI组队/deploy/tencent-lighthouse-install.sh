@@ -37,6 +37,8 @@ if [[ ! -f /etc/rally/rally.env ]]; then
   DEMO_ACCESS_KEY="$(openssl rand -hex 32)"
   TOUCH_DEVICE_ACCESS_KEY="$(openssl rand -hex 32)"
   AUTH_OTP_SECRET="$(openssl rand -hex 32)"
+  AUTH_OAUTH_STATE_SECRET="$(openssl rand -hex 32)"
+  ANALYTICS_ADMIN_TOKEN="$(openssl rand -hex 32)"
   umask 077
   printf '%s\n' \
     'PORT=8787' \
@@ -50,6 +52,11 @@ if [[ ! -f /etc/rally/rally.env ]]; then
     "DEMO_ACCESS_KEY=${DEMO_ACCESS_KEY}" \
     "TOUCH_DEVICE_ACCESS_KEY=${TOUCH_DEVICE_ACCESS_KEY}" \
     "AUTH_OTP_SECRET=${AUTH_OTP_SECRET}" \
+    "ANALYTICS_ADMIN_TOKEN=${ANALYTICS_ADMIN_TOKEN}" \
+    "RALLY_APP_VERSION=${RELEASE_ID}" \
+    "PUBLIC_APP_ORIGIN=https://${PUBLIC_IP}" \
+    "PUBLIC_API_ORIGIN=https://${PUBLIC_IP}" \
+    "AUTH_OAUTH_STATE_SECRET=${AUTH_OAUTH_STATE_SECRET}" \
     'TENCENT_SMS_SDK_APP_ID=1401184659' \
     'TENCENT_SMS_REGION=ap-guangzhou' \
     > /etc/rally/rally.env
@@ -74,6 +81,15 @@ append_secret_from_environment() {
 if ! grep -q '^AUTH_OTP_SECRET=' /etc/rally/rally.env; then
   ensure_env_default AUTH_OTP_SECRET "$(openssl rand -hex 32)"
 fi
+if ! grep -q '^AUTH_OAUTH_STATE_SECRET=' /etc/rally/rally.env; then
+  ensure_env_default AUTH_OAUTH_STATE_SECRET "$(openssl rand -hex 32)"
+fi
+if ! grep -q '^ANALYTICS_ADMIN_TOKEN=' /etc/rally/rally.env; then
+  ensure_env_default ANALYTICS_ADMIN_TOKEN "$(openssl rand -hex 32)"
+fi
+ensure_env_default RALLY_APP_VERSION "${RELEASE_ID}"
+ensure_env_default PUBLIC_APP_ORIGIN "https://${PUBLIC_IP}"
+ensure_env_default PUBLIC_API_ORIGIN "https://${PUBLIC_IP}"
 ensure_env_default TENCENT_SMS_SDK_APP_ID 1401184659
 ensure_env_default TENCENT_SMS_REGION ap-guangzhou
 for sms_secret in \
@@ -84,6 +100,15 @@ for sms_secret in \
 do
   append_secret_from_environment "${sms_secret}"
 done
+for oauth_secret in \
+  GOOGLE_OAUTH_CLIENT_ID \
+  GOOGLE_OAUTH_CLIENT_SECRET \
+  WECHAT_OAUTH_APP_ID \
+  WECHAT_OAUTH_APP_SECRET
+do
+  append_secret_from_environment "${oauth_secret}"
+done
+append_secret_from_environment ANDROID_APP_SHA256_CERT_FINGERPRINT
 chown root:root /etc/rally/rally.env
 chmod 0600 /etc/rally/rally.env
 
@@ -114,7 +139,7 @@ fi
 
 install -m 0644 /dev/stdin /etc/systemd/system/rally.service <<EOF
 [Unit]
-Description=RALLY API service
+Description=COSPAN API service
 After=network-online.target
 Wants=network-online.target
 
@@ -152,6 +177,26 @@ install -d -m 0755 /var/www/rally
 cp -a "${RELEASE_DIR}/prototype/mobile-demo/." /var/www/rally/
 chown -R root:root /var/www/rally
 chmod -R a+rX /var/www/rally
+android_cert_fingerprint="$(sed -n 's/^ANDROID_APP_SHA256_CERT_FINGERPRINT=//p' /etc/rally/rally.env | tail -n 1)"
+if [[ -n "${android_cert_fingerprint}" ]]; then
+  if [[ ! "${android_cert_fingerprint}" =~ ^([0-9A-F]{2}:){31}[0-9A-F]{2}$ ]]; then
+    printf 'ANDROID_APP_SHA256_CERT_FINGERPRINT is not a SHA-256 certificate fingerprint.\n' >&2
+    exit 1
+  fi
+  install -d -m 0755 /var/www/rally/.well-known
+  install -m 0644 /dev/stdin /var/www/rally/.well-known/assetlinks.json <<EOF
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "ai.rally.collaboration",
+      "sha256_cert_fingerprints": ["${android_cert_fingerprint}"]
+    }
+  }
+]
+EOF
+fi
 ln -sfn "${RELEASE_DIR}" /opt/rally/current
 
 NGINX_BACKUP=""
@@ -257,7 +302,8 @@ if command -v ufw >/dev/null && ufw status | grep -q '^Status: active'; then
 fi
 
 for _ in $(seq 1 60); do
-  if curl -fsS http://127.0.0.1:8787/health | grep -Eq '"status":"ok".*"sms_login":"ready"'; then
+  if curl -fsS http://127.0.0.1:8787/health \
+    | grep -Eq '"status":"ok".*"sms_login":"ready".*"analytics":"ready"'; then
     break
   fi
   sleep 1

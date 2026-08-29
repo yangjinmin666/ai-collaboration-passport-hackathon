@@ -33,12 +33,15 @@ if ! adb get-state >/dev/null 2>&1; then
   exit 1
 fi
 
+set -- ./gradlew --no-daemon :app:assembleDebug
 if [ -n "${RALLY_API_ORIGIN:-}" ]; then
-  ./gradlew --no-daemon :app:assembleDebug "-PrallyApiOrigin=${RALLY_API_ORIGIN}"
-else
-  ./gradlew --no-daemon :app:assembleDebug
+  set -- "$@" "-PrallyApiOrigin=${RALLY_API_ORIGIN}"
 fi
+if [ -n "${RALLY_APP_ORIGIN:-}" ]; then
+  set -- "$@" "-PrallyAppOrigin=${RALLY_APP_ORIGIN}"
+fi
+"$@"
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb shell am start -n ai.rally.collaboration/.MainActivity
 
-echo "RALLY 已安装并启动。"
+echo "COSPAN 已安装并启动。"

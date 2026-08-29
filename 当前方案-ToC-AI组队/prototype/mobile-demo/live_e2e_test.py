@@ -1,4 +1,4 @@
-"""Run the real mobile geolocation flow against a real local RALLY API process."""
+"""Run the real mobile geolocation flow against a real local COSPAN API process."""
 
 import json
 import os
@@ -142,11 +142,11 @@ def main():
         "PORT": str(backend_port),
         "HOST": "127.0.0.1",
         "DATABASE_PATH": ":memory:",
-        "ALLOW_INSECURE_DEMO_AUTH": "1",
-        "DEMO_ACCESS_KEY": "browser-demo-access-key",
         "NODE_ENV": "test",
         "AUTH_OTP_SECRET": "browser-otp-secret",
         "AUTH_OTP_TEST_CODE": "246810",
+        "ALLOW_INSECURE_DEMO_AUTH": "1",
+        "DEMO_ACCESS_KEY": "browser-demo-access-key",
     }
     backend = subprocess.Popen(
         ["node", "src/server.js"],
@@ -298,7 +298,7 @@ def main():
             page.get_by_role("button", name="添加内容").click()
             block_library.get_by_role("button", name="Demo / App").click()
             block_form.get_by_label("证据标题").wait_for()
-            block_form.get_by_label("证据标题").fill("RALLY Live 真机闭环")
+            block_form.get_by_label("证据标题").fill("COSPAN Live 真机闭环")
             block_form.get_by_label("你完成了什么").fill("双设备建联、组队与刷新恢复")
             block_form.get_by_label("公开链接").fill(
                 "https://rally.example/demo"
@@ -325,7 +325,7 @@ def main():
             ).inner_text()
             public_confirmation.click()
             assert block_form.locator("[data-profile-block-preview]").get_by_text(
-                "RALLY Live 真机闭环", exact=True
+                "COSPAN Live 真机闭环", exact=True
             ).is_visible()
             block_form.get_by_role(
                 "button", name="保存到对外协作卡"
@@ -335,7 +335,7 @@ def main():
             )
             public_card = page.locator("[data-public-profile-card]")
             assert public_card.get_by_text(
-                "RALLY Live 真机闭环", exact=True
+                "COSPAN Live 真机闭环", exact=True
             ).is_visible()
             assert public_card.locator(
                 'a[href="https://rally.example/demo"]'
@@ -346,7 +346,7 @@ def main():
                 if profile["event_id"] == "hackathon-2026"
             )
             assert any(
-                item.startswith("【项目证据·Demo】RALLY Live 真机闭环")
+                item.startswith("【项目证据·Demo】COSPAN Live 真机闭环")
                 for item in event_profile["evidence"]
             )
             assert "evidence" in event_profile["visibility"]["public_fields"]
@@ -359,7 +359,7 @@ def main():
                 if person["user_id"] == "user-zhou"
             )
             assert any(
-                item.startswith("【项目证据·Demo】RALLY Live 真机闭环")
+                item.startswith("【项目证据·Demo】COSPAN Live 真机闭环")
                 for item in zhou_public["evidence"]
             )
 
@@ -367,7 +367,7 @@ def main():
             page.locator('.app-nav [data-tab="profile"]').wait_for(timeout=8000)
             page.locator('.app-nav [data-tab="profile"]').click()
             assert page.locator("[data-public-profile-card]").get_by_text(
-                "RALLY Live 真机闭环", exact=True
+                "COSPAN Live 真机闭环", exact=True
             ).is_visible()
 
             page.get_by_role("button", name="添加内容").click()
@@ -456,7 +456,7 @@ def main():
             profile_form.locator('input[name="availability"]').fill("今天可持续投入 6 小时")
             profile_form.locator('input[name="preferences"]').fill("快速原型，异步记录")
             profile_form.locator('textarea[name="need"]').fill("寻找硬件搭档完成真机闭环")
-            profile_form.locator('textarea[name="evidence"]').fill("RALLY Live API\n双设备协作 E2E")
+            profile_form.locator('textarea[name="evidence"]').fill("COSPAN Live API\n双设备协作 E2E")
             profile_form.locator(
                 'input[name="public-fields"][value="evidence"]'
             ).uncheck()
@@ -477,9 +477,9 @@ def main():
             assert event_profile["role"] == "AI 产品与后端"
             assert event_profile["status"] == "团队缺人"
             assert event_profile["skills"] == ["Agent", "产品架构", "后端"]
-            assert event_profile["evidence"][3:] == ["RALLY Live API", "双设备协作 E2E"]
+            assert event_profile["evidence"][3:] == ["COSPAN Live API", "双设备协作 E2E"]
             assert event_profile["evidence"][0].startswith(
-                "【项目证据·Demo】RALLY Live 真机闭环"
+                "【项目证据·Demo】COSPAN Live 真机闭环"
             )
             assert event_profile["evidence"][1].startswith(
                 "【经历·获奖】Hackathon 最佳协作体验"
@@ -554,7 +554,7 @@ def main():
                 f"{frontend_url}/?variant=A&live=1"
                 "&apiBase=https://attacker.invalid/collect",
             )
-            token_page.get_by_text("RALLY", exact=True).first.wait_for(timeout=4000)
+            token_page.get_by_text("COSPAN", exact=True).first.wait_for(timeout=4000)
             assert token_requests
             assert all(url.startswith(frontend_url) for url in token_requests)
             assert all("attacker.invalid" not in url for url in token_requests)
@@ -577,7 +577,6 @@ def main():
                 "&apiBase=https://attacker.invalid/collect",
             )
             untrusted_page.get_by_label("手机号").fill("13800000001")
-            untrusted_page.get_by_label("怎么称呼你").fill("周闻")
             untrusted_page.get_by_role("button", name="获取短信验证码").click()
             untrusted_page.wait_for_timeout(500)
             assert login_requests
@@ -693,7 +692,7 @@ def main():
                     }),
                 ),
             )
-            expiry_page.get_by_text("用手机号进入现场", exact=True).wait_for(
+            expiry_page.get_by_text("选择登录方式", exact=True).wait_for(
                 timeout=6000
             )
             assert expiry_page.locator(".overlay").count() == 0
@@ -732,6 +731,90 @@ def main():
             assert sync_page.get_by_role("button", name="重新连接").is_visible()
             sync_context.close()
 
+            oauth_cancel_context = browser.new_context(
+                viewport={"width": 390, "height": 844},
+                is_mobile=True,
+                has_touch=True,
+            )
+            oauth_cancel_page = oauth_cancel_context.new_page()
+            oauth_cancel_page.goto(
+                f"{frontend_url}/?variant=A&live=1"
+                f"&apiBase={urllib.parse.quote(backend_url, safe=':/')}"
+                "&oauth_provider=google&oauth_error=cancelled",
+            )
+            oauth_cancel_page.get_by_text(
+                "你已取消第三方登录", exact=True
+            ).wait_for(timeout=5000)
+            oauth_cancel_query = urllib.parse.parse_qs(
+                urllib.parse.urlparse(oauth_cancel_page.url).query
+            )
+            assert "oauth_provider" not in oauth_cancel_query
+            assert "oauth_error" not in oauth_cancel_query
+            assert "oauth_ticket" not in oauth_cancel_query
+            oauth_cancel_context.close()
+
+            android_auth_context = browser.new_context(
+                viewport={"width": 390, "height": 844},
+                is_mobile=True,
+                has_touch=True,
+            )
+            android_auth_page = android_auth_context.new_page()
+            android_auth_page.route(
+                "**/api/auth/oauth/providers",
+                lambda route: route.fulfill(
+                    status=200,
+                    content_type="application/json",
+                    body=json.dumps({
+                        "providers": {
+                            "google": {
+                                "enabled": True,
+                                "android_enabled": True,
+                            },
+                            "wechat": {
+                                "enabled": True,
+                                "android_enabled": False,
+                            },
+                        }
+                    }),
+                ),
+            )
+            google_start_urls = []
+
+            def capture_google_start(route):
+                google_start_urls.append(route.request.url)
+                route.fulfill(status=204, body="")
+
+            android_auth_page.route(
+                "**/api/auth/oauth/google/start**",
+                capture_google_start,
+            )
+            android_auth_page.goto(
+                f"{frontend_url}/?variant=A&live=1&source=android-app"
+                f"&apiBase={urllib.parse.quote(backend_url, safe=':/')}",
+            )
+            wechat_button = android_auth_page.get_by_role(
+                "button", name="使用微信登录"
+            )
+            google_button = android_auth_page.get_by_role(
+                "button", name="使用 Google 登录"
+            )
+            assert wechat_button.is_disabled()
+            assert android_auth_page.get_by_text(
+                "请从微信打开网页版", exact=True
+            ).is_visible()
+            assert google_button.is_enabled()
+            google_button.click()
+            android_auth_page.wait_for_timeout(300)
+            assert len(google_start_urls) == 1
+            google_start_query = urllib.parse.parse_qs(
+                urllib.parse.urlparse(google_start_urls[0]).query
+            )
+            assert google_start_query["return_to"] == [
+                f"{backend_url}/auth/android"
+            ]
+            assert len(google_start_query["code_challenge"][0]) == 43
+            android_auth_context.close()
+
             first_time_context = browser.new_context(
                 viewport={"width": 390, "height": 844},
                 is_mobile=True,
@@ -742,27 +825,45 @@ def main():
                 f"{frontend_url}/?variant=A&live=1"
                 f"&apiBase={urllib.parse.quote(backend_url, safe=':/')}",
             )
+            first_time_page.get_by_role(
+                "heading", name="选择登录方式"
+            ).wait_for(timeout=5000)
+            assert first_time_page.get_by_label("怎么称呼你").count() == 0
+            assert first_time_page.get_by_role(
+                "button", name="使用微信登录"
+            ).is_visible()
+            assert first_time_page.get_by_role(
+                "button", name="使用 Google 登录"
+            ).is_visible()
+            login_metrics = mobile_sheet_metrics(
+                first_time_page.locator(".live-login-card")
+            )
+            assert login_metrics["minimumFontSize"] >= 10, login_metrics
+            assert login_metrics["undersizedControls"] == [], login_metrics
+            assert not login_metrics["horizontalOverflow"], login_metrics
             first_time_page.get_by_label("手机号").fill("13300133000")
-            first_time_page.get_by_label("怎么称呼你").fill("小雨")
             first_time_page.get_by_role(
                 "button", name="获取短信验证码"
             ).click()
             first_time_page.get_by_label("6 位验证码").fill("000000")
             first_time_page.get_by_role(
-                "button", name="验证并进入 RALLY"
+                "button", name="验证并进入 COSPAN"
             ).click()
             first_time_page.get_by_text(
                 "验证码错误、已过期或尝试次数已用完", exact=True
             ).wait_for(timeout=5000)
             first_time_page.get_by_label("6 位验证码").fill("246810")
             first_time_page.get_by_role(
-                "button", name="验证并进入 RALLY"
+                "button", name="验证并进入 COSPAN"
             ).click()
             first_time_profile = first_time_page.locator(
                 "[data-live-profile-form]"
             )
             first_time_profile.wait_for(timeout=8000)
-            assert first_time_page.get_by_text("小雨", exact=True).first.is_visible()
+            assert first_time_profile.get_by_label(
+                "怎么称呼你"
+            ).input_value() == "COSPAN 新朋友"
+            first_time_profile.get_by_label("怎么称呼你").fill("小雨")
             assert first_time_profile.locator(
                 'input[name="role"]'
             ).input_value() == "待完善协作资料"
@@ -770,20 +871,19 @@ def main():
 
             def login_live(live_page, user_id):
                 identities = {
-                    "user-zhou": ("13800000001", "周闻"),
-                    "user-lin": ("13800000002", "林澈"),
+                    "user-zhou": "13800000001",
+                    "user-lin": "13800000002",
                 }
-                phone, display_name = identities[user_id]
+                phone = identities[user_id]
                 live_page.goto(
                     f"{frontend_url}/?variant=A&live=1"
                     f"&apiBase={urllib.parse.quote(backend_url, safe=':/')}",
                 )
                 live_page.get_by_label("手机号").fill(phone)
-                live_page.get_by_label("怎么称呼你").fill(display_name)
                 live_page.get_by_role("button", name="获取短信验证码").click()
                 live_page.get_by_label("6 位验证码").fill("246810")
                 live_page.get_by_role(
-                    "button", name="验证并进入 RALLY"
+                    "button", name="验证并进入 COSPAN"
                 ).click()
                 live_page.locator(".app-nav").wait_for(timeout=8000)
 

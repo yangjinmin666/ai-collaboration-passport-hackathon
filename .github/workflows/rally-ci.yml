@@ -1,4 +1,4 @@
-name: Rally product checks
+name: COSPAN product checks
 
 on:
   pull_request:

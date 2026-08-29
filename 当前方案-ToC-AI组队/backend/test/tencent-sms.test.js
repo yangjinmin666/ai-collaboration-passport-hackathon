@@ -3,13 +3,13 @@ import { test } from "node:test";
 
 import { createTencentSmsSender } from "../src/tencent-sms.js";
 
-test("the Tencent sender calls SendSms with the configured RALLY application and OTP template", async () => {
+test("the Tencent sender calls SendSms with the configured COSPAN application and OTP template", async () => {
   let captured;
   const sender = createTencentSmsSender({
     secretId: "AKIDEXAMPLE",
     secretKey: "example-secret-key",
     sdkAppId: "1401184659",
-    signName: "RALLY集结",
+    signName: "COSPAN共域",
     templateId: "24681012",
     region: "ap-guangzhou",
   }, {
@@ -40,7 +40,7 @@ test("the Tencent sender calls SendSms with the configured RALLY application and
   assert.deepEqual(JSON.parse(captured.options.body), {
     PhoneNumberSet: ["+8613800138000"],
     SmsSdkAppId: "1401184659",
-    SignName: "RALLY集结",
+    SignName: "COSPAN共域",
     TemplateId: "24681012",
     TemplateParamSet: ["123456", "5"],
   });

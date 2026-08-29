@@ -36,6 +36,20 @@ describe("authorized activity profile discovery", () => {
     await api.stop();
   });
 
+  test("cannot enable discovery visibility without at least one public field", async () => {
+    const response = await fetch(`${baseUrl}/api/events/hackathon-2026/visibility`, {
+      method: "PATCH",
+      headers: headers("user-su"),
+      body: JSON.stringify({
+        state: "VISIBLE",
+        expires_at: "2026-08-29T23:00:00.000Z",
+        public_fields: [],
+      }),
+    });
+    assert.equal(response.status, 400);
+    assert.equal((await response.json()).error.code, "PUBLIC_FIELDS_REQUIRED");
+  });
+
   test("a participant publishes editable evidence and an authorized GitHub link", async () => {
     const link = await fetch(`${baseUrl}/api/me/platform-links/github`, {
       method: "PUT",
@@ -75,6 +89,7 @@ describe("authorized activity profile discovery", () => {
       method: "PATCH",
       headers: headers("user-su"),
       body: JSON.stringify({
+        display_name: "苏晴（COSPAN）",
         role: "交互与路演设计师",
         status: "未组队",
         skills: ["交互", "视觉", "路演"],
@@ -86,6 +101,9 @@ describe("authorized activity profile discovery", () => {
       }),
     });
     assert.equal(profile.status, 200);
+    assert.equal((await profile.json()).profile.display_name, "苏晴（COSPAN）");
+    const renamedMe = await fetch(`${baseUrl}/api/me`, { headers: headers("user-su") });
+    assert.equal((await renamedMe.json()).user.display_name, "苏晴（COSPAN）");
 
     const visibility = await fetch(`${baseUrl}/api/events/hackathon-2026/visibility`, {
       method: "PATCH",
