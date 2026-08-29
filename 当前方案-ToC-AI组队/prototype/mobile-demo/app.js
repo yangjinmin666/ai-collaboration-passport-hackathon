@@ -1236,7 +1236,7 @@ function render() {
   document.body.dataset.source = initialParams.get("source") === "android-app" ? "android-app" : "web";
   const phone = `
     <main class="prototype-stage">
-      <section class="phone-shell" aria-label="COSPAN 合拍手机端原型">
+      <section class="phone-shell" aria-label="COSPAN 共域手机端原型">
         <div class="screen">
           ${showsOnboarding ? renderOnboarding() : renderCurrentView()}
         </div>
@@ -1419,7 +1419,7 @@ function renderLiveGate() {
       oauthButton("google", "Google 登录", "G"),
     ].filter(Boolean).join("");
     return `<div class="live-gate">
-      <div class="live-gate-brand"><strong>COSPAN</strong><span>合拍 · 人与人先相遇，人与 Agent 再共创。</span></div>
+      <div class="live-gate-brand"><strong>COSPAN</strong><span>共域 · 人与人先相遇，人与 Agent 再共创。</span></div>
       <section class="live-login-card">
         <p class="micro-label">${verifyingCode ? "VERIFY" : "WELCOME"}</p>
         <h2>${verifyingCode ? "输入验证码" : "手机号登录"}</h2>
@@ -1449,7 +1449,7 @@ function renderLiveGate() {
     </div>`;
   }
   return `<div class="live-gate">
-    <div class="live-gate-brand"><strong>COSPAN</strong><span>合拍 · 人与人先相遇，人与 Agent 再共创。</span></div>
+    <div class="live-gate-brand"><strong>COSPAN</strong><span>共域 · 人与人先相遇，人与 Agent 再共创。</span></div>
     <section class="live-login-card live-retry-card">
       <p class="micro-label">${state.live.meLoading ? "CONNECTING" : "CONNECTION ERROR"}</p>
       <h2>${state.live.meLoading ? "正在恢复现场状态" : "暂时无法连接"}</h2>
@@ -1478,7 +1478,7 @@ function commonHeader(title = "发现", utility = null) {
         </button>`
       : "";
   const headerIdentity = title === "发现"
-    ? `<div class="app-brand"><strong>COSPAN</strong><span>合拍 · 发现</span></div>`
+    ? `<div class="app-brand"><strong>COSPAN</strong><span>共域 · 发现</span></div>`
     : `<div class="app-section-title"><strong>${escapeHtml(title)}</strong></div>`;
   return `
     <header class="app-header">
@@ -2315,7 +2315,7 @@ function renderProfile() {
         </div>
         <div class="demo-badge ${state.visible ? "" : "is-hidden"}" data-orientation="portrait">
           <header class="demo-display-top">
-            <span class="demo-display-brand">COSPAN <b>合拍</b></span>
+            <span class="demo-display-brand">COSPAN <b>共域</b></span>
             <span class="demo-display-event">AI HARDWARE HACKATHON 2026</span>
             <em>${state.visible ? `● ${collaborationStatusLabel()}` : "○ 已暂停"}</em>
           </header>
