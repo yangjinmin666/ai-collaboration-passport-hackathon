@@ -4,7 +4,7 @@ COSPAN 的 96 小时黑客松后端已经跑通一条完整、可复位的协作
 
 > 活动身份与授权公开 → 手机前台附近发现 → NFC／QR 双向建联 → 项目邀请与确认入队 → 人工确认启动包与任务 → 项目 SOS → 审计记录。
 
-它不是生产部署模板，也不包含聊天、资金托管或 Agent 自主执行。关键状态迁移全部由规则代码校验；Agent 只能给建议，不能替人接任务、加入团队或改写历史。
+它不是生产部署模板，也不包含群聊、完整 IM、资金托管或 Agent 自主执行。建联双方可以使用轻量一对一对话澄清合作意图，但发送消息不会自动创建项目、加入团队或分配任务。关键状态迁移全部由规则代码校验；Agent 只能给建议，不能替人接任务、加入团队或改写历史。
 
 ## 已实现能力
 
@@ -15,6 +15,7 @@ COSPAN 的 96 小时黑客松后端已经跑通一条完整、可复位的协作
 | 附近发现 | 手机浏览器真实 Geolocation 心跳、2 分钟 TTL、离页主动撤销、仅返回距离分桶 |
 | 缺口匹配 | 按项目未满角色缺口、能力、兴趣、投入时间、协作偏好和证据做确定性排序；返回两条依据、证据引用、待确认点和模板降级标识，不显示成功概率 |
 | NFC／QR | 不透明卡片 Token、有限公开资料、受保护的双卡 `physical_mutual` 直连、普通连接请求箱、双方确认、撤回／拒绝／拉黑、幂等与限频 |
+| 轻量对话 | 已建联双方的一对一文本消息、客户端幂等发送、双方独立已读游标、连接列表未读计数；对话仅用于决定是否合作，不替代 COSPAN Space |
 | 项目与团队 | 创建项目与角色缺口、仅邀请已建联对象、受邀者确认入队、事务保护容量 |
 | COSPAN Space | 三任务模板启动包、成员主动认领、任务状态机、全员确认后启动、项目动态 |
 | 项目 SOS | 结构化求助、活动内响应、四类回报表达、活动级 SOS／外援／付费意向开关、支援者带原因退出、发布者解决／关闭／重开；不自动入队、不处理支付 |
@@ -237,7 +238,28 @@ curl -X PATCH http://127.0.0.1:8787/api/connections/requests/{request_id} \
 
 打开卡片不会自动建立关系；只有接收方确认才创建 Connection。
 
-### 4. 项目、入队与启动包
+### 4. 建联后的轻量对话
+
+只有处于 `ACTIVE` 状态的 Connection 双方可以读取或发送消息。第三方访问返回 `403`；关系被拉黑后返回 `409`。`client_message_id` 用于弱网重试时避免重复发送，已读游标由双方分别维护。
+
+```bash
+curl http://127.0.0.1:8787/api/connections/{connection_id}/conversation \
+  -H 'x-demo-user-id: user-zhou'
+
+curl -X POST http://127.0.0.1:8787/api/connections/{connection_id}/messages \
+  -H 'content-type: application/json' \
+  -H 'x-demo-user-id: user-zhou' \
+  -d '{"text":"想先聊清楚我们要验证的问题。","client_message_id":"client-demo-0001"}'
+
+curl -X PATCH http://127.0.0.1:8787/api/connections/{connection_id}/conversation \
+  -H 'content-type: application/json' \
+  -H 'x-demo-user-id: user-lin' \
+  -d '{"last_read_message_id":"msg_..."}'
+```
+
+对话属于连接详情层，不新增独立聊天导航。双方决定合作后，再进入项目邀请与 COSPAN Space 执行流程。
+
+### 5. 项目、入队与启动包
 
 ```bash
 curl -X POST http://127.0.0.1:8787/api/projects \

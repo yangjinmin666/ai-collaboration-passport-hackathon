@@ -660,6 +660,113 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /api/connections/{connectionId}/conversation:
+    get:
+      tags: [Connections]
+      summary: Read the lightweight one-to-one conversation for an active connection
+      description: Returns up to the most recent 100 messages and the caller's independent unread state. Reading does not create a project or membership.
+      security: [{ BearerAuth: [] }, { DemoHeader: [] }]
+      parameters:
+        - in: path
+          name: connectionId
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Conversation and client polling hint
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [conversation, sync]
+                properties:
+                  conversation: { $ref: "#/components/schemas/DirectConversation" }
+                  sync:
+                    type: object
+                    required: [server_time, poll_after_ms]
+                    properties:
+                      server_time: { type: string, format: date-time }
+                      poll_after_ms: { type: integer, minimum: 1000 }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+    patch:
+      tags: [Connections]
+      summary: Advance the caller's read cursor for one connection conversation
+      security: [{ BearerAuth: [] }, { DemoHeader: [] }]
+      parameters:
+        - in: path
+          name: connectionId
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [last_read_message_id]
+              properties:
+                last_read_message_id:
+                  type: string
+                  pattern: "^msg_[A-Za-z0-9-]{16,80}$"
+      responses:
+        "200":
+          description: Updated conversation and unread count
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [conversation]
+                properties:
+                  conversation: { $ref: "#/components/schemas/DirectConversation" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /api/connections/{connectionId}/messages:
+    post:
+      tags: [Connections]
+      summary: Send one text message inside an active connection
+      description: The optional client_message_id makes weak-network retries idempotent for the same sender and connection.
+      security: [{ BearerAuth: [] }, { DemoHeader: [] }]
+      parameters:
+        - in: path
+          name: connectionId
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [text]
+              properties:
+                text: { type: string, minLength: 1, maxLength: 1000 }
+                client_message_id:
+                  type: string
+                  pattern: "^[A-Za-z0-9_-]{8,80}$"
+      responses:
+        "201":
+          description: Message created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DirectConversationMessageResult" }
+        "200":
+          description: Idempotent replay of an existing message
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DirectConversationMessageResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
   /api/projects:
     get:
       tags: [Projects]
@@ -1300,6 +1407,55 @@ components:
           type: array
           maxItems: 12
           items: { type: string, maxLength: 160 }
+    DirectConversationMessage:
+      type: object
+      required: [id, connection_id, sender_id, type, text, created_at]
+      properties:
+        id: { type: string, pattern: "^msg_[A-Za-z0-9-]{16,80}$" }
+        connection_id: { type: string }
+        sender_id: { type: string }
+        type: { type: string, const: TEXT }
+        text: { type: string, minLength: 1, maxLength: 1000 }
+        created_at: { type: string, format: date-time }
+    DirectConversation:
+      type: object
+      required: [connection_id, status, counterpart, context, messages, unread_count, last_read_message_id, has_more]
+      properties:
+        connection_id: { type: string }
+        status: { type: string, const: ACTIVE }
+        counterpart:
+          type: object
+          required: [id, display_name, avatar]
+          properties:
+            id: { type: string }
+            display_name: { type: string }
+            avatar: { type: string }
+            role: { type: [string, "null"] }
+        context:
+          type: object
+          required: [event_id, event_name, source, consent_mode, connected_at]
+          properties:
+            event_id: { type: string }
+            event_name: { type: string }
+            source: { type: string }
+            consent_mode: { type: string }
+            connected_at: { type: string, format: date-time }
+        messages:
+          type: array
+          maxItems: 100
+          items: { $ref: "#/components/schemas/DirectConversationMessage" }
+        unread_count: { type: integer, minimum: 0 }
+        last_read_message_id:
+          oneOf:
+            - { type: string, pattern: "^msg_[A-Za-z0-9-]{16,80}$" }
+            - { type: "null" }
+        has_more: { type: boolean }
+    DirectConversationMessageResult:
+      type: object
+      required: [message, idempotent_replay]
+      properties:
+        message: { $ref: "#/components/schemas/DirectConversationMessage" }
+        idempotent_replay: { type: boolean }
     PresenceInput:
       type: object
       required: [latitude, longitude, accuracy_m]

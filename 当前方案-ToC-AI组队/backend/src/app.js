@@ -14,6 +14,7 @@ import {
   cancelConnectionRequest,
   countRecentConnectionRequests,
   createAuthSession,
+  createConnectionMessage,
   createOAuthLoginTicket,
   createOtpChallenge,
   deleteOtpChallenge,
@@ -35,7 +36,9 @@ import {
   isParticipantVisible,
   isConnectionBlocked,
   listConnectionRequests,
+  markConnectionConversationRead,
   openDatabase,
+  readConnectionConversation,
   rejectConnectionRequest,
   recordOtpFailure,
   readOtpPhoneWindow,
@@ -1653,6 +1656,135 @@ export function createApi({
         idempotent_replay: result.idempotentReplay,
       });
       return;
+    }
+
+    const directConversationMatch = url.pathname.match(
+      /^\/api\/connections\/([^/]+)\/(conversation|messages)$/,
+    );
+    if (directConversationMatch) {
+      const now = clock().toISOString();
+      const actorId = resolveActorId(database, request, now, allowInsecureDemoAuth);
+      if (!actorId) {
+        sendError(response, 401, "AUTH_REQUIRED", "A valid session is required.");
+        return;
+      }
+      const connectionId = readPathParameter(response, directConversationMatch[1]);
+      if (connectionId === null) return;
+      const resource = directConversationMatch[2];
+      const connection = findConnectionById(database, connectionId);
+      if (!connection) {
+        sendError(response, 404, "CONNECTION_NOT_FOUND", "Connection not found.");
+        return;
+      }
+      if (!connection.members.includes(actorId)) {
+        sendError(
+          response,
+          403,
+          "CONNECTION_FORBIDDEN",
+          "Only connection participants can use this conversation.",
+        );
+        return;
+      }
+      if (connection.status !== "ACTIVE") {
+        sendError(
+          response,
+          409,
+          "CONNECTION_INACTIVE",
+          "This connection no longer accepts conversation messages.",
+        );
+        return;
+      }
+
+      if (request.method === "GET" && resource === "conversation") {
+        const conversation = readConnectionConversation(database, {
+          connectionId,
+          userId: actorId,
+        });
+        sendJson(response, 200, {
+          conversation,
+          sync: { server_time: now, poll_after_ms: 2500 },
+        });
+        return;
+      }
+
+      if (request.method === "POST" && resource === "messages") {
+        const parsedBody = await readJsonBody(request, response);
+        if (!parsedBody.ok) return;
+        const payload = parsedBody.value;
+        const text = typeof payload?.text === "string" ? payload.text.trim() : "";
+        const clientMessageId = payload?.client_message_id;
+        if (!text || text.length > 1000) {
+          sendError(
+            response,
+            400,
+            "INVALID_MESSAGE",
+            "text must contain between 1 and 1000 characters.",
+          );
+          return;
+        }
+        if (
+          clientMessageId !== undefined
+          && (
+            typeof clientMessageId !== "string"
+            || !/^[A-Za-z0-9_-]{8,80}$/.test(clientMessageId)
+          )
+        ) {
+          sendError(
+            response,
+            400,
+            "INVALID_CLIENT_MESSAGE_ID",
+            "client_message_id must be 8 to 80 URL-safe characters.",
+          );
+          return;
+        }
+        const result = createConnectionMessage(database, {
+          connectionId,
+          senderId: actorId,
+          text,
+          clientMessageId: clientMessageId ?? null,
+          now,
+        });
+        sendJson(response, result.idempotentReplay ? 200 : 201, {
+          message: result.message,
+          idempotent_replay: result.idempotentReplay,
+        });
+        return;
+      }
+
+      if (request.method === "PATCH" && resource === "conversation") {
+        const parsedBody = await readJsonBody(request, response);
+        if (!parsedBody.ok) return;
+        const lastReadMessageId = parsedBody.value?.last_read_message_id;
+        if (
+          typeof lastReadMessageId !== "string"
+          || !/^msg_[A-Za-z0-9-]{16,80}$/.test(lastReadMessageId)
+        ) {
+          sendError(
+            response,
+            400,
+            "INVALID_READ_CURSOR",
+            "last_read_message_id must identify a message in this conversation.",
+          );
+          return;
+        }
+        const conversation = markConnectionConversationRead(database, {
+          connectionId,
+          userId: actorId,
+          lastReadMessageId,
+          now,
+        });
+        if (!conversation) {
+          sendError(
+            response,
+            400,
+            "INVALID_READ_CURSOR",
+            "last_read_message_id must identify a message in this conversation.",
+          );
+          return;
+        }
+        sendJson(response, 200, { conversation });
+        return;
+      }
     }
 
     const connectionMatch = url.pathname.match(/^\/api\/connections\/([^/]+)$/);

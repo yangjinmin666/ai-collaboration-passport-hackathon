@@ -691,6 +691,33 @@ const state = {
   invited: startsInWorkspace ? ["lin"] : [],
   joined: startsInWorkspace ? ["lin"] : [],
   connectionFilter: "all",
+  directConversation: {
+    connectionId: null,
+    data: null,
+    loading: false,
+    sending: false,
+    error: "",
+    draft: "",
+    pendingClientMessageId: null,
+    demoMessages: startsInWorkspace ? {
+      lin: [
+        {
+          id: "demo-message-lin-1",
+          sender_id: "user-lin",
+          type: "TEXT",
+          text: "刚才聊到的端侧方案挺有意思，你想先验证哪一段？",
+          created_at: "2026-08-29T14:18:00.000Z",
+        },
+        {
+          id: "demo-message-zhou-1",
+          sender_id: "user-zhou",
+          type: "TEXT",
+          text: "我想先把现场建联到开工的路径跑通。",
+          created_at: "2026-08-29T14:20:00.000Z",
+        },
+      ],
+    } : {},
+  },
   swipeSoundEnabled: storedSwipeSoundEnabled,
   discoveryFilters: defaultDiscoveryFilters(),
   discoveryFilterDraft: defaultDiscoveryFilters(),
@@ -1668,7 +1695,7 @@ function renderConnections() {
           <article class="connection-card">
             <div class="connection-card-head">${glyph(person, "md")}<div><h4>${person.name}</h4><p>${person.role}</p></div><span class="source-chip">碰卡建联</span></div>
             <div class="connection-context"><span>认识于</span><strong>${currentExhibition?.name || "线下协作现场"}</strong><small>刚刚 · ${person.pairLabel}</small></div>
-            ${connectedAction(person)}
+            <div class="connection-card-actions"><button class="primary-button" data-action="open-conversation" data-connection-id="demo-${person.id}" data-person="${person.id}">打开对话</button>${connectedAction(person)}</div>
           </article>
         `).join("")}
         ${visiblePendingPeople.map((person) => `<article class="pending-row">${glyph(person, "sm")}<div><strong>${person.name}</strong><span>招呼已发出 · 等待见面</span></div><em>待回应</em></article>`).join("")}
@@ -1722,7 +1749,8 @@ function renderLiveConnections() {
         return `<article class="connection-card">
           <div class="connection-card-head">${glyph(person, "md")}<div><h4>${person.name}</h4><p>${person.role}</p></div><span class="source-chip">已建联</span></div>
           <div class="connection-context"><span>认识于</span><strong>${currentExhibition?.name || "COSPAN 现场"}</strong><small>${request.source === "nfc" ? "碰卡建联" : "双方确认"}</small></div>
-          <button class="primary-button full" data-action="resume-direction" data-person="${person.id}">继续项目协作</button>
+          ${request.last_message ? `<p class="connection-message-preview"><span>${escapeHtml(request.last_message.text)}</span>${request.unread_count ? `<b>${request.unread_count} 条新消息</b>` : ""}</p>` : ""}
+          <div class="connection-card-actions"><button class="primary-button" data-action="open-conversation" data-connection-id="${escapeHtml(request.connection_id)}" data-person="${person.id}" aria-label="打开与 ${escapeHtml(person.name)} 的对话${request.unread_count ? `，${request.unread_count} 条未读` : ""}">打开对话${request.unread_count ? `<b>${request.unread_count}</b>` : ""}</button><button class="secondary-button" data-action="resume-direction" data-person="${person.id}">继续项目协作</button></div>
         </article>`;
       }).join("")}
       ${visibleOutgoing.map((request) => {
@@ -2294,7 +2322,13 @@ function renderAppNav() {
     ["collaboration", "协作"],
     ["profile", "我的"],
   ];
-  const connectionCount = state.connected.length || state.greeted.length;
+  const unreadConversationCount = state.live.connectionRequests.reduce(
+    (total, request) => total + Number(request.unread_count || 0),
+    0,
+  );
+  const connectionCount = state.live.enabled
+    ? unreadConversationCount
+    : (state.connected.length || state.greeted.length);
   const collaborationCount = state.joined.length;
   return `<nav class="app-nav" aria-label="主导航">${items.map(([id, label]) => `<button class="${state.tab === id ? "active" : ""}" data-tab="${id}" aria-label="${label}" ${state.tab === id ? 'aria-current="page"' : ""}><span>${renderAppNavIcon(id)}</span><small>${label}</small>${id === "connections" && connectionCount ? `<i>${connectionCount}</i>` : id === "collaboration" && collaborationCount ? `<i>${collaborationCount}</i>` : ""}</button>`).join("")}</nav>`;
 }
@@ -2734,6 +2768,21 @@ function bindEvents() {
     event.preventDefault();
     if (event.currentTarget.reportValidity()) updateLiveProfile(event.currentTarget);
   });
+  const conversationForm = document.querySelector("[data-conversation-form]");
+  const conversationInput = conversationForm?.elements.namedItem("message");
+  conversationInput?.addEventListener("input", () => {
+    state.directConversation.draft = conversationInput.value;
+  });
+  conversationForm?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    sendDirectConversationMessage(event.currentTarget);
+  });
+  const conversationScroll = document.querySelector("[data-conversation-scroll]");
+  if (conversationScroll) {
+    requestAnimationFrame(() => {
+      conversationScroll.scrollTop = conversationScroll.scrollHeight;
+    });
+  }
   const onboardingForm = document.querySelector("[data-onboarding-form]");
   onboardingForm?.querySelectorAll("input, textarea, select").forEach((input) => {
     input.addEventListener("input", () => {
@@ -3240,6 +3289,29 @@ function handleAction(action, element) {
   }
   if (action === "sync-live-now") {
     refreshLiveState();
+    return;
+  }
+  if (action === "open-conversation") {
+    openDirectConversation(element);
+    return;
+  }
+  if (action === "close-conversation") {
+    state.overlay = null;
+    state.directConversation.error = "";
+    writeAppHistory();
+    if (state.live.enabled) refreshLiveState();
+    else render();
+    return;
+  }
+  if (action === "retry-conversation") {
+    loadDirectConversation();
+    return;
+  }
+  if (action === "conversation-intent") {
+    state.selectedId = element.dataset.person || state.selectedId;
+    state.overlay = "intent-clarification";
+    writeAppHistory();
+    render();
     return;
   }
   if (action === "resolve-connection") {
@@ -3788,6 +3860,11 @@ window.addEventListener("popstate", (event) => {
     ? snapshot.tab
     : (new URL(location.href).searchParams.get("view") || "discover");
   state.overlay = typeof snapshot?.overlay === "string" ? snapshot.overlay : null;
+  if (state.overlay === "conversation") {
+    state.directConversation.connectionId = snapshot?.conversationId
+      || new URL(location.href).searchParams.get("conversation")
+      || state.directConversation.connectionId;
+  }
   const historyBlockType = snapshot?.profileBlockType
     || new URL(location.href).searchParams.get("block");
   state.profileBlockDraft = state.overlay === "profile-block-editor" && profileBlockCatalog[historyBlockType]
@@ -4316,6 +4393,156 @@ async function updateLiveProfile(form) {
   render();
 }
 
+function buildDemoDirectConversation(person, connectionId) {
+  return {
+    connection_id: connectionId,
+    status: "ACTIVE",
+    counterpart: {
+      id: `user-${person.id}`,
+      display_name: person.name,
+      avatar: person.avatar,
+      role: person.role,
+    },
+    context: {
+      event_id: currentExhibition?.id || "offline-collaboration",
+      event_name: currentExhibition?.name || "线下协作现场",
+      source: "nfc",
+      consent_mode: "physical_mutual",
+      connected_at: "2026-08-29T14:16:00.000Z",
+    },
+    messages: state.directConversation.demoMessages[person.id] || [],
+    unread_count: 0,
+    last_read_message_id: null,
+    has_more: false,
+  };
+}
+
+function openDirectConversation(element) {
+  const connectionId = element.dataset.connectionId;
+  const personId = element.dataset.person || state.selectedId;
+  if (!connectionId || !personId) return;
+  state.selectedId = personId;
+  state.directConversation.connectionId = connectionId;
+  state.directConversation.error = "";
+  state.directConversation.draft = "";
+  state.directConversation.pendingClientMessageId = null;
+  state.overlay = "conversation";
+  if (state.live.enabled) {
+    state.directConversation.data = null;
+    state.directConversation.loading = true;
+    writeAppHistory();
+    render();
+    loadDirectConversation();
+    return;
+  }
+  state.directConversation.loading = false;
+  state.directConversation.data = buildDemoDirectConversation(selectedPerson(), connectionId);
+  writeAppHistory();
+  render();
+}
+
+async function loadDirectConversation({ silent = false } = {}) {
+  const connectionId = state.directConversation.connectionId;
+  if (!state.live.enabled || !connectionId) return;
+  if (!silent) state.directConversation.loading = true;
+  state.directConversation.error = "";
+  if (!silent) render();
+  try {
+    const payload = await api.get(
+      `/api/connections/${encodeURIComponent(connectionId)}/conversation`,
+    );
+    if (state.directConversation.connectionId !== connectionId) return;
+    let conversation = payload.conversation;
+    const lastMessage = conversation.messages.at(-1);
+    if (conversation.unread_count > 0 && lastMessage) {
+      const marked = await api.patch(
+        `/api/connections/${encodeURIComponent(connectionId)}/conversation`,
+        { last_read_message_id: lastMessage.id },
+      );
+      conversation = marked.conversation;
+      state.live.connectionRequests = state.live.connectionRequests.map((request) => (
+        request.connection_id === connectionId
+          ? { ...request, unread_count: 0 }
+          : request
+      ));
+    }
+    state.directConversation.data = conversation;
+    const counterpartId = localPersonId(conversation.counterpart.id);
+    if (counterpartId) state.selectedId = counterpartId;
+    state.directConversation.error = "";
+  } catch (error) {
+    if (error instanceof ApiError && error.isAuthenticationError) handleLiveFailure(error);
+    else state.directConversation.error = safeLiveText(error?.message, "对话暂时无法同步", 160);
+  } finally {
+    if (state.directConversation.connectionId === connectionId) {
+      state.directConversation.loading = false;
+      render();
+    }
+  }
+}
+
+async function sendDirectConversationMessage(form) {
+  const input = form.elements.namedItem("message");
+  const text = String(input?.value || "").trim();
+  if (!text) {
+    input?.setCustomValidity("请输入一句具体的话");
+    input?.reportValidity();
+    input?.addEventListener("input", () => input.setCustomValidity(""), { once: true });
+    return;
+  }
+  const person = selectedPerson();
+  if (!state.live.enabled) {
+    const message = {
+      id: `demo-message-${Date.now()}`,
+      sender_id: "user-zhou",
+      type: "TEXT",
+      text,
+      created_at: new Date().toISOString(),
+    };
+    const messages = [...(state.directConversation.demoMessages[person.id] || []), message];
+    state.directConversation.demoMessages[person.id] = messages;
+    state.directConversation.data = {
+      ...state.directConversation.data,
+      messages,
+    };
+    state.directConversation.draft = "";
+    render();
+    return;
+  }
+
+  const connectionId = state.directConversation.connectionId;
+  if (!connectionId || state.directConversation.sending) return;
+  const fallbackUuid = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const clientMessageId = state.directConversation.pendingClientMessageId
+    || `client-${globalThis.crypto?.randomUUID?.() || fallbackUuid}`;
+  state.directConversation.pendingClientMessageId = clientMessageId;
+  state.directConversation.sending = true;
+  state.directConversation.error = "";
+  render();
+  try {
+    const payload = await api.post(
+      `/api/connections/${encodeURIComponent(connectionId)}/messages`,
+      { text, client_message_id: clientMessageId },
+    );
+    const messages = state.directConversation.data?.messages || [];
+    if (!messages.some((message) => message.id === payload.message.id)) {
+      state.directConversation.data = {
+        ...state.directConversation.data,
+        messages: [...messages, payload.message],
+      };
+    }
+    state.directConversation.draft = "";
+    state.directConversation.pendingClientMessageId = null;
+    await loadDirectConversation({ silent: true });
+  } catch (error) {
+    if (error instanceof ApiError && error.isAuthenticationError) handleLiveFailure(error);
+    else state.directConversation.error = safeLiveText(error?.message, "消息发送失败，可以重试", 160);
+  } finally {
+    state.directConversation.sending = false;
+    render();
+  }
+}
+
 async function loadLiveMe({ force = false } = {}) {
   if (!state.live.enabled || state.live.authStatus !== "ready" || state.live.meLoading) return;
   if (state.live.meLoaded && !force) return;
@@ -4615,7 +4842,12 @@ let livePollTimer = null;
 function startLivePolling() {
   if (livePollTimer || !state.live.meLoaded) return;
   livePollTimer = window.setInterval(() => {
-    if (document.visibilityState === "visible") refreshLiveState();
+    if (document.visibilityState !== "visible") return;
+    if (state.overlay === "conversation" && state.directConversation.connectionId) {
+      loadDirectConversation({ silent: true });
+    } else {
+      refreshLiveState();
+    }
   }, 2500);
 }
 

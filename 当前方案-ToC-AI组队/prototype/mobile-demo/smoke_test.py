@@ -559,6 +559,54 @@ def main():
         )
         assert report["flow"]["all_connection_filter_works"]
 
+        page.get_by_role("button", name="打开对话", exact=True).click()
+        conversation_geometry = page.locator(".direct-conversation").evaluate(
+            """conversation => {
+                const box = conversation.getBoundingClientRect();
+                const composer = conversation.querySelector('.direct-conversation-composer').getBoundingClientRect();
+                const controls = [...conversation.querySelectorAll('button, textarea')]
+                    .map((element) => {
+                        const control = element.getBoundingClientRect();
+                        return {label: element.getAttribute('aria-label') || element.textContent.trim(), width: control.width, height: control.height};
+                    });
+                return {
+                    top: box.top,
+                    bottom: box.bottom,
+                    width: box.width,
+                    viewportHeight: window.innerHeight,
+                    viewportWidth: window.innerWidth,
+                    composerBottom: composer.bottom,
+                    undersizedControls: controls.filter(({width, height}) => width < 44 || height < 44),
+                };
+            }"""
+        )
+        report["flow"]["direct_conversation_is_connection_scoped"] = (
+            page.get_by_text("CONNECTED AT", exact=True).is_visible()
+            and page.get_by_text("先聊清楚，再决定要不要开工。", exact=True).is_visible()
+            and (
+                page.get_by_role("button", name="澄清合作意图", exact=True).count()
+                + page.get_by_role("button", name="进入共同协作", exact=True).count()
+            ) == 1
+        )
+        report["flow"]["direct_conversation_fits_mobile_viewport"] = (
+            conversation_geometry["top"] >= -1
+            and conversation_geometry["bottom"] <= conversation_geometry["viewportHeight"] + 1
+            and conversation_geometry["width"] <= conversation_geometry["viewportWidth"] + 1
+            and conversation_geometry["composerBottom"] <= conversation_geometry["viewportHeight"] + 1
+            and conversation_geometry["undersizedControls"] == []
+        )
+        assert report["flow"]["direct_conversation_is_connection_scoped"]
+        assert report["flow"]["direct_conversation_fits_mobile_viewport"], conversation_geometry
+        page.get_by_label("输入消息").fill("我们先把现场建联到开工的路径跑通。")
+        page.get_by_role("button", name="发送消息").click()
+        report["flow"]["direct_conversation_sends_lightweight_message"] = page.get_by_text(
+            "我们先把现场建联到开工的路径跑通。",
+            exact=True,
+        ).is_visible()
+        assert report["flow"]["direct_conversation_sends_lightweight_message"]
+        page.screenshot(path=str(OUTPUT_DIR / "direct-conversation.png"), full_page=True)
+        page.get_by_role("button", name="返回连接列表").click()
+
         page.goto(f"{BASE_URL}/?variant=C&onboarding=1")
         page.wait_for_load_state("networkidle")
         report["flow"]["onboarding_starts_with_public_trails"] = page.get_by_text("不用从头自我介绍。", exact=True).is_visible()

@@ -195,6 +195,36 @@ export function openDatabase(databasePath) {
       FOREIGN KEY (connection_id) REFERENCES connections(connection_id)
     );
 
+    CREATE TABLE IF NOT EXISTS connection_messages (
+      message_seq INTEGER PRIMARY KEY AUTOINCREMENT,
+      message_id TEXT NOT NULL UNIQUE,
+      connection_id TEXT NOT NULL,
+      sender_id TEXT NOT NULL,
+      message_type TEXT NOT NULL DEFAULT 'TEXT' CHECK (message_type = 'TEXT'),
+      body TEXT NOT NULL CHECK (length(body) BETWEEN 1 AND 1000),
+      client_message_id TEXT,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (connection_id) REFERENCES connections(connection_id),
+      FOREIGN KEY (sender_id) REFERENCES users(user_id)
+    );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS connection_messages_by_client_id
+      ON connection_messages (connection_id, sender_id, client_message_id)
+      WHERE client_message_id IS NOT NULL;
+
+    CREATE INDEX IF NOT EXISTS connection_messages_by_connection
+      ON connection_messages (connection_id, message_seq);
+
+    CREATE TABLE IF NOT EXISTS connection_read_cursors (
+      connection_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      last_read_message_seq INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (connection_id, user_id),
+      FOREIGN KEY (connection_id) REFERENCES connections(connection_id),
+      FOREIGN KEY (user_id) REFERENCES users(user_id)
+    );
+
     CREATE TABLE IF NOT EXISTS user_blocks (
       event_id TEXT NOT NULL,
       blocker_id TEXT NOT NULL,
@@ -1262,7 +1292,31 @@ export function listConnectionRequests(
       counterpart.avatar AS counterpart_avatar,
       profile.role AS counterpart_role,
       profile.status AS counterpart_status,
-      request_connection.connection_id
+      request_connection.connection_id,
+      COALESCE((
+        SELECT count(*)
+        FROM connection_messages message
+        LEFT JOIN connection_read_cursors cursor
+          ON cursor.connection_id = message.connection_id
+          AND cursor.user_id = ?
+        WHERE message.connection_id = request_connection.connection_id
+          AND message.sender_id <> ?
+          AND message.message_seq > COALESCE(cursor.last_read_message_seq, 0)
+      ), 0) AS unread_count,
+      (
+        SELECT message.body
+        FROM connection_messages message
+        WHERE message.connection_id = request_connection.connection_id
+        ORDER BY message.message_seq DESC
+        LIMIT 1
+      ) AS last_message_text,
+      (
+        SELECT message.created_at
+        FROM connection_messages message
+        WHERE message.connection_id = request_connection.connection_id
+        ORDER BY message.message_seq DESC
+        LIMIT 1
+      ) AS last_message_at
     FROM connection_requests request
     JOIN users counterpart
       ON counterpart.user_id = CASE
@@ -1278,12 +1332,16 @@ export function listConnectionRequests(
       AND request.event_id = ?
       ${statusClause}
     ORDER BY request.updated_at DESC, request.request_id DESC
-  `).all(direction, ...parameters);
+  `).all(userId, userId, direction, ...parameters);
 
   return rows.map((row) => ({
     ...mapConnectionRequest(row),
     direction,
     connection_id: row.connection_id ?? null,
+    unread_count: Number(row.unread_count),
+    last_message: row.last_message_text
+      ? { text: row.last_message_text, created_at: row.last_message_at }
+      : null,
     counterpart: {
       id: row.counterpart_id,
       display_name: row.counterpart_display_name,
@@ -1351,6 +1409,163 @@ export function findConnectionBetween(
     SELECT * FROM connections
     WHERE event_id = ? AND user_a_id = ? AND user_b_id = ?
   `).get(eventId, userAId, userBId));
+}
+
+function mapConnectionMessage(row) {
+  if (!row) return null;
+  return {
+    id: row.message_id,
+    connection_id: row.connection_id,
+    sender_id: row.sender_id,
+    type: row.message_type,
+    text: row.body,
+    created_at: row.created_at,
+  };
+}
+
+export function createConnectionMessage(
+  database,
+  { connectionId, senderId, text, clientMessageId, now },
+) {
+  database.exec("BEGIN IMMEDIATE");
+  try {
+    if (clientMessageId) {
+      const existing = database.prepare(`
+        SELECT * FROM connection_messages
+        WHERE connection_id = ? AND sender_id = ? AND client_message_id = ?
+      `).get(connectionId, senderId, clientMessageId);
+      if (existing) {
+        database.exec("COMMIT");
+        return { message: mapConnectionMessage(existing), idempotentReplay: true };
+      }
+    }
+
+    const messageId = `msg_${randomUUID()}`;
+    database.prepare(`
+      INSERT INTO connection_messages (
+        message_id, connection_id, sender_id, message_type, body,
+        client_message_id, created_at
+      ) VALUES (?, ?, ?, 'TEXT', ?, ?, ?)
+    `).run(messageId, connectionId, senderId, text, clientMessageId ?? null, now);
+    const message = mapConnectionMessage(database.prepare(`
+      SELECT * FROM connection_messages WHERE message_id = ?
+    `).get(messageId));
+    const connection = findConnectionById(database, connectionId);
+    appendEventLog(database, {
+      eventId: connection.event_id,
+      actorId: senderId,
+      type: "direct_message_sent",
+      objectType: "connection_message",
+      objectId: messageId,
+      source: "direct_conversation",
+      payload: { connection_id: connectionId, message_type: "TEXT" },
+      createdAt: now,
+    });
+    database.exec("COMMIT");
+    return { message, idempotentReplay: false };
+  } catch (error) {
+    database.exec("ROLLBACK");
+    throw error;
+  }
+}
+
+export function readConnectionConversation(
+  database,
+  { connectionId, userId, limit = 100 },
+) {
+  const connection = database.prepare(`
+    SELECT
+      connection.*,
+      event.name AS event_name,
+      counterpart.user_id AS counterpart_id,
+      counterpart.display_name AS counterpart_display_name,
+      counterpart.avatar AS counterpart_avatar,
+      profile.role AS counterpart_role,
+      COALESCE(cursor.last_read_message_seq, 0) AS last_read_message_seq
+    FROM connections connection
+    JOIN events event ON event.event_id = connection.event_id
+    JOIN users counterpart ON counterpart.user_id = CASE
+      WHEN connection.user_a_id = ? THEN connection.user_b_id
+      ELSE connection.user_a_id
+    END
+    LEFT JOIN profiles profile
+      ON profile.user_id = counterpart.user_id
+      AND profile.event_id = connection.event_id
+    LEFT JOIN connection_read_cursors cursor
+      ON cursor.connection_id = connection.connection_id
+      AND cursor.user_id = ?
+    WHERE connection.connection_id = ?
+      AND ? IN (connection.user_a_id, connection.user_b_id)
+  `).get(userId, userId, connectionId, userId);
+  if (!connection) return null;
+
+  const messages = database.prepare(`
+    SELECT * FROM (
+      SELECT * FROM connection_messages
+      WHERE connection_id = ?
+      ORDER BY message_seq DESC
+      LIMIT ?
+    ) recent
+    ORDER BY message_seq ASC
+  `).all(connectionId, Math.max(1, Math.min(Number(limit) || 100, 100)));
+  const unread = database.prepare(`
+    SELECT count(*) AS unread_count
+    FROM connection_messages
+    WHERE connection_id = ?
+      AND sender_id <> ?
+      AND message_seq > ?
+  `).get(connectionId, userId, connection.last_read_message_seq);
+  const lastRead = connection.last_read_message_seq
+    ? database.prepare(`
+      SELECT message_id FROM connection_messages
+      WHERE connection_id = ? AND message_seq = ?
+    `).get(connectionId, connection.last_read_message_seq)
+    : null;
+
+  return {
+    connection_id: connection.connection_id,
+    status: connection.status,
+    counterpart: {
+      id: connection.counterpart_id,
+      display_name: connection.counterpart_display_name,
+      avatar: connection.counterpart_avatar,
+      role: connection.counterpart_role,
+    },
+    context: {
+      event_id: connection.event_id,
+      event_name: connection.event_name,
+      source: connection.source,
+      consent_mode: connection.consent_mode,
+      connected_at: connection.created_at,
+    },
+    messages: messages.map(mapConnectionMessage),
+    unread_count: Number(unread.unread_count),
+    last_read_message_id: lastRead?.message_id ?? null,
+    has_more: messages.length >= Math.max(1, Math.min(Number(limit) || 100, 100)),
+  };
+}
+
+export function markConnectionConversationRead(
+  database,
+  { connectionId, userId, lastReadMessageId, now },
+) {
+  const message = database.prepare(`
+    SELECT message_seq FROM connection_messages
+    WHERE connection_id = ? AND message_id = ?
+  `).get(connectionId, lastReadMessageId);
+  if (!message) return null;
+  database.prepare(`
+    INSERT INTO connection_read_cursors (
+      connection_id, user_id, last_read_message_seq, updated_at
+    ) VALUES (?, ?, ?, ?)
+    ON CONFLICT (connection_id, user_id) DO UPDATE SET
+      last_read_message_seq = max(
+        connection_read_cursors.last_read_message_seq,
+        excluded.last_read_message_seq
+      ),
+      updated_at = excluded.updated_at
+  `).run(connectionId, userId, message.message_seq, now);
+  return readConnectionConversation(database, { connectionId, userId });
 }
 
 function appendConnectionAcceptedLog(
