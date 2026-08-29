@@ -679,6 +679,19 @@ def main():
         report["flow"]["visibility_paused"] = "is-hidden" in (page.locator(".eink-card").get_attribute("class") or "")
         page.screenshot(path=str(OUTPUT_DIR / "profile-eink.png"), full_page=True)
 
+        page.locator(".app-nav [data-tab='discover']").click()
+        page.locator("[data-action='dismiss-recommendation']").click()
+        page.locator(".recommendation-card-active").click()
+        page.get_by_role("button", name="模拟碰卡直连").click()
+        page.get_by_role("button", name="模拟双方主动碰卡").click()
+        report["flow"]["created_project_skips_alignment_for_next_connection"] = (
+            page.get_by_role(
+                "button", name="邀请加入「离线会议洞察终端」"
+            ).is_visible()
+            and page.get_by_role("button", name="进入意图澄清").count() == 0
+        )
+        assert report["flow"]["created_project_skips_alignment_for_next_connection"]
+
         known_direction_page = browser.new_page(
             viewport={"width": 390, "height": 844},
             is_mobile=True,
@@ -707,6 +720,22 @@ def main():
             ).count() == 0
         )
         assert report["flow"]["known_project_direction_can_skip_alignment"]
+        known_direction_page.get_by_role("button", name="稍后处理").click()
+        report["flow"]["known_project_resumes_direct_invitation"] = (
+            known_direction_page.get_by_role(
+                "button", name="邀请加入现有项目"
+            ).is_visible()
+        )
+        assert report["flow"]["known_project_resumes_direct_invitation"]
+        known_direction_page.get_by_role(
+            "button", name="邀请加入现有项目"
+        ).click()
+        assert known_direction_page.get_by_role(
+            "button", name="邀请加入「离线会议洞察终端」"
+        ).is_visible()
+        assert known_direction_page.get_by_text(
+            "方向已由双方确认", exact=True
+        ).count() == 0
         known_direction_page.close()
 
         desktop = browser.new_page(viewport={"width": 1440, "height": 900})

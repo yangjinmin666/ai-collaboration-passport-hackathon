@@ -411,7 +411,7 @@ const state = {
   greeted: startsInWorkspace ? ["lin"] : [],
   connected: startsInWorkspace ? ["lin"] : [],
   directionAlignments: startsInWorkspace
-    ? { lin: { status: "confirmed", draft: confirmedProjectDirection() } }
+    ? { lin: { status: "known_project", draft: confirmedProjectDirection() } }
     : {},
   invited: startsInWorkspace ? ["lin"] : [],
   joined: startsInWorkspace ? ["lin"] : [],
@@ -478,7 +478,7 @@ function ensureDirectionAlignment(personId) {
   if (!state.directionAlignments[personId]) {
     const projectDirectionIsKnown = state.collaborationStatus === "TEAM_RECRUITING";
     state.directionAlignments[personId] = {
-      status: projectDirectionIsKnown ? "confirmed" : "not_started",
+      status: projectDirectionIsKnown ? "known_project" : "not_started",
       draft: projectDirectionIsKnown ? confirmedProjectDirection() : emptyDirectionDraft(),
     };
   }
@@ -1011,6 +1011,7 @@ function renderConnections() {
     if (state.joined.includes(person.id)) return `<button class="primary-button full" data-tab="collaboration">查看共同项目</button>`;
     if (state.invited.includes(person.id)) return `<button class="primary-button full" data-action="resume-team-invite" data-person="${person.id}">查看项目邀请</button>`;
     const alignment = directionAlignmentFor(person.id);
+    if (alignment.status === "known_project") return `<button class="primary-button full" data-action="resume-project-invite" data-person="${person.id}">邀请加入现有项目</button>`;
     if (alignment.status === "confirmed") return `<button class="primary-button full" data-action="resume-project-creation" data-person="${person.id}">创建项目并邀请入队</button>`;
     if (alignment.status === "pending_partner") return `<button class="primary-button full" data-action="resume-direction" data-person="${person.id}">查看方向确认进度</button>`;
     return `<button class="primary-button full" data-action="resume-direction" data-person="${person.id}">继续意图澄清</button>`;
@@ -1476,7 +1477,7 @@ function renderOverlay() {
     </section></div>`;
   }
   if (state.overlay === "success") {
-    const projectDirectionIsKnown = directionAlignment.status === "confirmed";
+    const projectDirectionIsKnown = ["known_project", "confirmed"].includes(directionAlignment.status);
     return `<div class="overlay success-overlay"><section class="success-card">
       <div class="success-mark">✓</div><p class="micro-label">CONNECTION STAMP</p><h3>你和 ${person.name}<br>已经建立协作关系</h3>
       <div class="stamp"><span>CONNECTED</span><strong>${person.pairLabel}</strong><small>HACKATHON 01 · JUST NOW</small></div>
@@ -1560,7 +1561,7 @@ function stageLabel() {
   if (state.acceptedTasks.length) return "已开始协作";
   if (state.joined.length) return "已加入项目";
   if (state.invited.length) return "项目邀请待确认";
-  if (directionAlignmentFor().status === "confirmed") return "项目方向已确认";
+  if (["known_project", "confirmed"].includes(directionAlignmentFor().status)) return "项目方向已确认";
   if (directionAlignmentFor().status === "pending_partner") return "方向草案待双方确认";
   if (state.connected.length) return "已碰卡建联";
   if (state.greeted.length) return "已发送招呼";
@@ -1953,6 +1954,10 @@ function handleAction(action, element) {
     state.selectedId = element.dataset.person || state.selectedId;
     state.overlay = "direction-confirmed";
   }
+  if (action === "resume-project-invite") {
+    state.selectedId = element.dataset.person || state.selectedId;
+    state.overlay = "success";
+  }
   if (action === "resume-team-invite") {
     state.selectedId = element.dataset.person || state.selectedId;
     state.overlay = "invite-sent";
@@ -1980,10 +1985,11 @@ function handleAction(action, element) {
   }
   if (action === "invite-team") {
     const id = element.dataset.person;
-    if (directionAlignmentFor(id).status !== "confirmed") {
+    if (!["known_project", "confirmed"].includes(directionAlignmentFor(id).status)) {
       showToast("先由双方确认项目方向");
       return;
     }
+    state.collaborationStatus = "TEAM_RECRUITING";
     if (!state.invited.includes(id)) state.invited.push(id);
     state.overlay = "invite-sent";
   }
