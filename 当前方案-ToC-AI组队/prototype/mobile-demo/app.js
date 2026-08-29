@@ -2079,13 +2079,41 @@ function renderProfile() {
       </section>
       ${renderPublicProfileCard()}
       <section class="device-preview">
-        <div class="device-preview-head"><div><p class="micro-label">AI PASSPORT / E-INK</p><h3>墨水屏公开面</h3></div><span class="sync-chip">● 已同步</span></div>
+        <div class="device-preview-head">
+          <div><p class="micro-label">DEMO DISPLAY</p><h3>4.3″ 现场展示屏</h3></div>
+          <span class="sync-chip"><b>● 已同步</b><small>ESP32-8048S043</small><small>800 × 480</small></span>
+        </div>
         <div class="eink-card ${state.visible ? "" : "is-hidden"}">
-          <div class="eink-top"><span>${state.visible ? `● ${collaborationStatusLabel()}` : "○ 已暂停"}</span><em>至 22:00</em></div>
-          <div class="eink-identity"><span class="eink-glyph">ZW</span><div><strong>周闻</strong><small>AI / 后端 / Agent</small></div></div>
-          <div class="eink-need"><span>当前协作意图</span><b>${collaborationNeedLabel()}</b></div>
-          <div class="fake-qr" aria-label="二维码预览">${Array.from({ length: 36 }, (_, i) => `<i class="${[0,1,2,5,6,7,8,11,12,13,17,18,19,22,24,25,29,30,31,34,35].includes(i) ? "black" : ""}"></i>`).join("")}</div>
-          <p>碰我建联 · P0087</p>
+          <header class="demo-display-top">
+            <span class="demo-display-brand">COSPAN <b>合拍</b></span>
+            <span class="demo-display-event">AI HARDWARE HACKATHON 2026</span>
+            <em>${state.visible ? `● ${collaborationStatusLabel()}` : "○ 已暂停"}</em>
+          </header>
+          <div class="demo-display-main">
+            <section class="eink-identity">
+              <span class="eink-glyph">ZW</span>
+              <div><small>PASSPORT P·0087</small><strong>周闻</strong><span>AI · 后端 · Agent</span></div>
+            </section>
+            <section class="eink-need">
+              <span>CURRENT COLLABORATION INTENT</span>
+              <b>${collaborationNeedLabel()}</b>
+              <p>现场组队 · 可聊到 22:00</p>
+            </section>
+            <aside class="demo-display-connect">
+              <svg class="demo-display-qr" viewBox="0 0 29 29" role="img" aria-label="扫码建联入口" shape-rendering="crispEdges">
+                <rect width="29" height="29" fill="#fff"/>
+                <g fill="currentColor">
+                  <path d="M2 2h7v7H2zm18 0h7v7h-7zM2 20h7v7H2z"/>
+                  <path d="M12 2h2v2h-2zm3 0h2v1h-2zm-3 4h1v3h-1zm3-2h3v2h-3zm-4 7h2v2h-2zm4-3h2v4h-2zm3 2h2v2h-2zm4 1h3v2h-3zM10 14h3v2h-3zm5 0h2v3h-2zm4 0h2v2h-2zm4 1h4v2h-4zM11 18h2v3h-2zm4 1h4v2h-4zm6-1h2v3h-2zm4 1h2v2h-2zM11 23h2v4h-2zm3-1h2v2h-2zm3 2h2v3h-2zm3-2h3v2h-3zm4 2h3v3h-3z"/>
+                </g>
+                <g fill="#fff"><path d="M3 3h5v5H3zm18 0h5v5h-5zM3 21h5v5H3z"/></g>
+                <g fill="currentColor"><path d="M4 4h3v3H4zm18 0h3v3h-3zM4 22h3v3H4z"/></g>
+              </svg>
+              <strong>扫码建联</strong>
+              <small>或碰卡快速连接</small>
+            </aside>
+          </div>
+          <footer class="demo-display-foot"><span>◉ NFC READY</span><span>现场公开 · 随时可暂停</span><code>P0087</code></footer>
         </div>
         <button class="secondary-button full" data-action="sync-card">编辑卡片公开内容</button>
       </section>

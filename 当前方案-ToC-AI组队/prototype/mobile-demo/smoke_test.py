@@ -943,6 +943,16 @@ def main():
         report["flow"]["profile_has_settings_button"] = page.locator(
             ".profile-settings-trigger"
         ).is_visible()
+        demo_display = page.locator(".eink-card")
+        display_ratio = demo_display.evaluate(
+            "element => element.getBoundingClientRect().width / element.getBoundingClientRect().height"
+        )
+        report["flow"]["demo_display_matches_esp32_8048s043"] = (
+            page.get_by_text("ESP32-8048S043", exact=True).is_visible()
+            and page.get_by_text("800 × 480", exact=True).is_visible()
+            and 1.63 <= display_ratio <= 1.70
+            and demo_display.locator(".fake-qr").count() == 0
+        )
         report["flow"]["platform_links_use_input_rows"] = (
             page.locator(".platform-connect-list .platform-connect-row").count() == 7
             and page.locator(".platform-connect-list input").count() == 7
@@ -997,6 +1007,7 @@ def main():
         )
         page.locator(".screen").evaluate("screen => { screen.scrollTop = 0; }")
         assert report["flow"]["profile_has_settings_button"]
+        assert report["flow"]["demo_display_matches_esp32_8048s043"], display_ratio
         assert report["flow"]["platform_links_use_input_rows"]
         assert report["flow"]["platform_links_use_minimal_lines"], platform_style
         assert report["flow"]["device_privacy_moved_off_profile"]
