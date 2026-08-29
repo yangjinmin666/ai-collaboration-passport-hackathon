@@ -1697,14 +1697,11 @@ function renderVariantC() {
     <div class="view view-c">
       ${commonHeader("发现", "filters")}
       ${renderDiscoveryTabs()}
-      <section class="directory-copy"><span class="status-pill status-open"><i></i>展会专属</span><h3>展会名册</h3><p>仅展示已授权加入本场展会的参与者；这一入口只在主办方开启名册时出现。</p></section>
-      <section class="ledger-status">
-        <div><span>可见成员</span><strong>${String(directoryPeople.length).padStart(2, "0")} 人</strong></div>
-        <div><span>当前筛选</span><strong>${activeDiscoveryFilterCount() ? `${activeDiscoveryFilterCount()} 项条件` : "全部角色"}</strong></div>
-        <div><span>排序方式</span><strong>项目缺口</strong></div>
+      <section class="directory-summary">
+        <div><h3>展会名册</h3><span>${directoryPeople.length} 人</span></div>
+        <p>仅展示已授权加入本场展会的成员</p>
       </section>
-      <div class="ledger-rule"><span>按当前缺口优先</span><b>EVENT DIRECTORY</b></div>
-      <section class="ledger-list">
+      <section class="ledger-list" aria-label="按项目缺口优先排序的展会成员">
         ${directoryPeople.map((person) => `
           <button class="ledger-person" data-person="${person.id}">
             ${glyph(person, "xs")}

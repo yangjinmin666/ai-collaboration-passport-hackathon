@@ -435,11 +435,27 @@ def main():
                 report["variants"][variant]["ledger_people_count"] = page.locator(".ledger-person").count()
                 report["variants"][variant]["directory_is_exhibition_scoped"] = (
                     page.get_by_text("展会名册", exact=True).is_visible()
-                    and page.get_by_text("展会专属", exact=True).is_visible()
+                    and page.get_by_text("仅展示已授权加入本场展会的成员", exact=True).is_visible()
+                )
+                directory_geometry = page.locator(".directory-summary").evaluate(
+                    """summary => {
+                        const summaryBox = summary.getBoundingClientRect();
+                        const firstPersonBox = document.querySelector('.ledger-person').getBoundingClientRect();
+                        return {
+                            height: summaryBox.height,
+                            firstPersonOffset: firstPersonBox.top - summaryBox.top,
+                        };
+                    }"""
+                )
+                report["variants"][variant]["directory_header_is_compact"] = (
+                    page.locator(".ledger-status, .ledger-rule").count() == 0
+                    and directory_geometry["height"] <= 80
+                    and directory_geometry["firstPersonOffset"] <= 100
                 )
 
                 assert report["variants"][variant]["ledger_people_count"] == 11
                 assert report["variants"][variant]["directory_is_exhibition_scoped"]
+                assert report["variants"][variant]["directory_header_is_compact"], directory_geometry
             if variant == "B":
                 center_avatar_geometry = page.locator(".radar-self").evaluate(
                     """button => {

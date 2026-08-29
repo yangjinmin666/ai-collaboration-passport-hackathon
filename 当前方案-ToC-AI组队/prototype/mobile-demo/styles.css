@@ -467,18 +467,15 @@ body[data-tab="discover"][data-variant="B"] .screen,
 
 .view-c { min-height: 100%; color: #17212d; background: #fff; }
 body[data-flow="onboarding"] .onboarding-shell { background: #fff; background-image: none; }
-.directory-copy { padding: 3px 0 14px; }
-.directory-copy h3 { margin: 9px 0 5px; font-size: 20px; letter-spacing: -.035em; }
-.directory-copy p { margin: 0; color: #6c7886; font-size: 9px; line-height: 1.5; }
+.directory-summary { display: grid; gap: 5px; padding: 5px 0 17px; }
+.directory-summary > div { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.directory-summary h3 { margin: 0; font-size: 22px; line-height: 1.2; letter-spacing: -.035em; }
+.directory-summary span { flex: 0 0 auto; color: #74808d; font-size: 11px; font-weight: 750; }
+.directory-summary p { margin: 0; color: #74808d; font-size: 10px; line-height: 1.5; }
 .ledger-header { display: flex; justify-content: space-between; align-items: end; padding-bottom: 16px; border-bottom: 3px solid #17212d; }
 .ledger-header p { margin: 0 0 4px; font-family: monospace; font-size: 7px; letter-spacing: .14em; }
 .ledger-id { padding: 8px; border: 1px solid #c5cfdb; border-radius: 9px; background: #fff; color: var(--guide-blue-deep); font-family: monospace; font-size: 9px; box-shadow: 0 4px 12px rgba(31,50,76,.06); }
-.ledger-status { display: grid; grid-template-columns: repeat(3, 1fr); border-bottom: 1px solid #d6dee8; }
-.ledger-status div { padding: 12px 6px 12px 0; border-right: 1px solid #d6dee8; }
-.ledger-status div:last-child { padding-left: 6px; border-right: 0; }
-.ledger-status span, .ledger-status strong { display: block; }.ledger-status span { font-size: 7px; }.ledger-status strong { margin-top: 4px; font-size: 10px; }
-.ledger-rule { display: flex; justify-content: space-between; padding: 14px 0 8px; font-size: 8px; }.ledger-rule b { color: var(--guide-blue-deep); font-family: monospace; }
-.ledger-list { border-top: 1px solid #253140; }
+.ledger-list { border-top: 1px solid #e1e6ec; }
 .ledger-person { width: 100%; display: grid; grid-template-columns: 34px minmax(0,1fr) 70px; align-items: center; gap: 10px; padding: 15px 0; border: 0; border-bottom: 1px solid #d4dde7; background: transparent; text-align: left; cursor: pointer; }
 .ledger-main { min-width: 0; display: grid; gap: 4px; font-size: 8px; }
 .ledger-name { font-size: 16px; font-weight: 800; }.ledger-name em { margin-left: 7px; padding: 2px 4px; border: 1px solid #c5cfdb; border-radius: 4px; background: #fff; color: #596778; font-size: 7px; font-style: normal; font-weight: 500; }
@@ -1214,16 +1211,16 @@ body[data-source="android-app"] .toast { top: max(44px, calc(var(--rally-safe-ar
   /* Nearby, directory and connections. */
   .mobile-discovery-note span { font-size: var(--type-label); }
   .mobile-discovery-note small { font-size: 11px; line-height: var(--leading-body); }
-  .radar-copy h3, .directory-copy h3 { font-size: 22px; line-height: var(--leading-title); }
-  .radar-copy > p, .directory-copy p, .ticket-reason { font-size: var(--type-body); line-height: var(--leading-body); }
+  .radar-copy h3, .directory-summary h3 { font-size: 22px; line-height: var(--leading-title); }
+  .radar-copy > p, .ticket-reason { font-size: var(--type-body); line-height: var(--leading-body); }
+  .directory-summary span { font-size: var(--type-label); }
+  .directory-summary p { font-size: 13px; line-height: var(--leading-body); }
   .radar-person { font-size: var(--type-micro); }
   .ticket-head p { font-size: var(--type-card-title); }
   .ticket-head span { font-size: var(--type-label); }
   .ledger-header p { font-size: var(--type-micro); }
   .ledger-id { min-height: var(--touch-target); font-size: var(--type-label); }
-  .ledger-status span { font-size: var(--type-micro); }
-  .ledger-status strong { font-size: var(--type-body); }
-  .ledger-rule, .ledger-main { font-size: var(--type-label); }
+  .ledger-main { font-size: var(--type-label); }
   .ledger-name { font-size: var(--type-section-title); }
   .ledger-name em, .ledger-fit, .ledger-fit small { font-size: var(--type-micro); }
   .ledger-scan { min-height: var(--touch-target); font-size: var(--type-body); }
