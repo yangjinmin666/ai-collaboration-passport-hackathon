@@ -246,7 +246,7 @@ const participantProfiles = {
   su: {
     bio: "我是交互设计师，关心复杂技术如何在三十秒内被人看懂。习惯边画、边问、边改，也可以帮团队整理路演叙事。",
     location: "杭州",
-    availability: "本次活动可投入 8 小时",
+    availability: "本场展会可投入 8 小时",
     collaboration: "偏好用可点击原型尽早验证，不在第一版追求视觉细节。",
     projects: [
       { title: "无障碍导览地图", detail: "负责现场调研、交互原型与 Demo Day 表达。", tags: ["用户研究", "路演"] },
@@ -381,6 +381,14 @@ const liveConfig = {
   demoUserId: initialParams.get("demoUser") || "user-zhou",
   accessToken: storedAccessToken,
 };
+const exhibitionCatalog = Object.freeze({
+  "hackathon-2026": Object.freeze({
+    id: "hackathon-2026",
+    name: "AI Hardware Hackathon 2026",
+    directoryEnabled: true,
+  }),
+});
+const currentExhibition = exhibitionCatalog[liveConfig.eventId] || null;
 const platformCatalog = {
   xiaohongshu: { label: "小红书", hint: "粘贴小红书主页链接", mark: "小红书", tone: "red" },
   jike: { label: "即刻", hint: "粘贴即刻主页链接", mark: "J", tone: "jike" },
@@ -442,15 +450,38 @@ const app = document.querySelector("#app");
 
 function readVariant() {
   const key = new URLSearchParams(location.search).get("variant")?.toUpperCase();
-  return ["A", "B", "C"].includes(key) ? key : "A";
+  return availableDiscoveryVariants().includes(key) ? key : "A";
 }
 
 function setVariant(key) {
+  if (!availableDiscoveryVariants().includes(key)) return;
   state.variant = key;
   const url = new URL(location.href);
   url.searchParams.set("variant", key);
   history.replaceState({}, "", url);
   render();
+}
+
+function hasExhibitionDirectory() {
+  return Boolean(currentExhibition?.directoryEnabled);
+}
+
+function availableDiscoveryVariants() {
+  return hasExhibitionDirectory() ? ["A", "B", "C"] : ["A", "B"];
+}
+
+function visibilityScopeLabel() {
+  return currentExhibition ? "展会内可见" : "附近可见";
+}
+
+function visibilityScopeDescription() {
+  return currentExhibition
+    ? "只展示你主动选择的公开字段，展会结束后自动隐藏。"
+    : "只在你主动开启附近发现时展示公开字段，关闭后立即隐藏。";
+}
+
+function visibilityRestoredMessage() {
+  return currentExhibition ? "已恢复展会内可见" : "已恢复附近可见";
 }
 
 function selectedPerson() {
@@ -462,7 +493,7 @@ function selectedPerson() {
 function selectedParticipantProfile(person = selectedPerson()) {
   return participantProfiles[person.id] || {
     bio: "这位参与者还没有填写公开的个人简介。",
-    location: "本场活动",
+    location: "本场展会",
     availability: "投入时间待确认",
     collaboration: "协作偏好待确认",
     projects: [],
@@ -569,8 +600,8 @@ function livePerson(person) {
     .slice(0, 64) || "nearby-user";
   const preset = people.find((item) => item.id === localId);
   const displayName = safeLiveText(person.display_name, "现场协作者", 40);
-  const role = safeLiveText(person.role, "已授权活动成员", 80);
-  const status = safeLiveText(person.status, "活动中", 40);
+  const role = safeLiveText(person.role, "已授权展会成员", 80);
+  const status = safeLiveText(person.status, "展会中", 40);
   const avatar = typeof person.avatar === "string" && /^memoji-\d+$/.test(person.avatar)
     ? person.avatar
     : undefined;
@@ -596,10 +627,10 @@ function livePerson(person) {
     status,
     skills,
     availability: safeLiveText(person.availability, "", 120),
-    proximity: safeLiveText(person.distance?.label, "活动现场", 40),
-    evidence: evidenceItems[0] || "活动内授权公开资料",
+    proximity: safeLiveText(person.distance?.label, "展会现场", 40),
+    evidence: evidenceItems[0] || "展会内授权公开资料",
     hasPublicEvidence: evidenceItems.length > 0 || platformLinks.length > 0,
-    reason: "对方正在同一活动现场，可以直接当面确认协作意图。",
+    reason: "对方正在同一展会现场，可以直接当面确认协作意图。",
     caution: "具体投入时间和分工仍需当面确认",
     fit: "同场协作",
     fitDetail: "真实定位",
@@ -698,7 +729,7 @@ function renderOnboardingStatus() {
     <section class="status-choice-list">
       ${choices.map(([id, title, desc], index) => `<button class="status-choice ${state.collaborationStatus === id ? "selected" : ""}" data-action="choose-status" data-status="${id}"><span>0${index + 1}</span><div><strong>${title}</strong><small>${desc}</small></div><i>${state.collaborationStatus === id ? "●" : "○"}</i></button>`).join("")}
     </section>
-    <div class="visibility-receipt"><span>公开范围</span><strong>仅本场活动</strong><em>活动结束自动隐藏</em></div>
+    <div class="visibility-receipt"><span>公开范围</span><strong>${currentExhibition ? "仅本场展会" : "仅附近发现"}</strong><em>${currentExhibition ? "展会结束自动隐藏" : "关闭发现后立即隐藏"}</em></div>
     ${renderOnboardingFooter("下一步 · 组装能力证据")}
   </div>`;
 }
@@ -778,12 +809,15 @@ function renderCurrentView() {
   if (state.tab === "collaboration") return renderCollaboration();
   if (state.tab === "profile") return renderProfile();
   if (state.variant === "B") return renderVariantB();
-  if (state.variant === "C") return renderVariantC();
+  if (state.variant === "C" && hasExhibitionDirectory()) return renderVariantC();
   return renderVariantA();
 }
 
 function commonHeader(title = "发现", utility = null) {
   const filterCount = activeDiscoveryFilterCount();
+  const exhibitionContext = currentExhibition
+    ? `<span class="event-context" title="当前展会：${currentExhibition.name}"><i></i>${currentExhibition.name}</span>`
+    : "";
   const utilityButton = utility === "filters"
     ? `<button class="discovery-filter-trigger ${filterCount ? "is-filtered" : ""}" data-action="open-discovery-filters" aria-label="设置筛选偏好${filterCount ? `，已启用 ${filterCount} 项` : ""}">
         <span aria-hidden="true"><i></i><i></i><i></i></span>${filterCount ? `<b>${filterCount}</b>` : ""}
@@ -796,14 +830,16 @@ function commonHeader(title = "发现", utility = null) {
   return `
     <header class="app-header">
       <div class="app-header-start">${utilityButton}<div class="app-brand"><strong>RALLY</strong><span>集结 · ${title}</span></div></div>
-      <span class="event-context"><i></i>当前活动 · 2026</span>
+      ${exhibitionContext}
     </header>
   `;
 }
 
 function renderDiscoveryTabs() {
+  const tabs = [["A", "推荐"], ["B", "附近"]];
+  if (hasExhibitionDirectory()) tabs.push(["C", "名册"]);
   return `<nav class="discovery-tabs" aria-label="发现浏览方式">
-    ${[["A", "推荐"], ["B", "附近"], ["C", "名册"]].map(([key, label]) => `
+    ${tabs.map(([key, label]) => `
       <button class="${state.variant === key ? "active" : ""}" data-discovery-view="${key}" aria-pressed="${state.variant === key}">${label}</button>
     `).join("")}
   </nav>`;
@@ -955,19 +991,20 @@ function renderVariantB() {
           <button class="secondary-button" data-action="next-person">换一个</button>
           <button class="primary-button" data-action="open-person" data-person="${person.id}">查看为什么</button>
         </div>
-      </section>` : `<section class="radar-ticket"><p class="ticket-reason">${activeDiscoveryFilterCount() ? "附近暂时没有同时满足当前筛选条件的人，RALLY 没有自动放宽条件。" : "暂未发现仍在活动内公开位置的协作者。定位只在本页前台开启，并会在离开后立即停止。"}</p>${activeDiscoveryFilterCount() ? `<button class="secondary-button full" data-action="open-discovery-filters">调整筛选</button>` : ""}</section>`}
+      </section>` : `<section class="radar-ticket"><p class="ticket-reason">${activeDiscoveryFilterCount() ? "附近暂时没有同时满足当前筛选条件的人，RALLY 没有自动放宽条件。" : "暂未发现仍在展会内公开位置的协作者。定位只在本页前台开启，并会在离开后立即停止。"}</p>${activeDiscoveryFilterCount() ? `<button class="secondary-button full" data-action="open-discovery-filters">调整筛选</button>` : ""}</section>`}
     </div>
   `;
 }
 
 function renderVariantC() {
+  if (!hasExhibitionDirectory()) return renderVariantA();
   const directoryPeople = filterDiscoveryPeople(people);
   if (!directoryPeople.length) return renderDiscoveryEmpty("名册");
   return `
     <div class="view view-c">
       ${commonHeader("发现", "filters")}
       ${renderDiscoveryTabs()}
-      <section class="directory-copy"><span class="status-pill status-open"><i></i>本场活动</span><h3>活动名册</h3><p>查看明确授权参加当前活动的成员，名册仍属于你手机上的发现页。</p></section>
+      <section class="directory-copy"><span class="status-pill status-open"><i></i>展会专属</span><h3>展会名册</h3><p>仅展示已授权加入本场展会的参与者；这一入口只在主办方开启名册时出现。</p></section>
       <section class="ledger-status">
         <div><span>可见成员</span><strong>${String(directoryPeople.length).padStart(2, "0")} 人</strong></div>
         <div><span>当前筛选</span><strong>${activeDiscoveryFilterCount() ? `${activeDiscoveryFilterCount()} 项条件` : "全部角色"}</strong></div>
@@ -987,7 +1024,7 @@ function renderVariantC() {
           </button>
         `).join("")}
       </section>
-      <button class="ledger-scan" data-action="refresh"><span>↻</span>刷新活动名册</button>
+      <button class="ledger-scan" data-action="refresh"><span>↻</span>刷新展会名册</button>
     </div>
   `;
 }
@@ -1030,7 +1067,7 @@ function renderConnections() {
         ${visibleConnectedPeople.map((person) => `
           <article class="connection-card">
             <div class="connection-card-head">${glyph(person, "md")}<div><h4>${person.name}</h4><p>${person.role}</p></div><span class="source-chip">碰卡建联</span></div>
-            <div class="connection-context"><span>认识于</span><strong>AI Hardware Hackathon</strong><small>刚刚 · ${person.pairLabel}</small></div>
+            <div class="connection-context"><span>认识于</span><strong>${currentExhibition?.name || "线下协作现场"}</strong><small>刚刚 · ${person.pairLabel}</small></div>
             ${connectedAction(person)}
           </article>
         `).join("")}
@@ -1185,7 +1222,7 @@ function renderWorkspaceOverview(joinedPeople, tasks, latestMember) {
         </section>
       `}
 
-      ${state.workspaceSos ? `<article class="workspace-sos-live"><span>SOS 已发布</span><strong>需要一位熟悉端侧数据同步的开发者</strong><small>已向当前活动中明确开放协作的成员展示</small></article>` : ""}
+      ${state.workspaceSos ? `<article class="workspace-sos-live"><span>SOS 已发布</span><strong>需要一位熟悉端侧数据同步的开发者</strong><small>已向当前展会中明确开放协作的成员展示</small></article>` : ""}
 
       <section class="workspace-activity-preview">
         <header><div><p class="micro-label">RECENT ACTIVITY</p><h3>最近动态</h3></div><button data-action="workspace-section" data-section="records">查看全部</button></header>
@@ -1284,7 +1321,7 @@ function renderProfile() {
         <div><h3>${currentUser.name}</h3><p>${currentUser.role}</p><span class="passport-id">PASSPORT P·0087</span></div>
       </section>
       <section class="visibility-panel">
-        <div><p class="micro-label">DISCOVERABILITY</p><h3>${state.visible ? "活动内可见" : "已暂停展示"}</h3><p>只展示你主动选择的公开字段，活动结束后自动隐藏。</p></div>
+        <div><p class="micro-label">DISCOVERABILITY</p><h3>${state.visible ? visibilityScopeLabel() : "已暂停展示"}</h3><p>${visibilityScopeDescription()}</p></div>
         <button class="toggle ${state.visible ? "on" : ""}" data-action="toggle-visible" aria-pressed="${state.visible}"><i></i></button>
       </section>
       <section class="device-preview">
@@ -1389,7 +1426,7 @@ function renderProfileSettingsSheet() {
   const settings = [
     ["device", "设备与隐私", "1 台 AI Passport 已连接", "⌁"],
     ["authorization", "数据与授权", "管理公开字段和平台链接权限", "◎"],
-    ["activity", "活动与账号", "当前活动 · Hackathon 2026", "R"],
+    ["activity", "展会与账号", currentExhibition?.name || "当前未加入展会", "R"],
   ];
   return `<div class="overlay profile-settings-overlay">
     <button class="overlay-backdrop" data-action="close-profile-settings" aria-label="关闭设置"></button>
@@ -1398,13 +1435,13 @@ function renderProfileSettingsSheet() {
         <button data-action="close-profile-settings" aria-label="返回我的页面">←</button>
         <div><p class="micro-label">RALLY SETTINGS</p><h3>设置</h3></div>
       </header>
-      <p class="profile-settings-copy">管理设备、隐私和活动账号。这些次级选项不会打断你的协作身份编辑。</p>
+      <p class="profile-settings-copy">管理设备、隐私和展会账号。这些次级选项不会打断你的协作身份编辑。</p>
       <div class="profile-settings-list">${settings.map(([id, label, detail, mark]) => `<button data-action="profile-setting-detail" data-setting="${id}" data-label="${label}">
         <span class="settings-row-mark" aria-hidden="true">${mark}</span>
         <span><strong>${label}</strong><small>${detail}</small></span>
         <b>›</b>
       </button>`).join("")}</div>
-      <aside class="settings-privacy-note"><b>默认最小公开</b><span>RALLY 只展示你在当前活动主动授权的字段，活动结束后自动隐藏。</span></aside>
+      <aside class="settings-privacy-note"><b>默认最小公开</b><span>${currentExhibition ? "RALLY 只展示你在本场展会主动授权的字段，展会结束后自动隐藏。" : "RALLY 只在你主动开启附近发现时展示授权字段，关闭后立即隐藏。"}</span></aside>
     </section>
   </div>`;
 }
@@ -1570,7 +1607,7 @@ function stageLabel() {
 
 function variantDescription() {
   if (state.variant === "B") return "手机端发现的附近模式：只在前台开启时更新，再进入统一人物详情。";
-  if (state.variant === "C") return "手机端发现的名册模式：浏览本场活动中已授权可见的完整成员。";
+  if (state.variant === "C") return "特殊展会开启的名册模式：浏览本场展会中已授权可见的完整成员。";
   return "手机端发现的推荐模式：围绕当前项目缺口解释谁值得先聊。";
 }
 
@@ -2003,7 +2040,7 @@ function handleAction(action, element) {
   if (action === "trigger-project-sos") {
     state.workspaceSos = true;
     state.workspaceSection = "overview";
-    showToast("项目 SOS 已发布到当前活动协作区");
+    showToast("项目 SOS 已发布到当前展会协作区");
   }
   if (action === "reassign-task") {
     state.assignmentOverrides[element.dataset.taskId] = currentUser.name;
@@ -2029,7 +2066,7 @@ function handleAction(action, element) {
       return;
     }
     state.visible = !state.visible;
-    showToast(state.visible ? "已恢复活动内可见" : "已暂停附近展示");
+    showToast(state.visible ? visibilityRestoredMessage() : "已暂停附近展示");
   }
   if (action === "sync-card") showToast("原型：公开字段编辑器将在下一轮接入");
   if (action === "bind-platform") connectPlatform(element.dataset.platform);
@@ -2042,9 +2079,9 @@ function finishOnboarding(published) {
   state.onboardingStep = 0;
   state.visible = published;
   state.tab = published ? "discover" : state.tab;
-  state.variant = "C";
+  state.variant = hasExhibitionDirectory() ? "C" : "A";
   const url = new URL(location.href);
-  url.searchParams.set("variant", "C");
+  url.searchParams.set("variant", state.variant);
   url.searchParams.delete("onboarding");
   history.replaceState({}, "", url);
 }
@@ -2114,7 +2151,7 @@ async function updateLiveVisibility(nextVisible) {
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error?.message || "公开状态更新失败");
     state.visible = payload.visibility?.state === "VISIBLE";
-    showToast(state.visible ? "已恢复活动内可见" : "已暂停附近展示");
+    showToast(state.visible ? visibilityRestoredMessage() : "已暂停附近展示");
   } catch (error) {
     showToast(error.message);
   }

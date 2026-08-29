@@ -218,7 +218,7 @@ def main():
             assert nearby["nearby"] == []
 
             page.locator('[data-action="toggle-visible"]').click()
-            page.get_by_text("已恢复活动内可见", exact=True).wait_for(timeout=4000)
+            page.get_by_text("已恢复展会内可见", exact=True).wait_for(timeout=4000)
             page.locator('.app-nav [data-tab="discover"]').click()
             page.get_by_text("● 真实定位已连接", exact=True).wait_for(timeout=8000)
 

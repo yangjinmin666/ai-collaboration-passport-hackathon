@@ -155,12 +155,15 @@ def main():
                 "variant": page.locator("body").get_attribute("data-variant"),
                 "nav_buttons": page.locator(".app-nav button").count(),
                 "discovery_tabs": page.locator(".discovery-tabs button").count(),
+                "exhibition_context": page.locator(".event-context").inner_text(),
                 "prototype_switcher_removed": page.locator(".prototype-switcher").count() == 0,
                 "body_scroll_width": page.evaluate("document.body.scrollWidth"),
                 "viewport_width": page.evaluate("window.innerWidth"),
             }
             assert report["variants"][variant]["nav_buttons"] == 4
             assert report["variants"][variant]["discovery_tabs"] == 3
+            assert report["variants"][variant]["exhibition_context"] == "AI Hardware Hackathon 2026"
+            assert page.get_by_text("当前活动 · 2026", exact=True).count() == 0
             assert report["variants"][variant]["prototype_switcher_removed"]
             assert report["variants"][variant]["body_scroll_width"] <= report["variants"][variant]["viewport_width"]
             assert_mobile_visual_baseline(page, report["visual_baseline"], f"variant_{variant}")
@@ -186,7 +189,12 @@ def main():
                 assert report["variants"][variant]["radar_avatars_have_subjects"], avatar_subject_ratios
             if variant == "C":
                 report["variants"][variant]["ledger_people_count"] = page.locator(".ledger-person").count()
+                report["variants"][variant]["directory_is_exhibition_scoped"] = (
+                    page.get_by_text("展会名册", exact=True).is_visible()
+                    and page.get_by_text("展会专属", exact=True).is_visible()
+                )
                 assert report["variants"][variant]["ledger_people_count"] == 11
+                assert report["variants"][variant]["directory_is_exhibition_scoped"]
             if variant == "B":
                 center_avatar_geometry = page.locator(".radar-self").evaluate(
                     """button => {
@@ -256,6 +264,22 @@ def main():
                     for horizontal, vertical in avatar_offsets.values()
                 )
                 assert report["variants"][variant]["avatar_subjects_are_centered"], avatar_offsets
+
+        page.goto(f"{BASE_URL}/?variant=C&event=community-meetup")
+        page.wait_for_load_state("networkidle")
+        report["flow"]["directory_only_exists_for_enabled_exhibitions"] = (
+            page.locator("body").get_attribute("data-variant") == "A"
+            and page.locator("[data-discovery-view='C']").count() == 0
+            and page.locator(".ledger-list").count() == 0
+            and page.locator(".event-context").count() == 0
+        )
+        assert report["flow"]["directory_only_exists_for_enabled_exhibitions"]
+        page.locator(".app-nav [data-tab='profile']").click()
+        report["flow"]["non_exhibition_visibility_is_not_event_scoped"] = (
+            page.get_by_text("附近可见", exact=True).is_visible()
+            and page.get_by_text("展会内可见", exact=True).count() == 0
+        )
+        assert report["flow"]["non_exhibition_visibility_is_not_event_scoped"]
 
         page.goto(f"{BASE_URL}/?variant=A&build=hard-filters")
         page.wait_for_load_state("networkidle")
