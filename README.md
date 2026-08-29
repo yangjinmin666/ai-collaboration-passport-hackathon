@@ -1,7 +1,7 @@
-# COSPAN｜共域
+# COSPAN｜合拍
 
-> **人与人先相遇，人与 Agent 再共创。**<br>
-> **Meet as people. Build with agents.**
+> **找到合拍的人，一起把事做成。**<br>
+> **Meet the right people. Build together.**
 
 面向黑客松和高密度共创现场的 To C 实时组队与人机协作产品。
 

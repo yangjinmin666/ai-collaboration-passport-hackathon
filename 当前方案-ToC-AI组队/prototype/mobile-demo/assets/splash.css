@@ -106,6 +106,8 @@
 }
 
 .rally-splash-slogan strong {
+  display: grid;
+  gap: 1px;
   font-size: clamp(23px, 6.2vw, 27px);
   line-height: 1.25;
   letter-spacing: -.035em;
@@ -114,6 +116,8 @@
 }
 
 .rally-splash-slogan small {
+  display: grid;
+  gap: 1px;
   color: #6f7b89;
   font-family: "SFMono-Regular", Consolas, monospace;
   font-size: clamp(10px, 2.8vw, 12px);

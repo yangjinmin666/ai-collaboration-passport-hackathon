@@ -1,4 +1,4 @@
-# COSPAN｜共域 手机端交互 Demo（Prototype）
+# COSPAN｜合拍 手机端交互 Demo（Prototype）
 
 > PROTOTYPE — 这是用于确认产品流程和视觉方向的抛弃式原型，不是生产代码。
 
