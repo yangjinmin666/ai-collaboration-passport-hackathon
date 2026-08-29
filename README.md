@@ -38,5 +38,5 @@ cd 当前方案-ToC-AI组队/prototype/mobile-demo
 
 ## 开源许可
 
-本项目的原创代码和文档采用 [MIT License](./LICENSE)。原型头像素材不在 MIT 授权范围内，
+本项目的原创代码和文档采用 [Apache License 2.0](./LICENSE)。原型头像素材不在 Apache License 2.0 授权范围内，
 详见 [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md)。
