@@ -527,11 +527,47 @@ def main():
                 assert report["variants"][variant]["avatar_subjects_are_centered"], avatar_offsets
 
         page.goto(f"{BASE_URL}/?variant=A")
+        discovery_header = page.locator(".app-header")
+        report["flow"]["brand_lockup_only_appears_on_discovery"] = (
+            discovery_header.locator(".app-brand").count() == 1
+            and discovery_header.get_by_text("COSPAN", exact=True).is_visible()
+        )
+        assert report["flow"]["brand_lockup_only_appears_on_discovery"]
+        for tab, title in (
+            ("connections", "连接"),
+            ("collaboration", "协作"),
+            ("profile", "我的"),
+        ):
+            page.locator(f'.app-nav [data-tab="{tab}"]').click()
+            section_header = page.locator(".app-header")
+            assert section_header.locator(".app-brand").count() == 0
+            assert section_header.locator(".app-section-title").get_by_text(
+                title, exact=True
+            ).is_visible()
+            assert section_header.get_by_text("COSPAN", exact=True).count() == 0
+        page.locator('.app-nav [data-tab="discover"]').click()
         page.get_by_role(
             "button", name="切换发现范围，当前为 AI Hardware Hackathon 2026"
         ).click()
-        assert page.get_by_role("heading", name="选择你现在所在的范围").is_visible()
-        assert page.get_by_text("不会退出成员关系", exact=True).is_visible()
+        assert page.get_by_role("heading", name="你想在哪里发现人？").is_visible()
+        assert page.get_by_text(
+            "切换只影响发现结果，不会退出活动或删除关系。", exact=True
+        ).is_visible()
+        context_switcher_geometry = page.locator(".context-switcher-sheet").evaluate(
+            """sheet => ({
+                height: sheet.getBoundingClientRect().height,
+                optionHeights: [...sheet.querySelectorAll('.context-option')]
+                    .map(option => option.getBoundingClientRect().height),
+                hasHorizontalOverflow: sheet.scrollWidth > sheet.clientWidth,
+            })"""
+        )
+        report["flow"]["context_switcher_is_compact"] = (
+            context_switcher_geometry["height"] <= 520
+            and max(context_switcher_geometry["optionHeights"]) <= 76
+            and not context_switcher_geometry["hasHorizontalOverflow"]
+            and page.locator(".context-boundary-note").count() == 0
+        )
+        assert report["flow"]["context_switcher_is_compact"], context_switcher_geometry
         assert_mobile_visual_baseline(page, report["visual_baseline"], "context_switcher")
         page.locator('[data-context-scope="nearby"]').click()
         assert page.locator('body[data-scope="nearby"]').count() == 1
@@ -1360,6 +1396,26 @@ def main():
         assert report["flow"]["desktop_workspace_hands_off_to_tools"]
         workspace_desktop.screenshot(path=str(OUTPUT_DIR / "workspace-desktop.png"), full_page=True)
         workspace_desktop.close()
+
+        compact_desktop = browser.new_page(viewport={"width": 877, "height": 783})
+        compact_desktop.goto(f"{BASE_URL}/?variant=A&workspace=1")
+        compact_desktop.wait_for_load_state("networkidle")
+        compact_desktop_layout = compact_desktop.evaluate(
+            """() => ({
+                desktopVisible: getComputedStyle(document.querySelector('.workspace-desktop-grid')).display === 'grid',
+                mobileVisible: getComputedStyle(document.querySelector('.workspace-mobile-content')).display !== 'none',
+                fitsWidth: document.body.scrollWidth <= window.innerWidth,
+                zones: document.querySelectorAll('.desktop-workspace-panel').length,
+            })"""
+        )
+        report["flow"]["compact_pc_uses_desktop_workspace"] = (
+            compact_desktop_layout["desktopVisible"]
+            and not compact_desktop_layout["mobileVisible"]
+            and compact_desktop_layout["fitsWidth"]
+            and compact_desktop_layout["zones"] == 3
+        )
+        assert report["flow"]["compact_pc_uses_desktop_workspace"], compact_desktop_layout
+        compact_desktop.close()
 
         page.goto(f"{BASE_URL}/?variant=A")
         page.evaluate("() => navigator.serviceWorker.ready")

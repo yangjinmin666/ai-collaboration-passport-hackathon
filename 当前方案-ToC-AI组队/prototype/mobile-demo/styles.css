@@ -111,6 +111,8 @@ body::before {
 .app-brand { display: grid; gap: 2px; }
 .app-brand strong { font-size: 21px; line-height: .9; letter-spacing: -.045em; }
 .app-brand span { color: #74818e; font-size: 8px; font-weight: 700; letter-spacing: .08em; }
+.app-section-title { min-width: 0; display: flex; align-items: center; }
+.app-section-title strong { overflow: hidden; font-size: 22px; line-height: 1; letter-spacing: -.04em; text-overflow: ellipsis; white-space: nowrap; }
 .ledger-header h2 { margin: 3px 0 0; font-size: 28px; line-height: 1; letter-spacing: -.045em; }
 .event-context { min-width: 0; display: inline-flex; align-items: center; gap: 5px; overflow: hidden; padding: 6px 9px; border: 1px solid #dce3eb; border-radius: 999px; background: #fff; color: #657383; font-size: 8px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
 .event-context i { width: 5px; height: 5px; flex: 0 0 auto; border-radius: 50%; background: var(--guide-blue); }
@@ -125,10 +127,13 @@ body::before {
 .profile-settings-trigger { width: 44px; height: 44px; flex: 0 0 auto; display: grid; place-items: center; padding: 0; border: 1px solid #d9e1ea; border-radius: 50%; background: rgba(255,255,255,.96); color: #263543; box-shadow: 0 9px 24px rgba(31,48,70,.13); cursor: pointer; transition: transform .18s ease, box-shadow .18s ease; }
 .profile-settings-trigger:hover { transform: translateY(-2px) rotate(8deg); box-shadow: 0 12px 28px rgba(31,48,70,.17); }
 .profile-settings-trigger svg { width: 21px; height: 21px; fill: currentColor; }
-.context-switch-trigger { position: relative; width: var(--touch-target); height: var(--touch-target); flex: 0 0 auto; display: grid; place-items: center; padding: 0; border: 1px solid #d8dfe7; border-radius: 50%; background: rgba(255,255,255,.97); color: #263543; box-shadow: 0 9px 24px rgba(31,48,70,.12); cursor: pointer; transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease; }
-.context-switch-trigger:hover { transform: translateY(-2px); border-color: #c5d0dc; box-shadow: 0 12px 28px rgba(31,48,70,.16); }
+.context-switch-trigger { position: relative; width: min(142px, 38vw); min-width: var(--touch-target); height: var(--touch-target); flex: 0 1 auto; display: grid; grid-template-columns: 24px minmax(0,1fr); align-items: center; gap: 7px; padding: 5px 9px; border: 1px solid #d8dfe7; border-radius: 16px; background: rgba(255,255,255,.97); color: #263543; cursor: pointer; transition: transform .18s ease, border-color .18s ease, background .18s ease; }
+.context-switch-trigger:hover { transform: translateY(-1px); border-color: #c5d0dc; background: #f8fafc; }
 .context-switch-trigger:active { transform: scale(.96); }
 .context-switch-glyph { position: relative; width: 22px; height: 22px; display: block; }
+.context-switch-copy { min-width: 0; display: grid; gap: 1px; text-align: left; }
+.context-switch-copy small { color: #7b8793; font-size: 10px; line-height: 1.2; }
+.context-switch-copy strong { overflow: hidden; font-size: 10px; line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; }
 .context-switch-trigger.is-event .context-switch-glyph::before { content: ""; position: absolute; inset: 3px; border: 1.6px solid currentColor; border-radius: 5px; }
 .context-switch-trigger.is-event .context-switch-glyph i { position: absolute; left: 7px; top: 7px; width: 8px; height: 2px; border-radius: 2px; background: currentColor; box-shadow: 0 4px 0 #a8b2bd; }
 .context-switch-trigger.is-event .context-switch-glyph b { position: absolute; right: 0; top: 0; width: 7px; height: 7px; border: 2px solid #fff; border-radius: 50%; background: var(--guide-blue); box-sizing: content-box; }
@@ -784,37 +789,39 @@ body[data-source="android-app"] .direct-conversation-head { padding-top: max(44p
 .person-sheet-nav small { color: var(--muted); font-size: 10px; }
 .discovery-filter-overlay { background: rgba(20, 28, 38, .3); backdrop-filter: blur(10px); }
 .context-switcher-overlay { background: rgba(20,28,38,.3); backdrop-filter: blur(10px); }
-.context-switcher-sheet { width: min(430px,100%); max-height: min(88dvh,760px); padding: 0 18px calc(22px + env(safe-area-inset-bottom)); background: #f7f8fa; }
-.context-switcher-head { position: sticky; z-index: 3; top: 0; display: grid; grid-template-columns: 44px minmax(0,1fr); align-items: center; gap: 11px; margin: 0 -18px; padding: 13px 18px 11px; border-bottom: 1px solid rgba(214,221,231,.88); background: rgba(247,248,250,.95); backdrop-filter: blur(16px); }
-.context-switcher-head > button { width: 44px; height: 44px; display: grid; place-items: center; padding: 0; border: 1px solid #dce2e9; border-radius: 50%; background: #fff; font-size: 20px; cursor: pointer; }
+.context-switcher-sheet { width: min(430px,100%); max-height: min(70dvh,560px); padding: 0 16px calc(16px + env(safe-area-inset-bottom)); background: #f7f8fa; }
+.context-switcher-head { display: grid; grid-template-columns: minmax(0,1fr) 44px; align-items: center; gap: 12px; padding: 17px 0 12px; }
+.context-switcher-head > button { width: 44px; height: 44px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 50%; background: #e9edf2; color: #31404f; font-size: 21px; cursor: pointer; }
 .context-switcher-head > div { min-width: 0; }
-.context-switcher-head h3 { margin: 3px 0 0; font-size: 23px; line-height: 1.16; letter-spacing: -.045em; }
-.context-switcher-copy { margin: 16px 2px 13px; color: #687584; font-size: 11px; line-height: 1.55; }
-.context-options { display: grid; gap: 9px; }
-.context-option { position: relative; width: 100%; min-height: 82px; display: grid; grid-template-columns: 48px minmax(0,1fr) auto; align-items: center; gap: 11px; padding: 12px 13px; border: 1px solid #dce2e9; border-radius: 21px; background: #fff; text-align: left; box-shadow: 0 8px 22px rgba(31,48,70,.045); cursor: pointer; transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease; }
-.context-option:hover { transform: translateY(-1px); border-color: #c4cfdb; box-shadow: 0 11px 24px rgba(31,48,70,.07); }
-.context-option.selected { border-color: var(--brand-border); box-shadow: inset 0 0 0 1px rgba(var(--brand-rgb),.08), 0 9px 24px rgba(31,48,70,.055); }
+.context-switcher-head .micro-label { color: #7a8794; font-size: 10px; letter-spacing: .1em; }
+.context-switcher-head h3 { margin: 2px 0 0; font-size: 20px; line-height: 1.2; letter-spacing: -.04em; }
+.context-options { display: grid; gap: 8px; padding-top: 2px; }
+.context-option { position: relative; width: 100%; min-height: 68px; display: grid; grid-template-columns: 38px minmax(0,1fr) 24px; align-items: center; gap: 10px; overflow: hidden; padding: 9px 10px; border: 1px solid #dce2e9; border-radius: 16px; background: #fff; text-align: left; cursor: pointer; transition: border-color .18s ease, background .18s ease, transform .18s ease; }
+.context-option::before { content: ""; position: absolute; inset: 10px auto 10px 0; width: 3px; border-radius: 0 3px 3px 0; background: transparent; }
+.context-option:hover { transform: translateY(-1px); border-color: #c4cfdb; }
+.context-option.selected { border-color: #b8cdf1; background: #f4f7fd; }
+.context-option.selected::before { background: var(--guide-blue); }
 .context-option:disabled { opacity: .48; cursor: not-allowed; transform: none; }
-.context-option > span:nth-child(2) { min-width: 0; display: grid; gap: 5px; }
+.context-option > span:nth-child(2) { min-width: 0; display: grid; gap: 3px; }
 .context-option strong { overflow: hidden; font-size: 13px; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
-.context-option small { color: #75818e; font-size: 10px; line-height: 1.42; }
-.context-option em { min-width: 36px; padding: 5px 7px; border-radius: 999px; background: #f0f2f5; color: #778390; font-size: 10px; font-style: normal; font-weight: 760; text-align: center; }
-.context-option.selected em { background: var(--brand-soft); color: var(--brand-deep); }
-.context-option-mark { position: relative; width: 48px; height: 48px; display: block; border: 1px solid #dde4ec; border-radius: 16px; background: #f5f7fa; color: #344454; }
-.context-option-mark.is-event i { position: absolute; inset: 12px 10px 10px; border: 1.7px solid currentColor; border-radius: 6px; }
+.context-option small { color: #75818e; font-size: 12px; line-height: 1.42; }
+.context-option em { width: 24px; height: 24px; display: grid; place-items: center; border-radius: 50%; color: #81909f; font-size: 13px; font-style: normal; font-weight: 800; }
+.context-option.selected em { background: var(--guide-blue); color: #fff; }
+.context-option-mark { position: relative; width: 38px; height: 38px; display: block; border: 1px solid #dde4ec; border-radius: 12px; background: #f5f7fa; color: #344454; }
+.context-option-mark.is-event i { position: absolute; inset: 9px 8px 8px; border: 1.5px solid currentColor; border-radius: 5px; }
 .context-option-mark.is-event i::before { content: ""; position: absolute; left: 4px; right: 4px; top: 6px; height: 2px; border-radius: 2px; background: currentColor; box-shadow: 0 6px 0 #abb5c0; }
-.context-option-mark.is-event b { position: absolute; right: 7px; top: 7px; width: 8px; height: 8px; border: 2px solid #f5f7fa; border-radius: 50%; background: var(--guide-blue); box-sizing: content-box; }
+.context-option-mark.is-event b { position: absolute; right: 5px; top: 5px; width: 7px; height: 7px; border: 2px solid #f5f7fa; border-radius: 50%; background: var(--guide-blue); box-sizing: content-box; }
 .context-option-mark.is-nearby { border-radius: 50%; }
 .context-option-mark.is-nearby::before, .context-option-mark.is-nearby::after { content: ""; position: absolute; border: 1.5px solid currentColor; border-radius: 50%; }
-.context-option-mark.is-nearby::before { inset: 8px; opacity: .35; }
-.context-option-mark.is-nearby::after { inset: 15px; opacity: .65; }
-.context-option-mark.is-nearby i { position: absolute; z-index: 1; left: 21px; top: 21px; width: 6px; height: 6px; border-radius: 50%; background: var(--guide-blue); }
-.context-option-mark.is-nearby b { position: absolute; right: 8px; top: 8px; width: 6px; height: 6px; border: 2px solid #f5f7fa; border-radius: 50%; background: #aab4bf; }
-.context-boundary-note { display: grid; gap: 4px; margin-top: 12px; padding: 13px 14px; border: 1px solid #dfe4ea; border-radius: 17px; background: #eef1f5; }
-.context-boundary-note b { color: #344251; font-size: 11px; }
-.context-boundary-note span { color: #707d8a; font-size: 10px; line-height: 1.5; }
-.context-manage-button { width: 100%; min-height: 46px; margin-top: 12px; padding: 0 14px; border: 1px solid #ccd5df; border-radius: 14px; background: #fff; color: #314253; font-size: 11px; font-weight: 760; cursor: pointer; }
-.context-manage-button:hover { border-color: var(--brand-border); color: var(--brand-deep); }
+.context-option-mark.is-nearby::before { inset: 7px; opacity: .35; }
+.context-option-mark.is-nearby::after { inset: 13px; opacity: .65; }
+.context-option-mark.is-nearby i { position: absolute; z-index: 1; left: 16px; top: 16px; width: 6px; height: 6px; border-radius: 50%; background: var(--guide-blue); }
+.context-option-mark.is-nearby b { position: absolute; right: 5px; top: 5px; width: 6px; height: 6px; border: 2px solid #f5f7fa; border-radius: 50%; background: #aab4bf; }
+.context-switcher-note { margin: 11px 2px 0; color: #6f7d8b; font-size: 12px; line-height: 1.5; }
+.context-manage-button { width: 100%; min-height: 44px; display: flex; align-items: center; justify-content: space-between; margin-top: 7px; padding: 0 2px; border: 0; background: transparent; color: #285fae; font-size: 13px; font-weight: 760; cursor: pointer; }
+.context-manage-button b { font-size: 15px; }
+.context-manage-button:hover { color: var(--brand-deep); }
+.context-switcher-head > button:focus-visible, .context-option:focus-visible, .context-manage-button:focus-visible { outline: 3px solid rgba(52,124,248,.24); outline-offset: 2px; }
 .profile-settings-overlay { background: rgba(20,28,38,.28); backdrop-filter: blur(9px); }
 .profile-block-overlay { background: rgba(20,28,38,.34); backdrop-filter: blur(11px); }
 .profile-block-library, .profile-block-editor { width: min(430px, 100%); max-height: min(92dvh, 820px); padding: 0 18px calc(22px + env(safe-area-inset-bottom)); background: #f5f7fa; }
@@ -1085,6 +1092,34 @@ body[data-source="android-app"] .toast { top: max(44px, calc(var(--rally-safe-ar
 .public-field-grid input { width: 17px; height: 17px; accent-color: var(--guide-blue); }
 .primary-button:disabled, .secondary-button:disabled, button[aria-busy="true"] { opacity: .56; cursor: progress; }
 
+/* Compact desktop: the in-app browser is a PC surface even when its panel is under 1000px. */
+@media (min-width: 851px) and (max-width: 999px) {
+  body[data-tab="collaboration"] { overflow: hidden; background: #eef1f5; }
+  body[data-tab="collaboration"]::before { opacity: .18; }
+  body[data-tab="collaboration"] .prototype-stage { min-height: 100vh; grid-template-columns: minmax(0,1fr); align-items: stretch; gap: 0; padding: 12px; }
+  body[data-tab="collaboration"] .phone-shell { width: calc(100vw - 24px); min-height: calc(100vh - 24px); height: calc(100vh - 24px); border: 1px solid #d5dce5; border-radius: 22px; background: #f8f9fb; box-shadow: 0 20px 56px rgba(31,48,70,.13); }
+  body[data-tab="collaboration"] .prototype-notes { display: none; }
+  body[data-tab="collaboration"] .screen { height: 100%; padding: 0; overflow-y: auto; }
+  body[data-tab="collaboration"] .view { min-height: 100%; padding: 18px 12px 24px 84px; }
+  body[data-tab="collaboration"] .app-nav { left: 0; right: auto; top: 0; bottom: 0; width: 64px; height: 100%; grid-template-columns: 1fr; grid-template-rows: repeat(4,68px); align-content: start; padding-top: 14px; border-width: 0 1px 0 0; border-radius: 21px 0 0 21px; box-shadow: none; }
+  body[data-tab="collaboration"] .app-nav button { min-height: 64px; align-content: center; }
+  body[data-tab="collaboration"] .app-nav button i { top: 10px; right: 10px; }
+  body[data-tab="collaboration"] .workspace-view .app-header { margin-bottom: 12px; }
+  body[data-tab="collaboration"] .workspace-project-head { padding: 13px 14px; }
+  body[data-tab="collaboration"] .workspace-project-head h3 { margin-top: 10px; font-size: 20px; }
+  body[data-tab="collaboration"] .workspace-project-meta { position: static; width: 100%; justify-content: flex-start; margin-top: 10px; padding-top: 9px; }
+  body[data-tab="collaboration"] .workspace-project-meta b { margin-left: 0; }
+  body[data-tab="collaboration"] .workspace-avatar-stack, body[data-tab="collaboration"] .workspace-launch-track { display: none; }
+  body[data-tab="collaboration"] .workspace-tabs, body[data-tab="collaboration"] .workspace-mobile-content { display: none; }
+  body[data-tab="collaboration"] .workspace-desktop-grid { display: grid; grid-template-columns: minmax(145px,.8fr) minmax(280px,1.55fr) minmax(160px,.9fr); align-items: start; gap: 8px; margin-top: 10px; }
+  body[data-tab="collaboration"] .desktop-workspace-panel { min-width: 0; padding: 10px; border: 1px solid #dce2e9; border-radius: 14px; background: #fff; }
+  body[data-tab="collaboration"] .desktop-workspace-panel > header h3 { font-size: 15px; }
+  body[data-tab="collaboration"] .desktop-agent-panel { background: #fbfcfd; }
+  body[data-tab="collaboration"] .desktop-agent-panel .agent-proposal { margin-top: 0; }
+  body[data-tab="collaboration"] .desktop-records-panel .workspace-risk { margin-bottom: 0; }
+  body[data-tab="collaboration"] .desktop-records-panel .workspace-handoff { background: #f8f9fb; }
+}
+
 @media (min-width: 1000px) {
   body[data-tab="collaboration"] { overflow: hidden; background: #eef1f5; }
   body[data-tab="collaboration"]::before { opacity: .18; }
@@ -1135,7 +1170,7 @@ body[data-source="android-app"] .toast { top: max(44px, calc(var(--rally-safe-ar
 
   /* Mobile typography foundation: real-device sizes, not scaled mockup sizes. */
   .micro-label, .eyebrow { font-size: var(--type-micro); line-height: 1.4; }
-  .app-brand strong { font-size: 22px; line-height: var(--leading-tight); }
+  .app-brand strong, .app-section-title strong { font-size: 22px; line-height: var(--leading-tight); }
   .app-brand span, .event-context { font-size: var(--type-micro); line-height: 1.4; }
   .discovery-tabs button, .workspace-tabs button, .preview-tabs button { min-height: var(--touch-target); font-size: 13px; }
   .app-nav button { min-height: 56px; }

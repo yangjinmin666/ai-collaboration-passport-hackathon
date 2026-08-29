@@ -1236,7 +1236,7 @@ function render() {
   document.body.dataset.source = initialParams.get("source") === "android-app" ? "android-app" : "web";
   const phone = `
     <main class="prototype-stage">
-      <section class="phone-shell" aria-label="COSPAN 合拍手机端原型">
+      <section class="phone-shell" aria-label="COSPAN 共域手机端原型">
         <div class="screen">
           ${showsOnboarding ? renderOnboarding() : renderCurrentView()}
         </div>
@@ -1253,6 +1253,7 @@ function render() {
 
   app.innerHTML = `${phone}${renderOverlay()}${renderToast()}`;
   bindEvents();
+  syncOverlayAccessibility();
   syncLivePresenceLifecycle();
 }
 
@@ -1418,7 +1419,7 @@ function renderLiveGate() {
       oauthButton("google", "Google 登录", "G"),
     ].filter(Boolean).join("");
     return `<div class="live-gate">
-      <div class="live-gate-brand"><strong>COSPAN</strong><span>合拍 · 人与人先相遇，人与 Agent 再共创。</span></div>
+      <div class="live-gate-brand"><strong>COSPAN</strong><span>共域 · 人与人先相遇，人与 Agent 再共创。</span></div>
       <section class="live-login-card">
         <p class="micro-label">${verifyingCode ? "VERIFY" : "WELCOME"}</p>
         <h2>${verifyingCode ? "输入验证码" : "手机号登录"}</h2>
@@ -1448,7 +1449,7 @@ function renderLiveGate() {
     </div>`;
   }
   return `<div class="live-gate">
-    <div class="live-gate-brand"><strong>COSPAN</strong><span>合拍 · 人与人先相遇，人与 Agent 再共创。</span></div>
+    <div class="live-gate-brand"><strong>COSPAN</strong><span>共域 · 人与人先相遇，人与 Agent 再共创。</span></div>
     <section class="live-login-card live-retry-card">
       <p class="micro-label">${state.live.meLoading ? "CONNECTING" : "CONNECTION ERROR"}</p>
       <h2>${state.live.meLoading ? "正在恢复现场状态" : "暂时无法连接"}</h2>
@@ -1465,6 +1466,7 @@ function commonHeader(title = "发现", utility = null) {
   const contextLabel = activeContext?.name || "日常附近";
   const contextSwitcher = `<button class="context-switch-trigger is-${activeContext ? "event" : "nearby"}" data-action="open-context-switcher" aria-label="切换发现范围，当前为 ${contextLabel}" title="当前范围：${contextLabel}">
     <span class="context-switch-glyph" aria-hidden="true"><i></i><b></b></span>
+    <span class="context-switch-copy"><small>当前范围</small><strong>${escapeHtml(contextLabel)}</strong></span>
   </button>`;
   const utilityButton = utility === "filters"
     ? `<button class="discovery-filter-trigger ${filterCount ? "is-filtered" : ""}" data-action="open-discovery-filters" aria-label="设置筛选偏好${filterCount ? `，已启用 ${filterCount} 项` : ""}">
@@ -1475,9 +1477,12 @@ function commonHeader(title = "发现", utility = null) {
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.5A3.5 3.5 0 1 0 12 15.5 3.5 3.5 0 0 0 12 8.5Zm8.1 4.7v-2.4l-2.2-.7a7 7 0 0 0-.7-1.7l1.1-2-1.7-1.7-2 1.1a7 7 0 0 0-1.7-.7L12.2 3H9.8l-.7 2.2a7 7 0 0 0-1.7.7l-2-1.1-1.7 1.7 1.1 2a7 7 0 0 0-.7 1.7l-2.2.7v2.4l2.2.7a7 7 0 0 0 .7 1.7l-1.1 2 1.7 1.7 2-1.1a7 7 0 0 0 1.7.7l.7 2.2h2.4l.7-2.2a7 7 0 0 0 1.7-.7l2 1.1 1.7-1.7-1.1-2a7 7 0 0 0 .7-1.7l2.2-.7Z"/></svg>
         </button>`
       : "";
+  const headerIdentity = title === "发现"
+    ? `<div class="app-brand"><strong>COSPAN</strong><span>共域 · 发现</span></div>`
+    : `<div class="app-section-title"><strong>${escapeHtml(title)}</strong></div>`;
   return `
     <header class="app-header">
-      <div class="app-header-start">${utilityButton}<div class="app-brand"><strong>COSPAN</strong><span>合拍 · ${title}</span></div></div>
+      <div class="app-header-start">${utilityButton}${headerIdentity}</div>
       ${contextSwitcher}
     </header>
   `;
@@ -1491,24 +1496,23 @@ function renderContextSwitcherSheet() {
     <button class="overlay-backdrop" data-action="close-context-switcher" aria-label="关闭发现范围选择"></button>
     <section class="bottom-sheet context-switcher-sheet" role="dialog" aria-modal="true" aria-label="管理当前发现范围">
       <header class="context-switcher-head">
-        <button data-action="close-context-switcher" aria-label="返回当前页面">←</button>
-        <div><p class="micro-label">DISCOVERY CONTEXT</p><h3>选择你现在所在的范围</h3></div>
+        <div><p class="micro-label">发现范围</p><h3>你想在哪里发现人？</h3></div>
+        <button data-action="close-context-switcher" aria-label="关闭发现范围选择">×</button>
       </header>
-      <p class="context-switcher-copy">范围只决定你在哪里发现人。你的协作护照、已建联关系和项目不会因切换而消失。</p>
-      <div class="context-options">
+      <div class="context-options" role="radiogroup" aria-label="选择发现范围">
         <button class="context-option ${activeContext ? "selected" : ""}" data-action="select-discovery-context" data-context-scope="event" aria-pressed="${Boolean(activeContext)}" ${eventDisabled ? "disabled" : ""}>
           <span class="context-option-mark is-event" aria-hidden="true"><i></i><b></b></span>
-          <span><strong>${escapeHtml(eventName)}</strong><small>查看本场推荐、附近和授权名册</small></span>
-          <em>${activeContext ? "当前" : "进入"}</em>
+          <span><strong>${escapeHtml(eventName)}</strong><small>本场推荐、附近和授权名册</small></span>
+          <em aria-hidden="true">${activeContext ? "✓" : "→"}</em>
         </button>
         <button class="context-option ${activeContext ? "" : "selected"}" data-action="select-discovery-context" data-context-scope="nearby" aria-pressed="${!activeContext}">
           <span class="context-option-mark is-nearby" aria-hidden="true"><i></i><b></b></span>
-          <span><strong>退出活动视图 · 日常附近</strong><small>在正常生活状态下，筛选身边主动开启发现的人</small></span>
-          <em>${activeContext ? "切换" : "当前"}</em>
+          <span><strong>日常附近</strong><small>发现身边主动开放的人</small></span>
+          <em aria-hidden="true">${activeContext ? "→" : "✓"}</em>
         </button>
       </div>
-      <aside class="context-boundary-note"><b>不会退出成员关系</b><span>“退出活动视图”只是回到日常附近；本场活动、队伍和协作记录仍然保留。</span></aside>
-      <button class="context-manage-button" data-action="manage-context-visibility">管理${activeContext ? "本场活动" : "日常附近"}的公开状态</button>
+      <p class="context-switcher-note">切换只影响发现结果，不会退出活动或删除关系。</p>
+      <button class="context-manage-button" data-action="manage-context-visibility"><span>管理公开范围</span><b aria-hidden="true">→</b></button>
     </section>
   </div>`;
 }
@@ -2311,7 +2315,7 @@ function renderProfile() {
         </div>
         <div class="demo-badge ${state.visible ? "" : "is-hidden"}" data-orientation="portrait">
           <header class="demo-display-top">
-            <span class="demo-display-brand">COSPAN <b>合拍</b></span>
+            <span class="demo-display-brand">COSPAN <b>共域</b></span>
             <span class="demo-display-event">AI HARDWARE HACKATHON 2026</span>
             <em>${state.visible ? `● ${collaborationStatusLabel()}` : "○ 已暂停"}</em>
           </header>
@@ -2862,6 +2866,45 @@ function renderOverlay() {
 
 function renderToast() {
   return state.toast ? `<div class="toast" role="status">${state.toast}</div>` : "";
+}
+
+function overlayFocusableElements() {
+  const overlay = app.querySelector(".overlay");
+  if (!overlay) return [];
+  return [...overlay.querySelectorAll([
+    "button:not([disabled])",
+    "a[href]",
+    "input:not([disabled])",
+    "select:not([disabled])",
+    "textarea:not([disabled])",
+    '[tabindex]:not([tabindex="-1"])',
+  ].join(","))].filter((element) => (
+    !element.classList.contains("overlay-backdrop")
+    && element.getClientRects().length > 0
+  ));
+}
+
+function syncOverlayAccessibility() {
+  const stage = app.querySelector(".prototype-stage");
+  const focusable = overlayFocusableElements();
+  if (!state.overlay || !stage) return;
+  stage.inert = true;
+  stage.setAttribute("aria-hidden", "true");
+  requestAnimationFrame(() => focusable[0]?.focus({ preventScroll: true }));
+}
+
+function trapOverlayFocus(event) {
+  const focusable = overlayFocusableElements();
+  if (!focusable.length) return;
+  const first = focusable[0];
+  const last = focusable.at(-1);
+  if (event.shiftKey && (document.activeElement === first || !app.querySelector(".overlay")?.contains(document.activeElement))) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
 }
 
 function renderStateLedger() {
@@ -4096,6 +4139,10 @@ window.addEventListener("popstate", (event) => {
 });
 
 window.addEventListener("keydown", (event) => {
+  if (event.key === "Tab" && state.overlay) {
+    trapOverlayFocus(event);
+    return;
+  }
   const tag = event.target?.tagName?.toLowerCase();
   if (["input", "textarea"].includes(tag) || event.target?.isContentEditable) return;
   if (event.key === "Escape" && state.overlay) {
