@@ -602,7 +602,7 @@ def main():
         }
 
         page.locator(".app-nav [data-tab='profile']").click()
-        report["flow"]["profile_has_floating_settings"] = page.locator(
+        report["flow"]["profile_has_settings_button"] = page.locator(
             ".profile-settings-trigger"
         ).is_visible()
         report["flow"]["platform_links_use_input_rows"] = (
@@ -658,7 +658,7 @@ def main():
             and scrolled_settings_top < settings_top - 300
         )
         page.locator(".screen").evaluate("screen => { screen.scrollTop = 0; }")
-        assert report["flow"]["profile_has_floating_settings"]
+        assert report["flow"]["profile_has_settings_button"]
         assert report["flow"]["platform_links_use_input_rows"]
         assert report["flow"]["platform_links_use_minimal_lines"], platform_style
         assert report["flow"]["device_privacy_moved_off_profile"]
