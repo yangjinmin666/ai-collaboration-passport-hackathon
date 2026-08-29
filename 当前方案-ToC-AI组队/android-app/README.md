@@ -2,7 +2,7 @@
 
 这个目录把 `prototype/mobile-demo` 的当前内容封装成 Android App。构建时会自动复制最新的 `index.html`、`styles.css`、`app.js` 和头像资源，因此 Web 原型仍是唯一界面源文件。
 
-APK 默认进入 Live 模式，以 `https://49.233.197.225` 作为受信任 API 地址。当前体验包可使用 Google 或中国大陆手机号验证码登录；微信入口会引导用户从微信内打开 COSPAN 网页版，待 OpenSDK 接入后再开放原生一键登录。手机号登录不要求先填昵称，首次验证后再进入协作资料完善。资料、附近定位、建联、项目邀请、入队、Room 任务和刷新恢复都读写真实后端。界面资源仍内置在 APK 中，但业务操作需要可访问的 HTTPS API。
+APK 默认进入 Live 模式，以 `https://101.43.172.166` 作为受信任 API 地址。当前体验包可使用 Google 或中国大陆手机号验证码登录；微信入口会引导用户从微信内打开 COSPAN 网页版，待 OpenSDK 接入后再开放原生一键登录。手机号登录不要求先填昵称，首次验证后再进入协作资料完善。资料、附近定位、建联、项目邀请、入队、Room 任务和刷新恢复都读写真实后端。界面资源仍内置在 APK 中，但业务操作需要可访问的 HTTPS API。
 
 Google 授权会交给系统浏览器，完成后通过已验证的 `https://<app-domain>/auth/android` App Link 回到同一个 App 实例。App 只接受构建时固定的 HTTPS host、精确路径和白名单回调参数，再把短时一次性 ticket 交给内置页面；ticket 还必须匹配只保存在发起 WebView 内的 verifier 才能换 Session。Google 控制台仍登记后端 OAuth HTTPS 回调地址。未配置真实 Provider 凭证或 App Link 证书指纹时，Google 按钮显示不可用。
 
@@ -19,7 +19,7 @@ Google 授权会交给系统浏览器，完成后通过已验证的 `https://<ap
 如果同一个体验包需要指向另一个受信任演示环境，可在构建时覆盖：
 
 ```bash
-RALLY_API_ORIGIN=https://49.233.197.225 ./build-and-install.sh
+RALLY_API_ORIGIN=https://101.43.172.166 ./build-and-install.sh
 ```
 
 前端与 API 分域时同时设置 App Link 所属网页源：
