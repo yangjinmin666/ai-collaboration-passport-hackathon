@@ -827,7 +827,7 @@ def main():
             ).wait_for(timeout=5000)
             assert first_time_page.get_by_label("怎么称呼你").count() == 0
             assert first_time_page.get_by_text(
-                "共域 · 人与人先相遇，人与 Agent 再共创。", exact=True
+                "合拍 · 人与人先相遇，人与 Agent 再共创。", exact=True
             ).is_visible()
             assert first_time_page.locator(".live-oauth-button:disabled").count() == 0
             login_metrics = mobile_sheet_metrics(
