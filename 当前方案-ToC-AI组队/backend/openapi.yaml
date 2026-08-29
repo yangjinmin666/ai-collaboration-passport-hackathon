@@ -789,6 +789,11 @@ paths:
       security: [{ BearerAuth: [] }, { DemoHeader: [] }]
       parameters:
         - $ref: "#/components/parameters/ProjectId"
+        - in: header
+          name: x-cospan-surface
+          schema: { type: string, enum: [mobile, desktop], default: mobile }
+          required: false
+          description: Trusted client surface label recorded in the project audit trail.
       responses:
         "200": { description: Confirmation progress; all members are required }
         "401": { $ref: "#/components/responses/Unauthorized" }
@@ -815,6 +820,11 @@ paths:
       security: [{ BearerAuth: [] }, { DemoHeader: [] }]
       parameters:
         - $ref: "#/components/parameters/TaskId"
+        - in: header
+          name: x-cospan-surface
+          schema: { type: string, enum: [mobile, desktop], default: mobile }
+          required: false
+          description: Trusted client surface label recorded in the project audit trail.
       requestBody:
         required: true
         content:

@@ -137,6 +137,7 @@ function sendJson(response, status, body, extraHeaders = {}) {
       "x-analytics-admin-token",
       "x-demo-access-key",
       "x-demo-user-id",
+      "x-cospan-surface",
       "x-rally-anonymous-id",
       "x-rally-app-version",
       "x-rally-client-type",

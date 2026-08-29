@@ -1813,17 +1813,19 @@ function liveTaskStatusLabel(status) {
   return ({ PROPOSED: "待认领", ACCEPTED: "已接受", IN_PROGRESS: "进行中", BLOCKED: "已阻塞", DONE: "已完成" })[status] || status;
 }
 
-function liveTaskAction(task) {
+function liveTaskAction(task, room) {
   const mine = task.confirmed_owner_id === state.live.currentUserId;
   if (!task.confirmed_owner_id) return ["claim", "我来负责"];
-  if (mine && task.status === "ACCEPTED") return ["start", "开始任务"];
+  if (mine && task.status === "ACCEPTED" && room?.starter_pack?.status === "CONFIRMED") {
+    return ["start", "开始任务"];
+  }
   if (mine && task.status === "IN_PROGRESS") return ["complete", "标记完成"];
   return null;
 }
 
 function renderLiveTaskRows(room, desktop = false) {
   return (room?.tasks || []).map((task, index) => {
-    const action = liveTaskAction(task);
+    const action = liveTaskAction(task, room);
     const mine = task.confirmed_owner_id === state.live.currentUserId;
     const taskMarker = desktop ? ` data-live-task-id="${escapeHtml(task.id)}"` : "";
     const actionControl = action
@@ -4495,12 +4497,17 @@ async function generateLiveStarterPack() {
   }
 }
 
+function liveClientSurface() {
+  return window.matchMedia("(min-width: 851px)").matches ? "desktop" : "mobile";
+}
+
 async function updateLiveTask(taskId, action) {
   if (!taskId || !new Set(["claim", "start", "complete", "block"]).has(action)) return;
   try {
     await runLiveMutation(`task:${taskId}`, () => api.patch(
       `/api/tasks/${encodeURIComponent(taskId)}`,
       { action },
+      { headers: { "x-cospan-surface": liveClientSurface() } },
     ));
     const labels = { claim: "任务已认领", start: "任务已开始", complete: "任务已完成", block: "任务已标记阻塞" };
     showToast(labels[action]);
@@ -4518,6 +4525,7 @@ async function confirmLivePlan() {
     const payload = await runLiveMutation(`plan-confirmation:${projectId}`, () => api.post(
       `/api/projects/${encodeURIComponent(projectId)}/plan-confirmations`,
       {},
+      { headers: { "x-cospan-surface": liveClientSurface() } },
     ));
     showToast(payload.starter_pack.status === "CONFIRMED" ? "全员已确认当前计划" : "已记录你的确认，等待其他成员");
     await refreshLiveState();

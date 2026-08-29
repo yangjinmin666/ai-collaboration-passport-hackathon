@@ -2070,7 +2070,7 @@ export function createProductModule(database, {
     };
   }
 
-  function updateTask({ actorId, taskId, action }) {
+  function updateTask({ actorId, taskId, action, auditSource = "mobile" }) {
     if (!actorId) return error(401, "AUTH_REQUIRED", "A valid session is required.");
     const row = database.prepare("SELECT * FROM work_items WHERE task_id = ?").get(taskId);
     if (!row) return error(404, "TASK_NOT_FOUND", "Task not found.");
@@ -2104,7 +2104,7 @@ export function createProductModule(database, {
           type: "task_claimed",
           objectType: "work_item",
           objectId: taskId,
-          source: "mobile",
+          source: auditSource,
           payload: { project_id: current.project_id, previous_suggestion: current.suggested_owner_id },
           createdAt: now,
         });
@@ -2127,6 +2127,9 @@ export function createProductModule(database, {
     if (current.confirmed_owner_id !== actorId) {
       return error(403, "TASK_OWNER_ONLY", "Only the confirmed task owner can change execution status.");
     }
+    if (action === "start" && findStarterPack(database, current.project_id)?.status !== "CONFIRMED") {
+      return error(409, "PLAN_NOT_CONFIRMED", "The team must confirm the plan before execution starts.");
+    }
     if (current.status !== transition.from) {
       return error(409, "INVALID_TASK_TRANSITION", "This task action is not valid in its current state.");
     }
@@ -2140,7 +2143,7 @@ export function createProductModule(database, {
       type: transition.event,
       objectType: "work_item",
       objectId: taskId,
-      source: "mobile",
+      source: auditSource,
       payload: { project_id: current.project_id },
       createdAt: now,
     });
@@ -2150,7 +2153,7 @@ export function createProductModule(database, {
     };
   }
 
-  function confirmPlan({ actorId, projectId }) {
+  function confirmPlan({ actorId, projectId, auditSource = "mobile" }) {
     if (!actorId) return error(401, "AUTH_REQUIRED", "A valid session is required.");
     const project = findProject(database, projectId);
     if (!project) return error(404, "PROJECT_NOT_FOUND", "Project not found.");
@@ -2191,7 +2194,7 @@ export function createProductModule(database, {
         type: "plan_confirmation_recorded",
         objectType: "starter_pack",
         objectId: pack.id,
-        source: "mobile",
+        source: auditSource,
         payload: { project_id: projectId },
         createdAt: now,
       });
@@ -3456,6 +3459,7 @@ export function createProductModule(database, {
         return confirmPlan({
           actorId,
           projectId: decodeURIComponent(confirmationMatch[1]),
+          auditSource: request.headers["x-cospan-surface"] === "desktop" ? "desktop" : "mobile",
         });
       }
 
@@ -3479,6 +3483,7 @@ export function createProductModule(database, {
           actorId,
           taskId: decodeURIComponent(taskMatch[1]),
           action: parsed.value.action,
+          auditSource: request.headers["x-cospan-surface"] === "desktop" ? "desktop" : "mobile",
         });
       }
 

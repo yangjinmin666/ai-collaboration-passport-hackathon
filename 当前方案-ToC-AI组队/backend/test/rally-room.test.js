@@ -7,9 +7,10 @@ describe("human-confirmed COSPAN Space starter pack", () => {
   let api;
   let baseUrl;
 
-  const headers = (userId) => ({
+  const headers = (userId, extra = {}) => ({
     "content-type": "application/json",
     "x-demo-user-id": userId,
+    ...extra,
   });
 
   beforeEach(async () => {
@@ -90,7 +91,7 @@ describe("human-confirmed COSPAN Space starter pack", () => {
     const preferredTask = generatedBody.tasks[2];
     const claimed = await fetch(`${baseUrl}/api/tasks/${preferredTask.id}`, {
       method: "PATCH",
-      headers: headers("user-lin"),
+      headers: headers("user-lin", { "x-cospan-surface": "desktop" }),
       body: JSON.stringify({ action: "claim" }),
     });
     const claimedBody = await claimed.json();
@@ -98,9 +99,21 @@ describe("human-confirmed COSPAN Space starter pack", () => {
     assert.equal(claimedBody.task.confirmed_owner_id, "user-lin");
     assert.equal(claimedBody.task.status, "ACCEPTED");
 
+    const prematureStart = await fetch(`${baseUrl}/api/tasks/${preferredTask.id}`, {
+      method: "PATCH",
+      headers: headers("user-lin", { "x-cospan-surface": "desktop" }),
+      body: JSON.stringify({ action: "start" }),
+    });
+    assert.equal(prematureStart.status, 409);
+    assert.equal((await prematureStart.json()).error.code, "PLAN_NOT_CONFIRMED");
+
     const firstConfirmation = await fetch(
       `${baseUrl}/api/projects/${projectId}/plan-confirmations`,
-      { method: "POST", headers: headers("user-zhou"), body: "{}" },
+      {
+        method: "POST",
+        headers: headers("user-zhou", { "x-cospan-surface": "desktop" }),
+        body: "{}",
+      },
     );
     const firstBody = await firstConfirmation.json();
     assert.equal(firstBody.starter_pack.status, "PROPOSED");
@@ -123,6 +136,12 @@ describe("human-confirmed COSPAN Space starter pack", () => {
     assert.equal(roomBody.tasks.find((task) => task.id === preferredTask.id).status, "ACCEPTED");
     assert.equal(roomBody.activity.some((item) => item.event_type === "task_claimed"), true);
     assert.equal(roomBody.activity.some((item) => item.event_type === "plan_confirmed"), true);
+    assert.equal(roomBody.activity.some(
+      (item) => item.event_type === "task_claimed" && item.source === "desktop"
+    ), true);
+    assert.equal(roomBody.activity.some(
+      (item) => item.event_type === "plan_confirmation_recorded" && item.source === "desktop"
+    ), true);
 
     const started = await fetch(`${baseUrl}/api/tasks/${preferredTask.id}`, {
       method: "PATCH",

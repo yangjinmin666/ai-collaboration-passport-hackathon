@@ -1065,7 +1065,8 @@ def main():
                 f'[data-live-task-id="{unowned_task["id"]}"]'
             )
             task_card.get_by_text("负责人：周闻", exact=False).wait_for(timeout=8000)
-            assert task_card.get_by_role("button", name="开始任务").is_visible()
+            assert task_card.get_by_text("我负责", exact=True).is_visible()
+            assert task_card.get_by_role("button", name="开始任务").count() == 0
 
             desktop_grid.get_by_role("button", name="确认当前计划").click()
             zhou_page.get_by_text("已记录你的确认，等待其他成员", exact=True).wait_for(
@@ -1087,6 +1088,28 @@ def main():
                 and task["confirmed_owner_id"] == "user-zhou"
                 for task in desktop_room["tasks"]
             )
+            assert any(
+                item["event_type"] == "task_claimed"
+                and item["source"] == "desktop"
+                for item in desktop_room["activity"]
+            )
+            assert any(
+                item["event_type"] == "plan_confirmation_recorded"
+                and item["source"] == "desktop"
+                for item in desktop_room["activity"]
+            )
+
+            lin_page.locator(".workspace-mobile-content").get_by_role(
+                "button", name="确认当前计划"
+            ).click()
+            lin_page.locator(
+                '.toast:has-text("全员已确认当前计划")'
+            ).wait_for(timeout=5000)
+            desktop_grid.get_by_text("2 / 2 位成员已确认", exact=True).wait_for(
+                timeout=8000
+            )
+            task_card.get_by_role("button", name="开始任务").wait_for(timeout=8000)
+
             zhou_page.reload()
             desktop_workspace.wait_for(timeout=8000)
             refreshed_desktop_grid = desktop_workspace.locator(
@@ -1094,7 +1117,14 @@ def main():
             )
             assert refreshed_desktop_grid.is_visible()
             assert refreshed_desktop_grid.get_by_text(
-                "1 / 2 位成员已确认", exact=True
+                "2 / 2 位成员已确认", exact=True
+            ).is_visible()
+            refreshed_task_card = refreshed_desktop_grid.locator(
+                f'[data-live-task-id="{unowned_task["id"]}"]'
+            )
+            assert "负责人：周闻" in refreshed_task_card.locator("em").inner_text()
+            assert refreshed_task_card.get_by_role(
+                "button", name="开始任务"
             ).is_visible()
 
             zhou_context.close()
