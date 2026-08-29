@@ -11,6 +11,7 @@ servers:
   - url: http://127.0.0.1:8787
 tags:
   - name: System
+  - name: Analysis
   - name: Identity
   - name: Presence
   - name: Connections
@@ -18,6 +19,7 @@ tags:
   - name: Room
   - name: SOS
   - name: Analytics
+  - name: Agents
 paths:
   /health:
     get:
@@ -825,6 +827,91 @@ paths:
       responses:
         "200": { description: Task updated or replayed idempotently }
         "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /api/tasks/{taskId}/agent-runs:
+    post:
+      tags: [Agents]
+      summary: Trigger a research brief agent run for a HUMAN_AGENT task
+      description: Only the confirmed task owner may trigger. Blocked when the plan is not CONFIRMED, a run is already in flight, or the daily token budget is exhausted.
+      security: [{ BearerAuth: [] }, { DemoHeader: [] }]
+      parameters:
+        - $ref: "#/components/parameters/TaskId"
+        - in: header
+          name: x-idempotency-key
+          schema: { type: string, maxLength: 120 }
+          required: false
+          description: Retry-safe replay key. Reusing the same key within 10 minutes returns the original run.
+      responses:
+        "201": { description: New agent run created and awaiting review }
+        "200": { description: Idempotent replay of a previous run }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { description: Daily project token budget exhausted }
+        "503": { description: Agent runner is not configured on this deployment }
+  /api/projects/{projectId}/agent-runs:
+    get:
+      tags: [Agents]
+      summary: List the most recent agent runs and current daily token budget for a project
+      security: [{ BearerAuth: [] }, { DemoHeader: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200": { description: Up to 10 recent runs plus the project's daily budget snapshot }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/agent-runs/{runId}:
+    get:
+      tags: [Agents]
+      summary: Read a single agent run with output and audit metadata
+      security: [{ BearerAuth: [] }, { DemoHeader: [] }]
+      parameters:
+        - $ref: "#/components/parameters/RunId"
+      responses:
+        "200": { description: Full agent run detail }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/agent-runs/{runId}/review:
+    post:
+      tags: [Agents]
+      summary: Approve or reject a pending agent run
+      description: Only the task owner (or trigger, for planner runs) may decide. Terminal decisions cannot be replayed.
+      security: [{ BearerAuth: [] }, { DemoHeader: [] }]
+      parameters:
+        - $ref: "#/components/parameters/RunId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision]
+              properties:
+                decision: { type: string, enum: [APPROVED, REJECTED] }
+                note: { type: string, maxLength: 500 }
+      responses:
+        "200": { description: Run reviewed and moved to APPROVED or REJECTED }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /api/agent-runs/{runId}/cancel:
+    post:
+      tags: [Agents]
+      summary: Cancel a QUEUED or RUNNING agent run
+      description: Trigger or project originator only.
+      security: [{ BearerAuth: [] }, { DemoHeader: [] }]
+      parameters:
+        - $ref: "#/components/parameters/RunId"
+      responses:
+        "200": { description: Run moved to CANCELLED }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
