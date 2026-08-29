@@ -263,18 +263,6 @@ def main():
 
             block_form = page.locator("[data-profile-block-form]")
             block_form.get_by_label("证据标题").wait_for()
-            block_form_mobile_metrics = mobile_sheet_metrics(block_form)
-            assert block_form_mobile_metrics["minimumFontSize"] >= 10, (
-                block_form_mobile_metrics
-            )
-            assert block_form_mobile_metrics["undersizedControls"] == [], (
-                block_form_mobile_metrics
-            )
-            assert abs(
-                block_form_mobile_metrics["sheetBottom"]
-                - block_form_mobile_metrics["viewportHeight"]
-            ) <= 1
-            assert not block_form_mobile_metrics["horizontalOverflow"]
 
             page.evaluate(
                 """() => {
@@ -315,6 +303,19 @@ def main():
             block_form.get_by_label("公开链接").fill(
                 "https://rally.example/demo"
             )
+            block_form.locator("[data-preview-url]").wait_for(state="visible")
+            block_form_mobile_metrics = mobile_sheet_metrics(block_form)
+            assert block_form_mobile_metrics["minimumFontSize"] >= 10, (
+                block_form_mobile_metrics
+            )
+            assert block_form_mobile_metrics["undersizedControls"] == [], (
+                block_form_mobile_metrics
+            )
+            assert abs(
+                block_form_mobile_metrics["sheetBottom"]
+                - block_form_mobile_metrics["viewportHeight"]
+            ) <= 1
+            assert not block_form_mobile_metrics["horizontalOverflow"]
             public_confirmation = block_form.get_by_text(
                 '我确认开启“能力证据”字段，并公开上述范围', exact=True
             )
