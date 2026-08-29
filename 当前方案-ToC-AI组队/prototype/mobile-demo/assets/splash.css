@@ -68,7 +68,7 @@
   position: absolute;
   top: 50%;
   left: 50%;
-  width: min(82vw, 340px);
+  width: min(88vw, 360px);
   transform: translate(-50%, -52%);
 }
 
@@ -91,7 +91,7 @@
   position: absolute;
   top: 48%;
   left: 50%;
-  width: 86%;
+  width: 74%;
   display: grid;
   gap: 10px;
   transform: translate(-50%, -42%);
@@ -106,19 +106,21 @@
 }
 
 .rally-splash-slogan strong {
-  font-size: clamp(24px, 7vw, 31px);
+  font-size: clamp(23px, 6.2vw, 27px);
   line-height: 1.25;
   letter-spacing: -.035em;
+  white-space: nowrap;
   animation-delay: 1.02s;
 }
 
 .rally-splash-slogan small {
   color: #6f7b89;
   font-family: "SFMono-Regular", Consolas, monospace;
-  font-size: clamp(10px, 3vw, 12px);
+  font-size: clamp(10px, 2.8vw, 12px);
   font-weight: 650;
   line-height: 1.4;
   letter-spacing: .01em;
+  white-space: nowrap;
   animation-delay: 1.17s;
 }
 
@@ -150,7 +152,9 @@
 
 @media (max-height: 690px) {
   .rally-splash-contact { top: max(42px, calc(env(safe-area-inset-top) + 20px)); }
-  .rally-splash-room { width: min(72vw, 300px); transform: translate(-50%, -50%); }
+  .rally-splash-room { width: min(86vw, 320px); transform: translate(-50%, -50%); }
+  .rally-splash-slogan strong { font-size: 22px; }
+  .rally-splash-slogan small { font-size: 10px; }
   .rally-splash-brand { bottom: max(28px, calc(env(safe-area-inset-bottom) + 16px)); }
 }
 

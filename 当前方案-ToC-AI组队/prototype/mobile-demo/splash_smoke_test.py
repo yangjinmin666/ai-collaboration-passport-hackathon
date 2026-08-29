@@ -9,6 +9,32 @@ BASE_URL = "http://127.0.0.1:4173"
 OUTPUT_PATH = Path(__file__).with_name("artifacts") / "splash.png"
 
 
+def assert_slogan_stays_inside_room(page):
+    geometry = page.evaluate(
+        """() => {
+            const room = document.querySelector('.rally-splash-room').getBoundingClientRect();
+            const slogan = document.querySelector('.rally-splash-slogan').getBoundingClientRect();
+            const chinese = document.querySelector('.rally-splash-slogan strong');
+            const english = document.querySelector('.rally-splash-slogan small');
+            const safeInset = room.width * 0.13;
+            return {
+                roomLeft: room.left,
+                roomRight: room.right,
+                sloganLeft: slogan.left,
+                sloganRight: slogan.right,
+                safeLeft: room.left + safeInset,
+                safeRight: room.right - safeInset,
+                chineseFits: chinese.scrollWidth <= chinese.clientWidth,
+                englishFits: english.scrollWidth <= english.clientWidth,
+            };
+        }"""
+    )
+    assert geometry["sloganLeft"] >= geometry["safeLeft"] - 0.5, geometry
+    assert geometry["sloganRight"] <= geometry["safeRight"] + 0.5, geometry
+    assert geometry["chineseFits"], geometry
+    assert geometry["englishFits"], geometry
+
+
 def main():
     OUTPUT_PATH.parent.mkdir(exist_ok=True)
     with sync_playwright() as playwright:
@@ -33,9 +59,16 @@ def main():
         assert splash.evaluate("element => getComputedStyle(element).position") == "fixed"
 
         page.wait_for_timeout(1900)
+        assert_slogan_stays_inside_room(page)
         page.screenshot(path=str(OUTPUT_PATH), full_page=True)
         splash.wait_for(state="detached", timeout=3500)
         assert page.locator(".recommendation-card-active").is_visible()
+
+        page.set_viewport_size({"width": 1024, "height": 1100})
+        page.goto(f"{BASE_URL}/?variant=A&splash=1", wait_until="domcontentloaded")
+        page.wait_for_timeout(1900)
+        assert_slogan_stays_inside_room(page)
+        page.locator("#rally-splash").click()
         assert not errors, errors
         browser.close()
 
