@@ -22,6 +22,138 @@ const DEMO_CARD_TOKENS = {
 const ZHOU_PUBLIC_PROFILE_FIELDS = ALL_PUBLIC_PROFILE_FIELDS.filter(
   (field) => !["collaboration_need", "evidence", "platform_links"].includes(field),
 );
+const DEMO_SHOWCASE_PARTICIPANTS = [
+  {
+    userId: "user-su-showcase",
+    displayName: "苏晴",
+    avatar: "memoji-1",
+    role: "交互设计师",
+    status: "已组队但可交流",
+    skills: ["服务设计", "体验策略", "路演"],
+    interests: ["公共议题", "AI 硬件"],
+    availability: "今天 14:00–22:00，可投入 5 小时",
+    preferences: ["用户测试", "结对协作"],
+    need: "寻找有社会议题的项目",
+    evidence: ["两次黑客松最佳设计奖"],
+  },
+  {
+    userId: "user-qixi",
+    displayName: "七喜",
+    avatar: "memoji-2",
+    role: "创意技术开发者",
+    status: "未组队",
+    skills: ["生成艺术", "WebGL", "声音交互"],
+    interests: ["现场交互", "生成艺术"],
+    availability: "今天可持续投入 6 小时",
+    preferences: ["快速原型", "现场联调"],
+    need: "寻找硬件与产品搭档",
+    evidence: ["做过 4 个生成式互动装置"],
+  },
+  {
+    userId: "user-shenlan",
+    displayName: "沈蓝",
+    avatar: "memoji-3",
+    role: "隐私与身份工程师",
+    status: "已组队但可交流",
+    skills: ["数字身份", "权限", "端侧隐私"],
+    interests: ["隐私安全", "可信身份"],
+    availability: "今天可定点支援 1 小时",
+    preferences: ["安全审查", "结对协作"],
+    need: "寻找需要隐私审查的现场项目",
+    evidence: ["负责过匿名社交产品的隐私模型"],
+  },
+  {
+    userId: "user-baiyu",
+    displayName: "白榆",
+    avatar: "memoji-8",
+    role: "多模态算法工程师",
+    status: "已组队但可交流",
+    skills: ["Embedding", "RAG", "推荐"],
+    interests: ["语义检索", "可解释推荐"],
+    availability: "今晚可支援 3 小时",
+    preferences: ["代码评审", "快速原型"],
+    need: "寻找需要模型支援的团队",
+    evidence: ["开源过 2 个轻量级语义检索项目"],
+  },
+  {
+    userId: "user-miya",
+    displayName: "米娅",
+    avatar: "memoji-9",
+    role: "品牌与路演设计师",
+    status: "已组队但可交流",
+    skills: ["品牌", "叙事", "Demo Day"],
+    interests: ["产品叙事", "公共表达"],
+    availability: "今晚彩排时段可投入 2 小时",
+    preferences: ["路演彩排", "内容共创"],
+    need: "寻找需要路演支援的团队",
+    evidence: ["辅导过 6 支黑客松团队完成路演"],
+  },
+  {
+    userId: "user-qiaohe",
+    displayName: "乔禾",
+    avatar: "memoji-7",
+    role: "用户研究与现场运营",
+    status: "已组队但可交流",
+    skills: ["访谈", "可用性测试", "活动运营"],
+    interests: ["用户研究", "现场协作"],
+    availability: "今天可投入 4 小时",
+    preferences: ["快速访谈", "现场测试"],
+    need: "寻找需要现场验证的产品",
+    evidence: ["现场完成过 30 人快速概念测试"],
+  },
+  {
+    userId: "user-alan",
+    displayName: "阿岚",
+    avatar: "memoji-10",
+    role: "产品发起人",
+    status: "未组队",
+    skills: ["产品", "用户研究", "商业"],
+    interests: ["开发者协作", "产品验证"],
+    availability: "今天可投入 5 小时",
+    preferences: ["方向共创", "用户验证"],
+    need: "寻找技术与设计搭档",
+    evidence: ["从 0 到 1 做过开发者社区"],
+  },
+  {
+    userId: "user-aguang",
+    displayName: "阿光",
+    avatar: "memoji-6",
+    role: "开发者社区增长",
+    status: "未组队",
+    skills: ["社区", "内容", "裂变"],
+    interests: ["开发者社区", "产品增长"],
+    availability: "今天可投入 4 小时",
+    preferences: ["增长实验", "内容共创"],
+    need: "寻找需要验证增长路径的项目",
+    evidence: ["运营过 8000 人 AI 开发者社群"],
+  },
+  {
+    userId: "user-hanche",
+    displayName: "韩彻",
+    avatar: "memoji-11",
+    role: "安全研究员",
+    status: "已组队但可交流",
+    skills: ["红队", "风控", "滥用防护"],
+    interests: ["社交安全", "反骚扰"],
+    availability: "今天可定点支援 2 小时",
+    preferences: ["风险审查", "问题清单"],
+    need: "寻找需要安全加固的团队",
+    evidence: ["做过社交产品反骚扰与举报系统"],
+  },
+  {
+    userId: "user-carlo",
+    displayName: "卡洛",
+    avatar: "memoji-12",
+    role: "工业与结构设计师",
+    status: "未组队",
+    skills: ["CMF", "结构", "快速打样"],
+    interests: ["智能硬件", "可穿戴设备"],
+    availability: "今天可持续投入 8 小时",
+    preferences: ["现场打样", "快速原型"],
+    need: "寻找硬件与软件搭档",
+    evidence: ["48 小时内完成过可佩戴设备外壳"],
+  },
+];
 
 export function openDatabase(databasePath) {
   const database = new DatabaseSync(databasePath);
@@ -582,6 +714,15 @@ export function seedDatabase(database) {
   insertUser.run("user-lin", "林澈", "memoji-4", "lin@example.test", "+8613800000002");
   insertUser.run("user-su", "苏晴", "memoji-1", "su@example.test", "+8613800000003");
   insertUser.run("user-mia", "米娅", "memoji-6", "mia@example.test", "+8613800000004");
+  for (const participant of DEMO_SHOWCASE_PARTICIPANTS) {
+    insertUser.run(
+      participant.userId,
+      participant.displayName,
+      participant.avatar,
+      `${participant.userId}@example.test`,
+      null,
+    );
+  }
 
   const insertProfile = database.prepare(`
     INSERT OR IGNORE INTO profiles (
@@ -625,6 +766,20 @@ export function seedDatabase(database) {
     "寻找有社会议题的项目",
     JSON.stringify(["两次黑客松最佳设计奖"]),
   );
+  for (const participant of DEMO_SHOWCASE_PARTICIPANTS) {
+    insertProfile.run(
+      participant.userId,
+      "hackathon-2026",
+      participant.role,
+      participant.status,
+      JSON.stringify(participant.skills),
+      JSON.stringify(participant.interests),
+      participant.availability,
+      JSON.stringify(participant.preferences),
+      participant.need,
+      JSON.stringify(participant.evidence),
+    );
+  }
 
   const insertVisibility = database.prepare(`
     INSERT OR IGNORE INTO visibility_grants (
@@ -655,6 +810,16 @@ export function seedDatabase(database) {
     "2020-01-01T00:00:00.000Z",
     "2099-12-31T23:59:59.999Z",
   );
+  for (const participant of DEMO_SHOWCASE_PARTICIPANTS) {
+    insertVisibility.run(
+      participant.userId,
+      "hackathon-2026",
+      "VISIBLE",
+      JSON.stringify(ALL_PUBLIC_PROFILE_FIELDS),
+      "2020-01-01T00:00:00.000Z",
+      "2099-12-31T23:59:59.999Z",
+    );
+  }
 
   const insertCard = database.prepare(`
     INSERT OR IGNORE INTO nfc_assets (card_id, opaque_token, owner_id, event_id, state)

@@ -36,6 +36,32 @@ describe("authorized activity profile discovery", () => {
     await api.stop();
   });
 
+  test("the mobile demo exposes the complete showcase roster", async () => {
+    const response = await fetch(
+      `${baseUrl}/api/events/hackathon-2026/discover`,
+      { headers: headers("user-zhou") },
+    );
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(
+      body.people.map((person) => person.user_id).sort(),
+      [
+        "user-aguang",
+        "user-alan",
+        "user-baiyu",
+        "user-carlo",
+        "user-hanche",
+        "user-lin",
+        "user-miya",
+        "user-qiaohe",
+        "user-qixi",
+        "user-shenlan",
+        "user-su-showcase",
+      ],
+    );
+  });
+
   test("cannot enable discovery visibility without at least one public field", async () => {
     const response = await fetch(`${baseUrl}/api/events/hackathon-2026/visibility`, {
       method: "PATCH",

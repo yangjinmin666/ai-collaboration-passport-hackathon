@@ -227,6 +227,11 @@ def main():
             assert page.locator('img[src="x"]').count() == 0
             assert page.evaluate("window.__rallyXss") is None
 
+            page.get_by_role("button", name="推荐", exact=True).click()
+            page.locator(".recommendation-card-active").wait_for()
+            assert page.locator(".recommendation-progress i").count() == 11
+            page.get_by_role("button", name="附近", exact=True).click()
+
             page.locator('.app-nav [data-tab="profile"]').click()
             page.get_by_text("连接你的外部平台", exact=True).wait_for(timeout=4000)
             website_row = page.locator(
@@ -1084,7 +1089,17 @@ def main():
             login_live(zhou_page, "user-zhou")
             login_live(lin_page, "user-lin")
 
-            zhou_page.get_by_role("button", name="向 林澈 表达想认识").click()
+            lin_interest_button = zhou_page.get_by_role(
+                "button", name="向 林澈 表达想认识"
+            )
+            for _ in range(11):
+                if lin_interest_button.count() == 1:
+                    break
+                zhou_page.locator(
+                    '[data-action="dismiss-recommendation"]'
+                ).click()
+            assert lin_interest_button.count() == 1
+            lin_interest_button.click()
             zhou_page.get_by_text("已表达想认识，线下碰卡后才会交换联系方式", exact=True).wait_for(
                 timeout=5000
             )
@@ -1344,6 +1359,7 @@ def main():
         print(json.dumps({
             "live_geolocation_connected": True,
             "real_backend_nearby_count": 1,
+            "mobile_live_showcase_roster_visible": True,
             "presence_removed_after_leaving": True,
             "visibility_pause_persisted": True,
             "platform_link_saved_rendered_and_removed": True,
