@@ -21,6 +21,7 @@ import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.GeolocationPermissions;
 import android.webkit.WebChromeClient;
+import android.webkit.WebBackForwardList;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -42,6 +43,7 @@ public final class MainActivity extends Activity {
     private Object predictiveBackCallback;
     private GeolocationPermissions.Callback pendingGeolocationCallback;
     private String pendingGeolocationOrigin;
+    private boolean clearHistoryAfterReturningHome;
 
     @Override
     @SuppressLint("SetJavaScriptEnabled")
@@ -74,8 +76,25 @@ public final class MainActivity extends Activity {
         if (savedInstanceState == null) {
             webView.loadUrl(oauthReturnUrl != null ? oauthReturnUrl : HOME_URL);
         } else {
-            webView.restoreState(savedInstanceState);
-            if (oauthReturnUrl != null) webView.loadUrl(oauthReturnUrl);
+            WebBackForwardList restoredState = webView.restoreState(savedInstanceState);
+            String restoredUrl = restoredState == null || restoredState.getCurrentItem() == null
+                    ? null
+                    : restoredState.getCurrentItem().getUrl();
+            if (oauthReturnUrl != null) {
+                webView.loadUrl(oauthReturnUrl);
+            } else if (restoredState == null || isTemporaryAgentDemoUrl(restoredUrl)) {
+                clearHistoryAfterReturningHome = restoredState != null;
+                webView.loadUrl(HOME_URL);
+            }
+        }
+    }
+
+    private static boolean isTemporaryAgentDemoUrl(String url) {
+        if (url == null) return false;
+        try {
+            return "agent".equals(Uri.parse(url).getQueryParameter("demoFlow"));
+        } catch (RuntimeException ignored) {
+            return false;
         }
     }
 
@@ -292,6 +311,15 @@ public final class MainActivity extends Activity {
     }
 
     private final class RallyWebViewClient extends WebViewClient {
+        @Override
+        public void onPageFinished(WebView view, String url) {
+            super.onPageFinished(view, url);
+            if (clearHistoryAfterReturningHome && !isTemporaryAgentDemoUrl(url)) {
+                view.clearHistory();
+                clearHistoryAfterReturningHome = false;
+            }
+        }
+
         @Override
         public WebResourceResponse shouldInterceptRequest(
                 WebView view,

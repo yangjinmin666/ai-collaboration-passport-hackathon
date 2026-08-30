@@ -361,6 +361,8 @@ const variantNames = {
 const initialParams = new URLSearchParams(location.search);
 const startsInOnboarding = initialParams.get("onboarding") === "1";
 const startsInWorkspace = initialParams.get("workspace") === "1" && !startsInOnboarding;
+const startsInAgentDemo = initialParams.get("demoFlow") === "agent" && !startsInOnboarding;
+const startsWithDemoConnection = startsInWorkspace || startsInAgentDemo;
 const requestedInitialTab = initialParams.get("view");
 const initialTab = ["discover", "connections", "collaboration", "profile"].includes(requestedInitialTab)
   ? requestedInitialTab
@@ -697,14 +699,17 @@ const state = {
   workspaceStarted: false,
   workspaceSos: false,
   assignmentOverrides: {},
-  tab: startsInWorkspace ? "collaboration" : initialTab,
+  tab: startsInWorkspace ? "collaboration" : startsInAgentDemo ? "discover" : initialTab,
   selectedId: "lin",
   visible: liveConfig.enabled ? false : !startsInOnboarding,
   stage: "browse",
-  greeted: startsInWorkspace ? ["lin"] : [],
-  connected: startsInWorkspace ? ["lin"] : [],
-  directionAlignments: startsInWorkspace
-    ? { lin: { status: "known_project", draft: confirmedProjectDirection() } }
+  greeted: startsWithDemoConnection ? ["lin"] : [],
+  connected: startsWithDemoConnection ? ["lin"] : [],
+  directionAlignments: startsWithDemoConnection
+    ? { lin: {
+        status: startsInAgentDemo ? "pending_self" : "known_project",
+        draft: confirmedProjectDirection(),
+      } }
     : {},
   invited: startsInWorkspace ? ["lin"] : [],
   joined: startsInWorkspace ? ["lin"] : [],
@@ -719,7 +724,7 @@ const state = {
     pendingClientMessageId: null,
     pendingMessageText: null,
     loadRevision: 0,
-    demoMessages: startsInWorkspace ? {
+    demoMessages: startsWithDemoConnection ? {
       lin: [
         {
           id: "demo-message-lin-1",
@@ -791,7 +796,7 @@ const state = {
     lastUpdatedAt: null,
   },
   toast: "",
-  overlay: null,
+  overlay: startsInAgentDemo ? "success" : null,
   personDetailExpanded: false,
 };
 
@@ -1892,6 +1897,7 @@ function renderLiveCollaboration() {
         <h3>${pendingInvitations.length ? "先处理入队邀请" : "还没有进行中的人机协作空间"}</h3>
         <p>项目与成员状态来自服务端。完成连接、方向确认与入队后，两台设备都能恢复同一个协作空间。</p>
         <button class="primary-button" data-tab="connections">查看连接</button>
+        ${packagedApiBase ? `<button class="secondary-button" data-action="start-agent-demo">演示完整 Agent 协作链</button>` : ""}
       </section>
     </div>`;
   }
@@ -2090,6 +2096,20 @@ function taskOwner(task) {
 }
 
 function renderAssignmentItems(tasks) {
+  if (startsInAgentDemo) {
+    return tasks.map((task, index) => {
+      const accepted = state.acceptedTasks.includes(task.id);
+      const owner = taskOwner(task);
+      const ownerLabel = accepted ? `当前负责人：${owner}` : `建议负责人：${owner}`;
+      const actionLabel = owner === currentUser.name ? "接受建议" : "我来负责";
+      const action = accepted
+        ? `<em>已接受</em>`
+        : state.workspaceStarted
+          ? `<em>待负责人接受</em>`
+          : `<button data-action="accept-demo-assignment" data-task-id="${task.id}">${actionLabel}</button>`;
+      return `<article><b>${String(index + 1).padStart(2, "0")}</b><span><strong>${task.title}</strong><small>${task.type} · ${task.mode} · ${ownerLabel}</small><small class="assignment-reason">${task.reason}</small><small class="assignment-risk">先确认：${task.risk}</small></span>${action}</article>`;
+    }).join("");
+  }
   return tasks.map((task, index) => `<article><b>${String(index + 1).padStart(2, "0")}</b><span><strong>${task.title}</strong><small>${task.type} · ${task.mode} · 当前负责人：${taskOwner(task)}</small><small class="assignment-reason">${task.reason}</small><small class="assignment-risk">先确认：${task.risk}</small></span>${taskOwner(task) === currentUser.name ? `<em>我负责</em>` : `<button data-action="reassign-task" data-task-id="${task.id}">我来负责</button>`}</article>`).join("");
 }
 
@@ -2251,6 +2271,9 @@ function renderTask(task, accepted) {
   const owner = taskOwner(task);
   const canAccept = owner === currentUser.name || owner === "全员";
   const content = `<span>${accepted ? "✓" : "○"}</span><div><strong>${task.title}</strong><small>负责人：${owner}</small><small class="task-done">完成：${task.done}</small></div><em>${accepted ? "已接受" : canAccept ? "由我接受" : "待对方接受"}</em>`;
+  if (startsInAgentDemo && state.workspaceStarted) {
+    return `<article class="task-item ${accepted ? "accepted" : ""} is-readonly">${content}</article>`;
+  }
   if (!canAccept && !accepted) return `<article class="task-item is-readonly">${content}</article>`;
   return `<button class="task-item ${accepted ? "accepted" : ""}" data-task="${task.id}">${content}</button>`;
 }
@@ -2829,11 +2852,11 @@ function renderOverlay() {
     const projectDirectionIsKnown = ["known_project", "confirmed"].includes(directionAlignment.status);
     const acceptedConnection = acceptedConnectionForPerson(person);
     return `<div class="overlay success-overlay"><section class="success-card">
-      <div class="success-mark">✓</div><p class="micro-label">CONNECTION STAMP</p><h3>你和 ${person.name}<br>已经建立协作关系</h3>
+      <div class="success-mark">✓</div><p class="micro-label">${startsInAgentDemo ? "MATCHED / MUTUAL" : "CONNECTION STAMP"}</p><h3>你和 ${person.name}<br>${startsInAgentDemo ? "匹配成功" : "已经建立协作关系"}</h3>
       <div class="stamp"><span>CONNECTED</span><strong>${person.pairLabel}</strong><small>HACKATHON 01 · JUST NOW</small></div>
-      <p>${projectDirectionIsKnown ? "碰卡只建立关系。当前项目方向已经明确，可以向对方发出独立的入队邀请。" : "碰卡只建立关系。项目方向还未确定，先由你们说清楚想服务谁、解决什么问题。"}</p>
+      <p>${startsInAgentDemo ? "匹配成功只建立关系。双方已经独立表达意愿，Agent 只整理出待确认的协作方向；人确认后才能创建项目。" : projectDirectionIsKnown ? "碰卡只建立关系。当前项目方向已经明确，可以向对方发出独立的入队邀请。" : "碰卡只建立关系。项目方向还未确定，先由你们说清楚想服务谁、解决什么问题。"}</p>
       ${acceptedConnection ? `<button class="primary-button full" data-action="open-conversation" data-connection-id="${escapeHtml(acceptedConnection.connection_id)}" data-person="${person.id}">先聊一句</button>` : ""}
-      <button class="secondary-button full" data-action="${projectDirectionIsKnown ? "invite-team" : "enter-intent-clarification"}" data-person="${person.id}">${projectDirectionIsKnown ? "邀请加入「离线会议洞察终端」" : "进入意图澄清"}</button>
+      <button class="secondary-button full" data-action="${startsInAgentDemo ? "review-demo-direction" : projectDirectionIsKnown ? "invite-team" : "enter-intent-clarification"}" data-person="${person.id}">${startsInAgentDemo ? "查看待确认的协作方向" : projectDirectionIsKnown ? "邀请加入「离线会议洞察终端」" : "进入意图澄清"}</button>
       <button class="text-action success-later-action" data-action="view-connection">稍后处理</button>
     </section></div>`;
   }
@@ -2881,6 +2904,16 @@ function renderOverlay() {
       <p>此刻仍然只有协作关系，没有项目、团队成员或任务。</p>
       <button class="primary-button full" data-action="confirm-partner-direction" data-person="${person.id}">模拟${person.name}确认方向</button>
       <button class="secondary-button full" data-action="view-connection">稍后继续</button>
+    </section></div>`;
+  }
+  if (state.overlay === "demo-direction-review" && startsInAgentDemo) {
+    return `<div class="overlay success-overlay"><section class="success-card intent-card direction-card">
+      <p class="micro-label">HUMAN CONFIRMATION</p><h3>由人确认<br>这个协作方向</h3>
+      ${renderDirectionSummary()}
+      <div class="direction-confirmations"><span>${person.name} · 已确认</span><span>${escapeHtml(currentUser.name)} · 待确认</span></div>
+      <p>Agent 只整理双方的重合点。你明确确认后，这份草案才会成为可用于创建项目的方向。</p>
+      <button class="primary-button full" data-action="confirm-demo-direction" data-person="${person.id}">确认这个协作方向</button>
+      <button class="secondary-button full" data-action="view-connection">暂不确认</button>
     </section></div>`;
   }
   if (state.overlay === "direction-confirmed") {
@@ -3572,6 +3605,17 @@ function bindRecommendationSwipe() {
 
 function handleAction(action, element) {
   const navigationBefore = JSON.stringify(appHistoryPayload());
+  if (action === "start-agent-demo") {
+    const url = new URL(location.href);
+    url.searchParams.set("live", "0");
+    url.searchParams.set("demoFlow", "agent");
+    url.searchParams.set("variant", "A");
+    url.searchParams.set("splash", "0");
+    url.searchParams.delete("workspace");
+    url.searchParams.delete("view");
+    location.assign(url);
+    return;
+  }
   if (action === "open-context-switcher") state.overlay = "context-switcher";
   if (action === "close-context-switcher") state.overlay = null;
   if (action === "select-discovery-context") {
@@ -3889,6 +3933,14 @@ function handleAction(action, element) {
     state.overlay = "success";
   }
   if (action === "enter-intent-clarification") state.overlay = "intent-clarification";
+  if (action === "review-demo-direction" && startsInAgentDemo) {
+    state.overlay = "demo-direction-review";
+  }
+  if (action === "confirm-demo-direction" && startsInAgentDemo) {
+    const alignment = ensureDirectionAlignment(state.selectedId);
+    alignment.status = "confirmed";
+    state.overlay = "direction-confirmed";
+  }
   if (action === "draft-direction") {
     const alignment = ensureDirectionAlignment(state.selectedId);
     if (alignment.status === "not_started") alignment.status = "drafting";
@@ -3940,7 +3992,23 @@ function handleAction(action, element) {
     state.assignmentOverrides[element.dataset.taskId] = currentUser.name;
     showToast("已在分工草案中改为由你负责；最终需团队确认");
   }
+  if (action === "accept-demo-assignment" && startsInAgentDemo) {
+    const taskId = element.dataset.taskId;
+    if (taskId && !state.acceptedTasks.includes(taskId)) {
+      state.assignmentOverrides[taskId] = currentUser.name;
+      state.acceptedTasks.push(taskId);
+      showToast("你已主动接受这项分工建议");
+    }
+  }
   if (action === "confirm-workspace-plan") {
+    if (
+      startsInAgentDemo
+      && state.acceptedTasks.length < workspaceTasks(selectedPerson()).length
+    ) {
+      showToast("先由每项任务的负责人明确接受");
+      render();
+      return;
+    }
     state.workspaceStarted = true;
     showToast("Demo：已模拟全员确认，项目进入执行状态");
   }

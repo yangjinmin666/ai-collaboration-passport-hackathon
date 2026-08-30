@@ -389,6 +389,7 @@ function clientAppVersion() {
 function bootBrowserTelemetry() {
   if (typeof document === "undefined" || typeof MutationObserver === "undefined") return;
   const params = new URLSearchParams(location.search);
+  if (params.get("live") === "0" || params.get("demoFlow") === "agent") return;
   const packaged = document.querySelector('meta[name="rally-api-origin"]')?.content.trim();
   if (params.get("live") !== "1" && !packaged) return;
   const baseUrl = telemetryBaseUrl(params);
