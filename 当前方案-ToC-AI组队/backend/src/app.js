@@ -33,6 +33,7 @@ import {
   findUserIdentity,
   findOrCreateOAuthUser,
   findOrCreateOtpUser,
+  redeemExperienceInvite,
   isParticipantVisible,
   isConnectionBlocked,
   listConnectionRequests,
@@ -70,6 +71,12 @@ import {
   OAUTH_PROVIDERS,
   verifyOAuthState,
 } from "./oauth-auth.js";
+import {
+  experienceClientIdIsValid,
+  experienceInviteSecretIsStrong,
+  hashExperienceClientId,
+  verifyExperienceInviteToken,
+} from "./experience-invite.js";
 
 const SOURCES = new Set(["nfc", "qr", "link"]);
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -287,6 +294,7 @@ export function createApi({
   oauthProviders = {},
   androidAppLinkReady = false,
   oauthIdentityResolver = exchangeOAuthCode,
+  experienceInviteSecret = null,
   analyticsAdminToken = null,
   analyticsAppVersion = "development",
   analyticsDebugEnabled = false,
@@ -302,6 +310,7 @@ export function createApi({
     : new Set(["tencent_cloud", "fixed_demo", "test"]).has(otpDeliveryMode)
       ? otpDeliveryMode
       : "tencent_cloud";
+  const experienceLoginReady = experienceInviteSecretIsStrong(experienceInviteSecret);
   const database = openDatabase(databasePath);
   const analytics = createAnalyticsService(database, {
     clock,
@@ -740,6 +749,84 @@ export function createApi({
         is_new_user: exchange.isNewUser,
         provider: exchange.provider,
         user: findUserIdentity(database, exchange.userId),
+      });
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/auth/experience-sessions") {
+      if (!experienceLoginReady) {
+        sendError(
+          response,
+          503,
+          "EXPERIENCE_LOGIN_UNAVAILABLE",
+          "Experience-group login is temporarily unavailable.",
+        );
+        return;
+      }
+      const parsedBody = await readJsonBody(request, response);
+      if (!parsedBody.ok) return;
+      const token = parsedBody.value?.token;
+      const clientId = parsedBody.value?.client_id;
+      const nowDate = clock();
+      const now = nowDate.toISOString();
+      const invite = verifyExperienceInviteToken({
+        secret: experienceInviteSecret,
+        token,
+        now: nowDate,
+      });
+      if (
+        !invite
+        || invite.eventId !== otpEventId
+        || !experienceClientIdIsValid(clientId)
+        || !findEventEndsAt(database, invite.eventId)
+      ) {
+        sendError(
+          response,
+          400,
+          "INVALID_EXPERIENCE_INVITE",
+          "The experience-group invite is invalid or expired.",
+        );
+        return;
+      }
+
+      const expiresAt = new Date(nowDate.getTime() + sessionTtlMs).toISOString();
+      let redemption;
+      let session;
+      database.exec("BEGIN IMMEDIATE");
+      try {
+        redemption = redeemExperienceInvite(database, {
+          campaignId: invite.campaignId,
+          clientHash: hashExperienceClientId(clientId),
+          eventId: invite.eventId,
+          maxUses: invite.maxUses,
+          now,
+        });
+        if (redemption.status === "full") {
+          database.exec("ROLLBACK");
+          sendError(
+            response,
+            409,
+            "EXPERIENCE_INVITE_FULL",
+            "The experience-group invite has reached its participant limit.",
+          );
+          return;
+        }
+        session = createAuthSession(database, {
+          userId: redemption.userId,
+          now,
+          expiresAt,
+        });
+        database.exec("COMMIT");
+      } catch (error) {
+        database.exec("ROLLBACK");
+        throw error;
+      }
+      sendJson(response, 201, {
+        access_token: session.token,
+        token_type: "Bearer",
+        expires_at: session.expiresAt,
+        is_new_user: redemption.isNewUser,
+        user: findUserIdentity(database, redemption.userId),
       });
       return;
     }

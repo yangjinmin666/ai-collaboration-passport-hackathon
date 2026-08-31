@@ -169,6 +169,35 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "413": { $ref: "#/components/responses/PayloadTooLarge" }
+  /api/auth/experience-sessions:
+    post:
+      tags: [Identity]
+      summary: Exchange a signed experience-group link for a real participant session
+      description: >-
+        A campaign link can create one hidden COSPAN identity per browser device up to its signed
+        participant limit. Reopening the same link on the same device resumes that identity. The
+        invite is removed from the browser URL before exchange and is never stored as the session token.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, client_id]
+              properties:
+                token: { type: string, minLength: 40, maxLength: 2048 }
+                client_id: { type: string, pattern: "^client_[A-Za-z0-9_-]{32,128}$" }
+      responses:
+        "201":
+          description: Bearer session issued for a new or returning experience participant
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OtpSessionResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { description: The signed participant capacity has been reached }
+        "503": { description: Experience-group login is not configured }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
   /api/auth/otp/challenges:
     post:
       tags: [Identity]

@@ -38,6 +38,7 @@ if [[ ! -f /etc/rally/rally.env ]]; then
   TOUCH_DEVICE_ACCESS_KEY="$(openssl rand -hex 32)"
   AUTH_OTP_SECRET="$(openssl rand -hex 32)"
   AUTH_OAUTH_STATE_SECRET="$(openssl rand -hex 32)"
+  EXPERIENCE_INVITE_SECRET="$(openssl rand -hex 32)"
   ANALYTICS_ADMIN_TOKEN="$(openssl rand -hex 32)"
   umask 077
   printf '%s\n' \
@@ -52,6 +53,7 @@ if [[ ! -f /etc/rally/rally.env ]]; then
     "DEMO_ACCESS_KEY=${DEMO_ACCESS_KEY}" \
     "TOUCH_DEVICE_ACCESS_KEY=${TOUCH_DEVICE_ACCESS_KEY}" \
     "AUTH_OTP_SECRET=${AUTH_OTP_SECRET}" \
+    "EXPERIENCE_INVITE_SECRET=${EXPERIENCE_INVITE_SECRET}" \
     "ANALYTICS_ADMIN_TOKEN=${ANALYTICS_ADMIN_TOKEN}" \
     "RALLY_APP_VERSION=${RELEASE_ID}" \
     "PUBLIC_APP_ORIGIN=https://${PUBLIC_IP}" \
@@ -83,6 +85,9 @@ if ! grep -q '^AUTH_OTP_SECRET=' /etc/rally/rally.env; then
 fi
 if ! grep -q '^AUTH_OAUTH_STATE_SECRET=' /etc/rally/rally.env; then
   ensure_env_default AUTH_OAUTH_STATE_SECRET "$(openssl rand -hex 32)"
+fi
+if ! grep -q '^EXPERIENCE_INVITE_SECRET=' /etc/rally/rally.env; then
+  ensure_env_default EXPERIENCE_INVITE_SECRET "$(openssl rand -hex 32)"
 fi
 if ! grep -q '^ANALYTICS_ADMIN_TOKEN=' /etc/rally/rally.env; then
   ensure_env_default ANALYTICS_ADMIN_TOKEN "$(openssl rand -hex 32)"

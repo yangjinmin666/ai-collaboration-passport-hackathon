@@ -373,8 +373,10 @@ const storedSwipeSoundEnabled = localStorage.getItem("rally_swipe_sound_enabled"
 const initialOAuthTicket = initialParams.get("oauth_ticket");
 const initialOAuthError = initialParams.get("oauth_error");
 const initialOAuthProvider = initialParams.get("oauth_provider");
+const initialExperienceInvite = initialParams.get("experience_invite");
 const oauthVerifierStorageKey = "rally_oauth_client_verifier";
 const oauthProviderStorageKey = "rally_oauth_client_provider";
+const experienceClientStorageKey = "cospan_experience_client_id";
 const packagedApiBase = (() => {
   const value = document.querySelector('meta[name="rally-api-origin"]')?.content.trim();
   if (!value) return null;
@@ -754,7 +756,7 @@ const state = {
     enabled: liveConfig.enabled,
     authStatus: storedAccessToken || liveConfig.demoUserId
       ? "ready"
-      : initialOAuthTicket
+      : initialOAuthTicket || initialExperienceInvite
         ? "exchanging"
         : "required",
     sessionExpiresAt: storedSessionExpiry,
@@ -775,7 +777,7 @@ const state = {
     platformLinks: [],
     currentProfile: null,
     meLoaded: false,
-    meLoading: Boolean(initialOAuthTicket),
+    meLoading: Boolean(initialOAuthTicket || initialExperienceInvite),
     otpChallengeId: null,
     otpMaskedPhone: "",
     otpDeliveryMode: "tencent_cloud",
@@ -4313,6 +4315,12 @@ function clearOAuthCallbackParameters() {
   history.replaceState(history.state, "", url);
 }
 
+function clearExperienceInviteParameter() {
+  const url = new URL(location.href);
+  url.searchParams.delete("experience_invite");
+  history.replaceState(history.state, "", url);
+}
+
 async function loadOAuthProviders() {
   if (!state.live.enabled) return;
   try {
@@ -4339,6 +4347,17 @@ function encodeOAuthBytes(bytes) {
   let binary = "";
   for (const value of bytes) binary += String.fromCharCode(value);
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function experienceClientId() {
+  const stored = localStorage.getItem(experienceClientStorageKey);
+  if (/^client_[A-Za-z0-9_-]{32,128}$/.test(stored || "")) return stored;
+  if (!globalThis.crypto?.getRandomValues) return null;
+  const bytes = new Uint8Array(24);
+  globalThis.crypto.getRandomValues(bytes);
+  const generated = `client_${encodeOAuthBytes(bytes)}`;
+  localStorage.setItem(experienceClientStorageKey, generated);
+  return generated;
 }
 
 async function createOAuthClientBinding(provider) {
@@ -4453,12 +4472,51 @@ async function exchangeOAuthTicket(ticket) {
   }
 }
 
+async function exchangeExperienceInvite(token) {
+  state.live.authStatus = "exchanging";
+  state.live.meLoading = true;
+  state.live.error = "";
+  clearExperienceInviteParameter();
+  render();
+  try {
+    const clientId = experienceClientId();
+    if (!clientId) throw new Error("SECURE_RANDOM_UNAVAILABLE");
+    const payload = await api.post("/api/auth/experience-sessions", {
+      token,
+      client_id: clientId,
+    }, { authenticate: false, retryDelaysMs: [] });
+    await finishLiveAuthentication(
+      payload,
+      payload.is_new_user ? "体验账号已创建" : "体验账号已恢复",
+    );
+  } catch (error) {
+    state.live.authStatus = "required";
+    state.live.meLoading = false;
+    state.live.error = error instanceof ApiError && error.code === "EXPERIENCE_INVITE_FULL"
+      ? "本批体验名额已满，请联系邀请人"
+      : "体验邀请已失效，请联系邀请人获取新链接";
+  } finally {
+    render();
+  }
+}
+
 async function initializeLiveAuthentication() {
   if (!state.live.enabled) return;
   const hasOAuthCallbackParameters = initialParams.has("oauth_ticket")
     || initialParams.has("oauth_provider")
     || initialParams.has("oauth_error");
   if (hasOAuthCallbackParameters) clearOAuthCallbackParameters();
+  if (initialExperienceInvite && storedAccessToken) {
+    await loadLiveMe();
+    if (state.live.meLoaded) {
+      clearExperienceInviteParameter();
+      return;
+    }
+  }
+  if (initialExperienceInvite) {
+    await exchangeExperienceInvite(initialExperienceInvite);
+    return;
+  }
   await loadOAuthProviders();
   if (initialOAuthTicket && !storedAccessToken) {
     await exchangeOAuthTicket(initialOAuthTicket);

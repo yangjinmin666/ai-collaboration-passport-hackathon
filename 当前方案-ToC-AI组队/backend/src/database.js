@@ -197,6 +197,20 @@ export function openDatabase(databasePath) {
     CREATE INDEX IF NOT EXISTS oauth_identities_by_user
       ON oauth_identities (user_id, provider);
 
+    CREATE TABLE IF NOT EXISTS experience_invite_redemptions (
+      event_id TEXT NOT NULL,
+      campaign_id TEXT NOT NULL,
+      client_hash TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      redeemed_at TEXT NOT NULL,
+      PRIMARY KEY (event_id, campaign_id, client_hash),
+      FOREIGN KEY (event_id) REFERENCES events(event_id),
+      FOREIGN KEY (user_id) REFERENCES users(user_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS experience_invite_redemptions_by_campaign
+      ON experience_invite_redemptions (event_id, campaign_id, redeemed_at);
+
     CREATE TABLE IF NOT EXISTS oauth_login_tickets (
       ticket_hash TEXT PRIMARY KEY,
       user_id TEXT NOT NULL,
@@ -1115,6 +1129,52 @@ export function findOrCreateOtpUser(
   });
 
   return { userId: row.user_id, isNewUser };
+}
+
+export function redeemExperienceInvite(
+  database,
+  { campaignId, clientHash, eventId, maxUses, now },
+) {
+  const existing = database.prepare(`
+    SELECT user_id
+    FROM experience_invite_redemptions
+    WHERE event_id = ? AND campaign_id = ? AND client_hash = ?
+  `).get(eventId, campaignId, clientHash);
+  if (existing) {
+    ensureMinimumEventProfile(database, {
+      userId: existing.user_id,
+      eventId,
+      now,
+      newUser: false,
+    });
+    return { status: "resumed", userId: existing.user_id, isNewUser: false };
+  }
+
+  const redemptionCount = Number(database.prepare(`
+    SELECT count(*) AS redemption_count
+    FROM experience_invite_redemptions
+    WHERE event_id = ? AND campaign_id = ?
+  `).get(eventId, campaignId).redemption_count);
+  if (redemptionCount >= maxUses) return { status: "full" };
+
+  const userId = `user_${randomUUID()}`;
+  const avatarNumber = 1 + (
+    Number.parseInt(
+      createHash("sha256").update(`${campaignId}:${clientHash}`).digest("hex").slice(0, 2),
+      16,
+    ) % 10
+  );
+  database.prepare(`
+    INSERT INTO users (user_id, display_name, avatar, email, phone)
+    VALUES (?, 'COSPAN 新朋友', ?, NULL, NULL)
+  `).run(userId, `memoji-${avatarNumber}`);
+  ensureMinimumEventProfile(database, { userId, eventId, now, newUser: true });
+  database.prepare(`
+    INSERT INTO experience_invite_redemptions (
+      event_id, campaign_id, client_hash, user_id, redeemed_at
+    ) VALUES (?, ?, ?, ?, ?)
+  `).run(eventId, campaignId, clientHash, userId, now);
+  return { status: "created", userId, isNewUser: true };
 }
 
 export function findOrCreateOAuthUser(

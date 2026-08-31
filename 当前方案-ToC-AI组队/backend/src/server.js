@@ -19,6 +19,7 @@ const analyticsDebugEnabled = process.env.ANALYTICS_DEBUG_ENABLED === "1";
 const publicAppOrigin = process.env.PUBLIC_APP_ORIGIN ?? null;
 const publicApiOrigin = process.env.PUBLIC_API_ORIGIN ?? null;
 const oauthStateSecret = process.env.AUTH_OAUTH_STATE_SECRET ?? null;
+const experienceInviteSecret = process.env.EXPERIENCE_INVITE_SECRET ?? null;
 const androidAppLinkReady = typeof process.env.ANDROID_APP_SHA256_CERT_FINGERPRINT === "string"
   && /^([0-9A-F]{2}:){31}[0-9A-F]{2}$/.test(
     process.env.ANDROID_APP_SHA256_CERT_FINGERPRINT,
@@ -100,6 +101,7 @@ const api = createApi({
   publicApiOrigin,
   oauthStateSecret,
   oauthProviders,
+  experienceInviteSecret,
   androidAppLinkReady,
   ...(fixedOtpMode
     ? { otpCodeGenerator: () => (fixedDemoOtpMode ? fixedDemoOtpCode : fixedTestOtpCode) }
@@ -119,6 +121,9 @@ if (!fixedOtpMode && missingSmsSettings.length > 0) {
 }
 if (fixedDemoOtpMode) {
   console.warn("Fixed roadshow OTP mode is enabled; no SMS message will be sent.");
+}
+if (!experienceInviteSecret || experienceInviteSecret.length < 32) {
+  console.warn("Experience-group invite login is disabled because EXPERIENCE_INVITE_SECRET is missing or too short.");
 }
 if (!analyticsAdminToken || analyticsAdminToken.length < 32) {
   console.warn("Analytics summary and CSV export are disabled because ANALYTICS_ADMIN_TOKEN is missing or too short.");

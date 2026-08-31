@@ -19,7 +19,7 @@ COSPAN 的 96 小时黑客松后端已经跑通一条完整、可复位的协作
 | 项目与团队 | 创建项目与角色缺口、仅邀请已建联对象、受邀者确认入队、事务保护容量 |
 | COSPAN Space | 三任务模板启动包、成员主动认领、任务状态机、全员确认后启动、项目动态 |
 | 项目 SOS | 结构化求助、活动内响应、四类回报表达、活动级 SOS／外援／付费意向开关、支援者带原因退出、发布者解决／关闭／重开；不自动入队、不处理支付 |
-| 登录与身份 | 手机号短信、微信 OAuth、Google OAuth；首次自动建号、活动隐藏资料、Bearer Session、一次性登录回执与手机号/IP 限频 |
+| 登录与身份 | 手机号短信、微信 OAuth、Google OAuth、签名体验群链接；首次自动建号、活动隐藏资料、Bearer Session、一次性登录回执与手机号/IP 限频 |
 | 数据埋点 | 第一方 `analytics_events`、短信/资料/发现/建联/组队/Room 漏斗、来源归因、幂等去重、30 天原始事件保留、受保护汇总与 CSV 导出 |
 | 演示可靠性 | 确定性种子数据、受保护 Demo Reset、HTTP 契约测试、真实浏览器端到端测试 |
 
@@ -47,6 +47,7 @@ RALLY_APP_VERSION='release-20260829' \
 PUBLIC_APP_ORIGIN='https://rally.example.com' \
 PUBLIC_API_ORIGIN='https://api.rally.example.com' \
 AUTH_OAUTH_STATE_SECRET='replace-with-an-independent-random-secret' \
+EXPERIENCE_INVITE_SECRET='replace-with-an-independent-random-secret' \
 GOOGLE_OAUTH_CLIENT_ID='google-client-id' \
 GOOGLE_OAUTH_CLIENT_SECRET='google-client-secret' \
 WECHAT_OAUTH_APP_ID='wechat-app-id' \
@@ -159,6 +160,19 @@ Google: https://<api-domain>/api/auth/oauth/google/callback
 Android App Link 只有在服务器设置 `ANDROID_APP_SHA256_CERT_FINGERPRINT` 后启用。部署脚本会据此生成 `/.well-known/assetlinks.json`；值必须是当前 APK 签名证书的 32 组大写十六进制 SHA-256 指纹。调试包与正式包签名不同，上线时必须替换为正式签名指纹。没有这项配置时，API 的 `android_enabled` 为 `false`，体验包会禁用 Google 按钮，避免把未验证 HTTPS 回调当成安全可用。
 
 当前微信实现是公众号网页授权（`snsapi_userinfo`），用于用户在微信内打开 COSPAN 网页版的场景。Android 原生一键微信登录需要另外接入微信 OpenSDK、应用签名与 Universal Link；在这套配置完成前，体验包会明确提示“请从微信打开网页版”，不会把系统浏览器流程伪装成可用的原生微信登录。
+
+## 体验群免输码链接
+
+国内短信资质仍在审核时，可以用签名体验群链接让真实用户当天进入。链接打开后会在当前浏览器创建独立 COSPAN 身份、隐藏活动资料和正常 Bearer Session，后续资料、定位、建联、项目与任务都写入同一真实数据库；用户不需要输入现场访问码。它不绑定手机号，也不替代正式短信／OAuth 身份验证，只用于受控体验群。
+
+服务器必须配置独立的 32 字符以上 `EXPERIENCE_INVITE_SECRET`。生成一个默认 7 天、最多 50 台设备使用的链接：
+
+```bash
+cd backend
+node scripts/create-experience-link.js
+```
+
+可通过 `EXPERIENCE_INVITE_MAX_USES`、`EXPERIENCE_INVITE_VALID_HOURS` 和 `EXPERIENCE_INVITE_CAMPAIGN_ID` 调整人数、有效期和批次。同一浏览器重复打开同一链接会恢复同一身份，不重复占用名额；不同设备达到上限后返回 `EXPERIENCE_INVITE_FULL`。链接本身是临时登录凭据，只发到目标体验群，不放公开网页、截图或分析日志。
 
 ## 本地演示账号
 
