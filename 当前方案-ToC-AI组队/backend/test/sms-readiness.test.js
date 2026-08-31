@@ -12,6 +12,7 @@ describe("SMS login readiness", () => {
       databasePath: ":memory:",
       otpSecret: "integration-test-otp-secret",
       otpSender: async () => {},
+      otpDeliveryMode: "tencent_cloud",
     });
     const address = await api.start(0);
     baseUrl = `http://127.0.0.1:${address.port}`;
@@ -29,7 +30,38 @@ describe("SMS login readiness", () => {
       status: "ok",
       service: "rally-api",
       sms_login: "ready",
+      sms_delivery: "tencent_cloud",
       analytics: "ready",
     });
+  });
+
+  test("health and challenge responses disclose fixed demo mode without leaking its code", async () => {
+    const fixedApi = createApi({
+      databasePath: ":memory:",
+      otpSecret: "integration-test-otp-secret",
+      otpSender: async () => {},
+      otpDeliveryMode: "fixed_demo",
+      otpCodeGenerator: () => "123456",
+    });
+    const address = await fixedApi.start(0);
+    const fixedBaseUrl = `http://127.0.0.1:${address.port}`;
+
+    try {
+      const health = await (await fetch(`${fixedBaseUrl}/health`)).json();
+      assert.equal(health.sms_login, "ready");
+      assert.equal(health.sms_delivery, "fixed_demo");
+
+      const response = await fetch(`${fixedBaseUrl}/api/auth/otp/challenges`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ phone: "13800138000" }),
+      });
+      const body = await response.json();
+      assert.equal(response.status, 201);
+      assert.equal(body.delivery_mode, "fixed_demo");
+      assert.equal(JSON.stringify(body).includes("123456"), false);
+    } finally {
+      await fixedApi.stop();
+    }
   });
 });

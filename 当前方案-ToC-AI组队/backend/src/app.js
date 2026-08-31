@@ -278,6 +278,7 @@ export function createApi({
   eventPolicyOverrides,
   otpSecret = null,
   otpSender = null,
+  otpDeliveryMode = "tencent_cloud",
   otpEventId = "hackathon-2026",
   otpCodeGenerator = createOtpCode,
   publicAppOrigin = null,
@@ -296,6 +297,11 @@ export function createApi({
   const smsLoginReady = typeof otpSecret === "string"
     && otpSecret.length > 0
     && typeof otpSender === "function";
+  const resolvedOtpDeliveryMode = !smsLoginReady
+    ? "disabled"
+    : new Set(["tencent_cloud", "fixed_demo", "test"]).has(otpDeliveryMode)
+      ? otpDeliveryMode
+      : "tencent_cloud";
   const database = openDatabase(databasePath);
   const analytics = createAnalyticsService(database, {
     clock,
@@ -432,6 +438,7 @@ export function createApi({
         status: "ok",
         service: "rally-api",
         sms_login: smsLoginReady ? "ready" : "disabled",
+        sms_delivery: resolvedOtpDeliveryMode,
         analytics: "ready",
       });
       return;
@@ -858,6 +865,7 @@ export function createApi({
       sendJson(response, 201, {
         challenge_id: challengeId,
         masked_phone: maskChinaMobile(phone),
+        delivery_mode: resolvedOtpDeliveryMode,
         expires_at: expiresAt,
         retry_after_seconds: 60,
       });

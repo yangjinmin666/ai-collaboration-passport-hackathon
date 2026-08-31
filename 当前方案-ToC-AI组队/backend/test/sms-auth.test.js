@@ -41,6 +41,7 @@ describe("SMS one-time-code sessions", () => {
 
     assert.equal(response.status, 201);
     assert.equal(body.masked_phone, "138****8000");
+    assert.equal(body.delivery_mode, "tencent_cloud");
     assert.equal(body.retry_after_seconds, 60);
     assert.match(body.challenge_id, /^otp_/);
     assert.match(body.expires_at, /^\d{4}-\d{2}-\d{2}T/);

@@ -87,6 +87,11 @@ const api = createApi({
   eventPolicyOverrides,
   otpSecret,
   otpSender,
+  otpDeliveryMode: fixedDemoOtpMode
+    ? "fixed_demo"
+    : localOtpTestMode
+      ? "test"
+      : "tencent_cloud",
   otpEventId: activeEventId,
   analyticsAdminToken,
   analyticsAppVersion,

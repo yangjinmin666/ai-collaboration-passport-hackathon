@@ -185,7 +185,9 @@ paths:
                 phone: { type: string, examples: ["13800138000"] }
       responses:
         "201":
-          description: Verification challenge created and SMS accepted for delivery
+          description: >-
+            Verification challenge created. `delivery_mode` identifies whether Tencent Cloud
+            accepted a real SMS request or the server is intentionally using a non-delivery demo/test mode.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/OtpChallengeResponse" }
@@ -1252,11 +1254,12 @@ components:
   schemas:
     HealthResponse:
       type: object
-      required: [status, service, sms_login, analytics]
+      required: [status, service, sms_login, sms_delivery, analytics]
       properties:
         status: { type: string, const: ok }
         service: { type: string, const: rally-api }
         sms_login: { type: string, enum: [ready, disabled] }
+        sms_delivery: { type: string, enum: [tencent_cloud, fixed_demo, test, disabled] }
         analytics: { type: string, const: ready }
     AnalyticsBatch:
       type: object
@@ -1333,10 +1336,11 @@ components:
         avatar: { type: string }
     OtpChallengeResponse:
       type: object
-      required: [challenge_id, masked_phone, expires_at, retry_after_seconds]
+      required: [challenge_id, masked_phone, delivery_mode, expires_at, retry_after_seconds]
       properties:
         challenge_id: { type: string, pattern: "^otp_[0-9a-f-]+$" }
         masked_phone: { type: string, pattern: "^[0-9]{3}\\*{4}[0-9]{4}$" }
+        delivery_mode: { type: string, enum: [tencent_cloud, fixed_demo, test] }
         expires_at: { type: string, format: date-time }
         retry_after_seconds: { type: integer, minimum: 1 }
     OtpSessionResponse:

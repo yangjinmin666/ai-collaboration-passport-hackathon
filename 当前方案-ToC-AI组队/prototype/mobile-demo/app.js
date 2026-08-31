@@ -778,6 +778,7 @@ const state = {
     meLoading: Boolean(initialOAuthTicket),
     otpChallengeId: null,
     otpMaskedPhone: "",
+    otpDeliveryMode: "tencent_cloud",
     otpPhone: "",
     otpRetryAt: null,
     oauthProviders: {
@@ -1402,6 +1403,7 @@ function liveAppReady() {
 function renderLiveGate() {
   if (state.live.authStatus === "required") {
     const verifyingCode = Boolean(state.live.otpChallengeId);
+    const fixedDemoOtp = state.live.otpDeliveryMode === "fixed_demo";
     const retrySeconds = otpRetrySeconds();
     const isAndroidApp = initialParams.get("source") === "android-app";
     const isWechatBrowser = /MicroMessenger/i.test(navigator.userAgent);
@@ -1431,7 +1433,9 @@ function renderLiveGate() {
         <p class="micro-label">${verifyingCode ? "VERIFY" : "WELCOME"}</p>
         <h2>${verifyingCode ? "输入验证码" : "手机号登录"}</h2>
         <p>${verifyingCode
-          ? `验证码已发送至 ${escapeHtml(state.live.otpMaskedPhone)}，5 分钟内有效。`
+          ? fixedDemoOtp
+            ? `当前为现场固定验证码模式，不会向 ${escapeHtml(state.live.otpMaskedPhone)} 发送短信，请联系现场工作人员获取验证码。`
+            : `验证码已发送至 ${escapeHtml(state.live.otpMaskedPhone)}，5 分钟内有效。`
           : "验证手机号后，用 4 个轻量步骤完成自我介绍。手机号不会出现在公开卡片上。"}</p>
         ${verifyingCode ? `
           <form data-live-otp-verify>
@@ -4501,6 +4505,7 @@ function resetLiveOtpChallenge() {
   stopLiveOtpCountdown();
   state.live.otpChallengeId = null;
   state.live.otpMaskedPhone = "";
+  state.live.otpDeliveryMode = "tencent_cloud";
   state.live.otpRetryAt = null;
   state.live.error = "";
 }
@@ -4576,6 +4581,9 @@ async function requestLiveOtp(form, savedValues = null) {
     });
     state.live.otpChallengeId = payload.challenge_id;
     state.live.otpMaskedPhone = payload.masked_phone;
+    state.live.otpDeliveryMode = payload.delivery_mode === "fixed_demo"
+      ? "fixed_demo"
+      : "tencent_cloud";
     state.live.otpPhone = phone;
     state.live.otpRetryAt = Date.now() + Number(payload.retry_after_seconds || 60) * 1000;
     startLiveOtpCountdown();

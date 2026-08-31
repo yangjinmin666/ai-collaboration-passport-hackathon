@@ -121,7 +121,7 @@ http://localhost:4173/?variant=B&live=1&apiBase=http://127.0.0.1:8787&demoUser=u
 
 ## 手机号短信登录
 
-公网入口只需要“手机号 → 6 位验证码”，登录页不要求昵称。`POST /api/auth/otp/challenges` 创建 5 分钟挑战并调用腾讯云 `SendSms 2021-01-11`，`POST /api/auth/otp/sessions` 一次性消费验证码并签发 Bearer Session。新手机号会以“COSPAN 新朋友”创建身份和 2026 AI Hardware Hackathon（`hackathon-2026`）的隐藏资料，验证成功后再由用户填写昵称、协作资料和公开范围。已有手机号登录不会被未认证请求改名。
+公网入口只需要“手机号 → 6 位验证码”，登录页不要求昵称。`POST /api/auth/otp/challenges` 创建 5 分钟挑战并调用腾讯云 `SendSms 2021-01-11`，`POST /api/auth/otp/sessions` 一次性消费验证码并签发 Bearer Session。挑战响应中的 `delivery_mode` 会明确区分真实腾讯云发送（`tencent_cloud`）与不发送短信的固定路演模式（`fixed_demo`）；`GET /health` 通过 `sms_delivery` 暴露相同状态，不能再只凭 `sms_login=ready` 判断真实短信已经启用。新手机号会以“COSPAN 新朋友”创建身份和 2026 AI Hardware Hackathon（`hackathon-2026`）的隐藏资料，验证成功后再由用户填写昵称、协作资料和公开范围。已有手机号登录不会被未认证请求改名。
 
 腾讯云验证码模板必须使用两个变量，顺序固定为 `{1}=6 位验证码`、`{2}=有效分钟数（5）`，例如：
 
