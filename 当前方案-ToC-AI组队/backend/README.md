@@ -19,7 +19,7 @@ COSPAN 的 96 小时黑客松后端已经跑通一条完整、可复位的协作
 | 项目与团队 | 创建项目与角色缺口、仅邀请已建联对象、受邀者确认入队、事务保护容量 |
 | COSPAN Space | 三任务模板启动包、成员主动认领、任务状态机、全员确认后启动、项目动态 |
 | 项目 SOS | 结构化求助、活动内响应、四类回报表达、活动级 SOS／外援／付费意向开关、支援者带原因退出、发布者解决／关闭／重开；不自动入队、不处理支付 |
-| 登录与身份 | 手机号短信、微信 OAuth、Google OAuth、签名体验群链接；首次自动建号、活动隐藏资料、Bearer Session、一次性登录回执与手机号/IP 限频 |
+| 登录与身份 | 体验群签名链接、邮箱验证码登录与绑定、手机号短信、微信 OAuth、Google OAuth；首次自动建号、活动隐藏资料、Bearer Session、一次性验证与地址/IP 限频 |
 | 数据埋点 | 第一方 `analytics_events`、短信/资料/发现/建联/组队/Room 漏斗、来源归因、幂等去重、30 天原始事件保留、受保护汇总与 CSV 导出 |
 | 演示可靠性 | 确定性种子数据、受保护 Demo Reset、HTTP 契约测试、真实浏览器端到端测试 |
 
@@ -42,6 +42,9 @@ PORT=8788 \
 HOST=127.0.0.1 \
 DATABASE_PATH=:memory: \
 AUTH_OTP_SECRET='replace-with-a-long-random-secret' \
+AUTH_EMAIL_SECRET='replace-with-a-different-long-random-secret' \
+RESEND_API_KEY='re_server-only-key' \
+AUTH_EMAIL_FROM='COSPAN 合拍 <login@your-domain.example>' \
 ANALYTICS_ADMIN_TOKEN='replace-with-an-independent-32-char-secret' \
 RALLY_APP_VERSION='release-20260829' \
 PUBLIC_APP_ORIGIN='https://rally.example.com' \
@@ -119,6 +122,24 @@ http://localhost:4173/?variant=B&live=1&apiBase=http://127.0.0.1:8787&demoUser=u
 `SOS_ENABLED`、`EXTERNAL_AID_ENABLED` 和 `PAID_AID_ENABLED` 可按活动关闭整个 SOS、外部支援或有偿悬赏意向。关闭有偿援助后，已有有偿 SOS 也会停止接受新响应。有偿字段只记录 `NOT_PROCESSED` 意向，必须包含金额、币种、交付标准和付款说明；COSPAN 不托管、不代收、不担保。双卡握手使用独立的 `TOUCH_DEVICE_ACCESS_KEY`，不能与演示登录密钥复用，也不能写进公开手机前端；新建 Connection 会持久化 `consent_mode=physical_mutual`，与普通请求接受后的 `recipient_confirmed` 区分。
 
 生产接入使用 `localStorage.rally_access_token` 的 Bearer Token。此时手机端会忽略 URL 查询参数中的 `apiBase` 并默认只访问同源 API，避免恶意分享链接把凭证转发到任意域名。若生产环境前后端确实分域，受信任的登录初始化代码必须先写入 `localStorage.rally_api_base`；不要通过分享 URL 配置带凭证的 API 地址。
+
+## 邮箱登录与账号绑定
+
+冷启动默认路径是“签名体验链接无感进入 → 在我的设置绑定邮箱 → 换设备时用邮箱验证码恢复同一账号”。邮箱是私密登录凭据，不会进入公开资料、附近结果、NFC／QR 卡片或分析事件。
+
+`POST /api/auth/email/challenges` 发送 10 分钟有效的 6 位验证码，`POST /api/auth/email/sessions` 验证后创建或恢复账号。已登录的体验账号通过 `POST /api/me/email/challenges` 与 `PUT /api/me/email` 绑定邮箱。同一邮箱不能被另一账号抢占，验证挑战最多错误 5 次；同邮箱 60 秒冷却、每小时 5 封，同客户端地址每小时 20 封。
+
+当前发件通道使用 Resend HTTP API，服务器需要 `AUTH_EMAIL_SECRET`、`RESEND_API_KEY` 和经过域名验证的 `AUTH_EMAIL_FROM`。在 Resend 控制台按提示为发件子域名添加 SPF、DKIM，并为主域名配置 DMARC；API Key 只放在 `/etc/rally/rally.env`，不进入 Git、前端或 APK。`GET /health` 只有在密钥、发件人和通道都完整时才返回 `email_login=ready`。
+
+```bash
+curl -X POST http://127.0.0.1:8787/api/auth/email/challenges \
+  -H 'content-type: application/json' \
+  -d '{"email":"person@example.com"}'
+
+curl -X POST http://127.0.0.1:8787/api/auth/email/sessions \
+  -H 'content-type: application/json' \
+  -d '{"challenge_id":"email_...","code":"123456"}'
+```
 
 ## 手机号短信登录
 

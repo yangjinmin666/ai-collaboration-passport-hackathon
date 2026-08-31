@@ -15,8 +15,10 @@ import {
   countRecentConnectionRequests,
   createAuthSession,
   createConnectionMessage,
+  createEmailChallenge,
   createOAuthLoginTicket,
   createOtpChallenge,
+  deleteEmailChallenge,
   deleteOtpChallenge,
   createConnectionRequest,
   expireConnectionRequests,
@@ -25,6 +27,8 @@ import {
   findConnectionById,
   findConnectionRequestById,
   findEventEndsAt,
+  findEmailChallenge,
+  findLatestEmailChallengeAt,
   findLatestConnectionRequest,
   findLatestOtpChallengeAt,
   findOtpChallenge,
@@ -32,7 +36,9 @@ import {
   findSessionUserId,
   findUserIdentity,
   findOrCreateOAuthUser,
+  findOrCreateEmailUser,
   findOrCreateOtpUser,
+  findUserAuthMethods,
   redeemExperienceInvite,
   isParticipantVisible,
   isConnectionBlocked,
@@ -40,15 +46,28 @@ import {
   markConnectionConversationRead,
   openDatabase,
   readConnectionConversation,
+  readEmailAddressWindow,
+  readEmailIpWindow,
   rejectConnectionRequest,
   recordOtpFailure,
+  recordEmailFailure,
   readOtpPhoneWindow,
   readOtpIpWindow,
   revokeAuthSession,
   consumeOAuthLoginTicket,
+  consumeEmailChallenge,
   consumeOtpChallenge,
+  bindEmailIdentity,
   userExists,
 } from "./database.js";
+import {
+  createEmailChallengeId,
+  createEmailCode,
+  emailCodeHashesEqual,
+  hashEmailCode,
+  maskEmail,
+  normalizeEmail,
+} from "./email-auth.js";
 import {
   createOtpChallengeId,
   createOtpCode,
@@ -288,6 +307,9 @@ export function createApi({
   otpDeliveryMode = "tencent_cloud",
   otpEventId = "hackathon-2026",
   otpCodeGenerator = createOtpCode,
+  emailSecret = null,
+  emailSender = null,
+  emailCodeGenerator = createEmailCode,
   publicAppOrigin = null,
   publicApiOrigin = null,
   oauthStateSecret = null,
@@ -311,6 +333,9 @@ export function createApi({
       ? otpDeliveryMode
       : "tencent_cloud";
   const experienceLoginReady = experienceInviteSecretIsStrong(experienceInviteSecret);
+  const emailLoginReady = typeof emailSecret === "string"
+    && emailSecret.length > 0
+    && typeof emailSender === "function";
   const database = openDatabase(databasePath);
   const analytics = createAnalyticsService(database, {
     clock,
@@ -448,6 +473,8 @@ export function createApi({
         service: "rally-api",
         sms_login: smsLoginReady ? "ready" : "disabled",
         sms_delivery: resolvedOtpDeliveryMode,
+        email_login: emailLoginReady ? "ready" : "disabled",
+        email_delivery: emailLoginReady ? "resend" : "disabled",
         analytics: "ready",
       });
       return;
@@ -749,6 +776,310 @@ export function createApi({
         is_new_user: exchange.isNewUser,
         provider: exchange.provider,
         user: findUserIdentity(database, exchange.userId),
+      });
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/auth/email/status") {
+      sendJson(response, 200, { enabled: emailLoginReady });
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/me/auth-methods") {
+      const now = clock().toISOString();
+      const userId = resolveActorId(database, request, now, allowInsecureDemoAuth);
+      if (!userId) {
+        sendError(response, 401, "AUTH_REQUIRED", "A valid session is required.");
+        return;
+      }
+      const methods = findUserAuthMethods(database, userId);
+      sendJson(response, 200, {
+        email: {
+          bound: Boolean(methods?.email),
+          masked_email: methods?.email ? maskEmail(methods.email) : null,
+        },
+        phone: {
+          bound: Boolean(methods?.phone),
+          masked_phone: methods?.phone ? maskChinaMobile(methods.phone) : null,
+        },
+      });
+      return;
+    }
+
+    const requestsEmailLogin = request.method === "POST"
+      && url.pathname === "/api/auth/email/challenges";
+    const requestsEmailBinding = request.method === "POST"
+      && url.pathname === "/api/me/email/challenges";
+    if (requestsEmailLogin || requestsEmailBinding) {
+      if (!emailLoginReady) {
+        sendError(
+          response,
+          503,
+          "EMAIL_LOGIN_UNAVAILABLE",
+          "Email login is temporarily unavailable.",
+        );
+        return;
+      }
+      const nowDate = clock();
+      const now = nowDate.toISOString();
+      const userId = requestsEmailBinding
+        ? resolveActorId(database, request, now, allowInsecureDemoAuth)
+        : null;
+      if (requestsEmailBinding && !userId) {
+        sendError(response, 401, "AUTH_REQUIRED", "A valid session is required.");
+        return;
+      }
+      const parsedBody = await readJsonBody(request, response);
+      if (!parsedBody.ok) return;
+      const email = normalizeEmail(parsedBody.value?.email);
+      if (!email) {
+        sendError(response, 400, "INVALID_EMAIL", "A valid email address is required.");
+        return;
+      }
+
+      const oneHourAgo = new Date(nowDate.getTime() - 60 * 60 * 1000).toISOString();
+      const requestIp = readClientIp(request);
+      const ipWindow = readEmailIpWindow(database, { requestIp, since: oneHourAgo });
+      const addressWindow = readEmailAddressWindow(database, { email, since: oneHourAgo });
+      const rateLimit = ipWindow.count >= 20
+        ? ipWindow
+        : addressWindow.count >= 5
+          ? addressWindow
+          : null;
+      if (rateLimit) {
+        const retryAfterSeconds = Math.max(1, Math.ceil(
+          (new Date(rateLimit.oldestCreatedAt).getTime()
+            + 60 * 60 * 1000
+            - nowDate.getTime()) / 1000,
+        ));
+        sendError(
+          response,
+          429,
+          "EMAIL_RATE_LIMITED",
+          "Too many email codes were requested. Please try again later.",
+          { "retry-after": String(retryAfterSeconds) },
+        );
+        return;
+      }
+      const latestChallengeAt = findLatestEmailChallengeAt(database, email);
+      if (latestChallengeAt) {
+        const elapsedMs = nowDate.getTime() - new Date(latestChallengeAt).getTime();
+        if (elapsedMs < 60_000) {
+          const retryAfterSeconds = Math.ceil((60_000 - elapsedMs) / 1000);
+          sendError(
+            response,
+            429,
+            "EMAIL_RATE_LIMITED",
+            "Please wait before requesting another email code.",
+            { "retry-after": String(retryAfterSeconds) },
+          );
+          return;
+        }
+      }
+
+      const challengeId = createEmailChallengeId();
+      const code = emailCodeGenerator();
+      const expiresAt = new Date(nowDate.getTime() + 10 * 60 * 1000).toISOString();
+      createEmailChallenge(database, {
+        challengeId,
+        email,
+        purpose: requestsEmailBinding ? "bind" : "login",
+        userId,
+        codeHash: hashEmailCode({ secret: emailSecret, challengeId, code }),
+        requestIp,
+        now,
+        expiresAt,
+      });
+      try {
+        await emailSender({ email, code, expiresInMinutes: 10 });
+      } catch {
+        deleteEmailChallenge(database, challengeId);
+        sendError(
+          response,
+          502,
+          "EMAIL_DELIVERY_FAILED",
+          "The email code could not be delivered. Please try again.",
+        );
+        return;
+      }
+      if (requestsEmailLogin) {
+        trackBackendAnalytics({
+          eventName: "login_otp_requested",
+          exhibitionId: otpEventId,
+          source: "email_login",
+          objectType: "email_challenge",
+          objectId: challengeId,
+          properties: { challenge_id: challengeId, provider: "resend" },
+          request,
+          occurredAt: now,
+          dedupeKey: `login_email_requested:${challengeId}`,
+        });
+      }
+      sendJson(response, 201, {
+        challenge_id: challengeId,
+        masked_email: maskEmail(email),
+        expires_at: expiresAt,
+        retry_after_seconds: 60,
+      });
+      return;
+    }
+
+    const verifiesEmailLogin = request.method === "POST"
+      && url.pathname === "/api/auth/email/sessions";
+    const verifiesEmailBinding = request.method === "PUT"
+      && url.pathname === "/api/me/email";
+    if (verifiesEmailLogin || verifiesEmailBinding) {
+      if (!emailLoginReady) {
+        sendError(
+          response,
+          503,
+          "EMAIL_LOGIN_UNAVAILABLE",
+          "Email login is temporarily unavailable.",
+        );
+        return;
+      }
+      const nowDate = clock();
+      const now = nowDate.toISOString();
+      const actorId = verifiesEmailBinding
+        ? resolveActorId(database, request, now, allowInsecureDemoAuth)
+        : null;
+      if (verifiesEmailBinding && !actorId) {
+        sendError(response, 401, "AUTH_REQUIRED", "A valid session is required.");
+        return;
+      }
+      const parsedBody = await readJsonBody(request, response);
+      if (!parsedBody.ok) return;
+      const challengeId = parsedBody.value?.challenge_id;
+      const code = parsedBody.value?.code;
+      if (
+        typeof challengeId !== "string"
+        || !/^email_[0-9a-f-]+$/.test(challengeId)
+        || typeof code !== "string"
+        || !/^\d{6}$/.test(code)
+      ) {
+        sendError(
+          response,
+          400,
+          "INVALID_EMAIL_CODE",
+          "The email code is invalid or expired.",
+        );
+        return;
+      }
+      const challenge = findEmailChallenge(database, challengeId);
+      const expectedPurpose = verifiesEmailBinding ? "bind" : "login";
+      const suppliedHash = hashEmailCode({ secret: emailSecret, challengeId, code });
+      const challengeMatches = challenge
+        && challenge.purpose === expectedPurpose
+        && (!verifiesEmailBinding || challenge.userId === actorId);
+      if (
+        challengeMatches
+        && !challenge.consumedAt
+        && challenge.expiresAt > now
+        && challenge.attemptsRemaining > 0
+        && !emailCodeHashesEqual(challenge.codeHash, suppliedHash)
+      ) {
+        recordEmailFailure(database, { challengeId, now });
+      }
+      if (
+        !challengeMatches
+        || challenge.consumedAt
+        || challenge.expiresAt <= now
+        || challenge.attemptsRemaining <= 0
+        || !emailCodeHashesEqual(challenge.codeHash, suppliedHash)
+      ) {
+        sendError(
+          response,
+          400,
+          "INVALID_EMAIL_CODE",
+          "The email code is invalid or expired.",
+        );
+        return;
+      }
+
+      const expiresAt = new Date(nowDate.getTime() + sessionTtlMs).toISOString();
+      let result;
+      let session;
+      database.exec("BEGIN IMMEDIATE");
+      try {
+        if (!consumeEmailChallenge(database, { challengeId, now })) {
+          database.exec("ROLLBACK");
+          sendError(
+            response,
+            400,
+            "INVALID_EMAIL_CODE",
+            "The email code is invalid or expired.",
+          );
+          return;
+        }
+        if (verifiesEmailBinding) {
+          result = bindEmailIdentity(database, {
+            userId: actorId,
+            email: challenge.email,
+            now,
+          });
+        } else {
+          result = findOrCreateEmailUser(database, {
+            email: challenge.email,
+            eventId: otpEventId,
+            now,
+          });
+          if (result.status === "ready") {
+            session = createAuthSession(database, {
+              userId: result.userId,
+              now,
+              expiresAt,
+            });
+          }
+        }
+        database.exec("COMMIT");
+      } catch (error) {
+        database.exec("ROLLBACK");
+        throw error;
+      }
+
+      if (new Set(["conflict", "different_email"]).has(result.status)) {
+        sendError(
+          response,
+          409,
+          "EMAIL_ALREADY_BOUND",
+          "This email address is already bound to an account.",
+        );
+        return;
+      }
+      if (result.status === "ambiguous") {
+        sendError(
+          response,
+          409,
+          "EMAIL_ACCOUNT_AMBIGUOUS",
+          "This email address needs account support before it can be used.",
+        );
+        return;
+      }
+      if (verifiesEmailBinding) {
+        sendJson(response, 200, {
+          email: challenge.email,
+          masked_email: maskEmail(challenge.email),
+        });
+        return;
+      }
+      trackBackendAnalytics({
+        eventName: "login_otp_verified",
+        exhibitionId: otpEventId,
+        userId: result.userId,
+        source: "email_login",
+        objectType: "email_challenge",
+        objectId: challengeId,
+        properties: { challenge_id: challengeId, new_user: result.isNewUser },
+        request,
+        occurredAt: now,
+        dedupeKey: `login_email_verified:${challengeId}`,
+      });
+      sendJson(response, 201, {
+        access_token: session.token,
+        token_type: "Bearer",
+        expires_at: session.expiresAt,
+        is_new_user: result.isNewUser,
+        user: findUserIdentity(database, result.userId),
       });
       return;
     }

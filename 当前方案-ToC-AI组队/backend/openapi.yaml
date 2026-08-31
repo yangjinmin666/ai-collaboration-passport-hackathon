@@ -198,6 +198,121 @@ paths:
         "409": { description: The signed participant capacity has been reached }
         "503": { description: Experience-group login is not configured }
         "413": { $ref: "#/components/responses/PayloadTooLarge" }
+  /api/auth/email/status:
+    get:
+      tags: [Identity]
+      summary: Check whether transactional email login is configured
+      security: []
+      responses:
+        "200":
+          description: Email login readiness without exposing provider credentials
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [enabled]
+                properties:
+                  enabled: { type: boolean }
+  /api/auth/email/challenges:
+    post:
+      tags: [Identity]
+      summary: Send a one-time login code to an email address
+      description: Codes expire after ten minutes and the response never contains the code.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email, maxLength: 254 }
+      responses:
+        "201":
+          description: Email challenge created and accepted by the configured provider
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EmailChallengeResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "502": { description: Email provider rejected or could not deliver the request }
+        "503": { description: Email login is not configured }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
+  /api/auth/email/sessions:
+    post:
+      tags: [Identity]
+      summary: Verify an email code and issue a revocable Bearer session
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmailVerificationInput"
+      responses:
+        "201":
+          description: Existing account restored or a new hidden identity created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OtpSessionResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { description: Email login is not configured }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
+  /api/me/auth-methods:
+    get:
+      tags: [Identity]
+      summary: Read masked login methods for the current account
+      security: [{ BearerAuth: [] }, { DemoHeader: [] }]
+      responses:
+        "200":
+          description: Only binding booleans and masked destinations are returned
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthMethodsResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/me/email/challenges:
+    post:
+      tags: [Identity]
+      summary: Send a code for binding email to the current account
+      security: [{ BearerAuth: [] }, { DemoHeader: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email, maxLength: 254 }
+      responses:
+        "201":
+          description: Binding challenge created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EmailChallengeResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "502": { description: Email provider rejected or could not deliver the request }
+        "503": { description: Email login is not configured }
+  /api/me/email:
+    put:
+      tags: [Identity]
+      summary: Verify and bind email to the current account
+      security: [{ BearerAuth: [] }, { DemoHeader: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EmailVerificationInput" }
+      responses:
+        "200": { description: Email binding completed }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { description: Email is already bound to another account }
+        "503": { description: Email login is not configured }
   /api/auth/otp/challenges:
     post:
       tags: [Identity]
@@ -1283,12 +1398,14 @@ components:
   schemas:
     HealthResponse:
       type: object
-      required: [status, service, sms_login, sms_delivery, analytics]
+      required: [status, service, sms_login, sms_delivery, email_login, email_delivery, analytics]
       properties:
         status: { type: string, const: ok }
         service: { type: string, const: rally-api }
         sms_login: { type: string, enum: [ready, disabled] }
         sms_delivery: { type: string, enum: [tencent_cloud, fixed_demo, test, disabled] }
+        email_login: { type: string, enum: [ready, disabled] }
+        email_delivery: { type: string, enum: [resend, disabled] }
         analytics: { type: string, const: ready }
     AnalyticsBatch:
       type: object
@@ -1372,6 +1489,36 @@ components:
         delivery_mode: { type: string, enum: [tencent_cloud, fixed_demo, test] }
         expires_at: { type: string, format: date-time }
         retry_after_seconds: { type: integer, minimum: 1 }
+    EmailChallengeResponse:
+      type: object
+      required: [challenge_id, masked_email, expires_at, retry_after_seconds]
+      properties:
+        challenge_id: { type: string, pattern: "^email_[0-9a-f-]+$" }
+        masked_email: { type: string }
+        expires_at: { type: string, format: date-time }
+        retry_after_seconds: { type: integer, minimum: 1 }
+    EmailVerificationInput:
+      type: object
+      required: [challenge_id, code]
+      properties:
+        challenge_id: { type: string, pattern: "^email_[0-9a-f-]+$" }
+        code: { type: string, pattern: "^[0-9]{6}$" }
+    AuthMethodsResponse:
+      type: object
+      required: [email, phone]
+      properties:
+        email:
+          type: object
+          required: [bound, masked_email]
+          properties:
+            bound: { type: boolean }
+            masked_email: { type: [string, "null"] }
+        phone:
+          type: object
+          required: [bound, masked_phone]
+          properties:
+            bound: { type: boolean }
+            masked_phone: { type: [string, "null"] }
     OtpSessionResponse:
       type: object
       required: [access_token, token_type, expires_at, is_new_user, user]

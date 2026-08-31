@@ -3,6 +3,7 @@ import { dirname, resolve } from "node:path";
 
 import { createApi } from "./app.js";
 import { oauthPublicOriginIsSecure, oauthStateSecretIsStrong } from "./oauth-auth.js";
+import { createResendEmailSender } from "./resend-email.js";
 import { createTencentSmsSender } from "./tencent-sms.js";
 
 const port = Number.parseInt(process.env.PORT ?? "8787", 10);
@@ -20,6 +21,7 @@ const publicAppOrigin = process.env.PUBLIC_APP_ORIGIN ?? null;
 const publicApiOrigin = process.env.PUBLIC_API_ORIGIN ?? null;
 const oauthStateSecret = process.env.AUTH_OAUTH_STATE_SECRET ?? null;
 const experienceInviteSecret = process.env.EXPERIENCE_INVITE_SECRET ?? null;
+const emailSecret = process.env.AUTH_EMAIL_SECRET ?? null;
 const androidAppLinkReady = typeof process.env.ANDROID_APP_SHA256_CERT_FINGERPRINT === "string"
   && /^([0-9A-F]{2}:){31}[0-9A-F]{2}$/.test(
     process.env.ANDROID_APP_SHA256_CERT_FINGERPRINT,
@@ -42,6 +44,15 @@ const tencentSmsConfig = {
   templateId: process.env.TENCENT_SMS_TEMPLATE_ID,
   region: process.env.TENCENT_SMS_REGION,
 };
+const resendEmailConfig = {
+  apiKey: process.env.RESEND_API_KEY,
+  from: process.env.AUTH_EMAIL_FROM,
+};
+const missingEmailSettings = [
+  ["AUTH_EMAIL_SECRET", emailSecret],
+  ["RESEND_API_KEY", resendEmailConfig.apiKey],
+  ["AUTH_EMAIL_FROM", resendEmailConfig.from],
+].filter(([, value]) => typeof value !== "string" || !value.trim()).map(([name]) => name);
 const missingSmsSettings = [
   ["AUTH_OTP_SECRET", otpSecret],
   ["TENCENT_SMS_SECRET_ID", tencentSmsConfig.secretId],
@@ -68,6 +79,9 @@ const otpSender = fixedOtpMode
   : missingSmsSettings.length === 0
     ? createTencentSmsSender(tencentSmsConfig)
     : null;
+const emailSender = missingEmailSettings.length === 0
+  ? createResendEmailSender(resendEmailConfig)
+  : null;
 const eventPolicyOverrides = {
   [activeEventId]: {
     sos_enabled: process.env.SOS_ENABLED !== "0",
@@ -102,6 +116,8 @@ const api = createApi({
   oauthStateSecret,
   oauthProviders,
   experienceInviteSecret,
+  emailSecret,
+  emailSender,
   androidAppLinkReady,
   ...(fixedOtpMode
     ? { otpCodeGenerator: () => (fixedDemoOtpMode ? fixedDemoOtpCode : fixedTestOtpCode) }
@@ -124,6 +140,9 @@ if (fixedDemoOtpMode) {
 }
 if (!experienceInviteSecret || experienceInviteSecret.length < 32) {
   console.warn("Experience-group invite login is disabled because EXPERIENCE_INVITE_SECRET is missing or too short.");
+}
+if (missingEmailSettings.length > 0) {
+  console.warn(`Email login is disabled; missing settings: ${missingEmailSettings.join(", ")}.`);
 }
 if (!analyticsAdminToken || analyticsAdminToken.length < 32) {
   console.warn("Analytics summary and CSV export are disabled because ANALYTICS_ADMIN_TOKEN is missing or too short.");

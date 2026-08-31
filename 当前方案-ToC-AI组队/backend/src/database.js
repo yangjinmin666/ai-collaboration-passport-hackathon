@@ -183,6 +183,37 @@ export function openDatabase(databasePath) {
     CREATE INDEX IF NOT EXISTS auth_sessions_by_user
       ON auth_sessions (user_id, expires_at);
 
+    CREATE TABLE IF NOT EXISTS email_identities (
+      email TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL UNIQUE,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(user_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS email_identities_by_user
+      ON email_identities (user_id);
+
+    CREATE TABLE IF NOT EXISTS email_auth_challenges (
+      challenge_id TEXT PRIMARY KEY,
+      email TEXT NOT NULL,
+      purpose TEXT NOT NULL CHECK (purpose IN ('login', 'bind')),
+      user_id TEXT,
+      code_hash TEXT NOT NULL,
+      attempts_remaining INTEGER NOT NULL,
+      request_ip TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      consumed_at TEXT,
+      FOREIGN KEY (user_id) REFERENCES users(user_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS email_auth_challenges_by_email
+      ON email_auth_challenges (email, created_at);
+
+    CREATE INDEX IF NOT EXISTS email_auth_challenges_by_ip
+      ON email_auth_challenges (request_ip, created_at);
+
     CREATE TABLE IF NOT EXISTS oauth_identities (
       provider TEXT NOT NULL,
       subject TEXT NOT NULL,
@@ -992,6 +1023,97 @@ export function createOtpChallenge(
   `).run(challengeId, phone, displayName, codeHash, requestIp, now, expiresAt);
 }
 
+export function createEmailChallenge(
+  database,
+  { challengeId, email, purpose, userId, codeHash, requestIp, now, expiresAt },
+) {
+  database.prepare(`
+    INSERT INTO email_auth_challenges (
+      challenge_id, email, purpose, user_id, code_hash, attempts_remaining,
+      request_ip, created_at, expires_at, consumed_at
+    ) VALUES (?, ?, ?, ?, ?, 5, ?, ?, ?, NULL)
+  `).run(challengeId, email, purpose, userId, codeHash, requestIp, now, expiresAt);
+}
+
+export function deleteEmailChallenge(database, challengeId) {
+  database.prepare(`
+    DELETE FROM email_auth_challenges
+    WHERE challenge_id = ? AND consumed_at IS NULL
+  `).run(challengeId);
+}
+
+export function findLatestEmailChallengeAt(database, email) {
+  return database.prepare(`
+    SELECT created_at FROM email_auth_challenges
+    WHERE email = ?
+    ORDER BY created_at DESC
+    LIMIT 1
+  `).get(email)?.created_at ?? null;
+}
+
+export function readEmailAddressWindow(database, { email, since }) {
+  const row = database.prepare(`
+    SELECT count(*) AS challenge_count, min(created_at) AS oldest_created_at
+    FROM email_auth_challenges
+    WHERE email = ? AND created_at > ?
+  `).get(email, since);
+  return {
+    count: Number(row.challenge_count),
+    oldestCreatedAt: row.oldest_created_at ?? null,
+  };
+}
+
+export function readEmailIpWindow(database, { requestIp, since }) {
+  const row = database.prepare(`
+    SELECT count(*) AS challenge_count, min(created_at) AS oldest_created_at
+    FROM email_auth_challenges
+    WHERE request_ip = ? AND created_at > ?
+  `).get(requestIp, since);
+  return {
+    count: Number(row.challenge_count),
+    oldestCreatedAt: row.oldest_created_at ?? null,
+  };
+}
+
+export function findEmailChallenge(database, challengeId) {
+  const row = database.prepare(`
+    SELECT * FROM email_auth_challenges WHERE challenge_id = ?
+  `).get(challengeId);
+  if (!row) return null;
+  return {
+    id: row.challenge_id,
+    email: row.email,
+    purpose: row.purpose,
+    userId: row.user_id,
+    codeHash: row.code_hash,
+    attemptsRemaining: row.attempts_remaining,
+    expiresAt: row.expires_at,
+    consumedAt: row.consumed_at,
+  };
+}
+
+export function consumeEmailChallenge(database, { challengeId, now }) {
+  return database.prepare(`
+    UPDATE email_auth_challenges
+    SET consumed_at = ?
+    WHERE challenge_id = ?
+      AND consumed_at IS NULL
+      AND expires_at > ?
+      AND attempts_remaining > 0
+  `).run(now, challengeId, now).changes > 0;
+}
+
+export function recordEmailFailure(database, { challengeId, now }) {
+  database.prepare(`
+    UPDATE email_auth_challenges
+    SET attempts_remaining = attempts_remaining - 1
+    WHERE challenge_id = ?
+      AND consumed_at IS NULL
+      AND expires_at > ?
+      AND attempts_remaining > 0
+  `).run(challengeId, now);
+}
+
 export function deleteOtpChallenge(database, challengeId) {
   database.prepare(`
     DELETE FROM otp_challenges WHERE challenge_id = ? AND consumed_at IS NULL
@@ -1129,6 +1251,85 @@ export function findOrCreateOtpUser(
   });
 
   return { userId: row.user_id, isNewUser };
+}
+
+export function findOrCreateEmailUser(
+  database,
+  { email, eventId, now },
+) {
+  let identity = database.prepare(`
+    SELECT user_id FROM email_identities WHERE email = ?
+  `).get(email);
+  let isNewUser = false;
+
+  if (!identity) {
+    const matchingUsers = database.prepare(`
+      SELECT user_id FROM users WHERE lower(email) = ? ORDER BY user_id LIMIT 2
+    `).all(email);
+    if (matchingUsers.length > 1) return { status: "ambiguous" };
+    if (matchingUsers.length === 1) {
+      identity = matchingUsers[0];
+    } else {
+      const userId = `user_${randomUUID()}`;
+      const avatarNumber = 1 + (
+        Number.parseInt(createHash("sha256").update(email).digest("hex").slice(0, 2), 16) % 10
+      );
+      database.prepare(`
+        INSERT INTO users (user_id, display_name, avatar, email, phone)
+        VALUES (?, 'COSPAN 新朋友', ?, ?, NULL)
+      `).run(userId, `memoji-${avatarNumber}`, email);
+      identity = { user_id: userId };
+      isNewUser = true;
+    }
+    database.prepare(`
+      INSERT INTO email_identities (email, user_id, created_at, updated_at)
+      VALUES (?, ?, ?, ?)
+    `).run(email, identity.user_id, now, now);
+  }
+
+  ensureMinimumEventProfile(database, {
+    userId: identity.user_id,
+    eventId,
+    now,
+    newUser: isNewUser,
+  });
+  return { status: "ready", userId: identity.user_id, isNewUser };
+}
+
+export function bindEmailIdentity(database, { userId, email, now }) {
+  const owner = database.prepare(`
+    SELECT user_id FROM email_identities WHERE email = ?
+  `).get(email);
+  if (owner && owner.user_id !== userId) return { status: "conflict" };
+
+  const matchingUser = database.prepare(`
+    SELECT user_id FROM users WHERE lower(email) = ? AND user_id <> ? LIMIT 1
+  `).get(email, userId);
+  if (matchingUser) return { status: "conflict" };
+
+  const current = database.prepare(`
+    SELECT email FROM email_identities WHERE user_id = ?
+  `).get(userId);
+  if (current && current.email !== email) return { status: "different_email" };
+
+  database.prepare(`
+    INSERT INTO email_identities (email, user_id, created_at, updated_at)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(email) DO UPDATE SET updated_at = excluded.updated_at
+  `).run(email, userId, now, now);
+  database.prepare("UPDATE users SET email = ? WHERE user_id = ?").run(email, userId);
+  return { status: current ? "unchanged" : "bound" };
+}
+
+export function findUserAuthMethods(database, userId) {
+  const user = database.prepare(`
+    SELECT phone FROM users WHERE user_id = ?
+  `).get(userId);
+  if (!user) return null;
+  const email = database.prepare(`
+    SELECT email FROM email_identities WHERE user_id = ?
+  `).get(userId)?.email ?? null;
+  return { email, phone: user.phone ?? null };
 }
 
 export function redeemExperienceInvite(

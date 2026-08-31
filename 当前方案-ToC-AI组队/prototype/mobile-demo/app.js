@@ -783,6 +783,19 @@ const state = {
     otpDeliveryMode: "tencent_cloud",
     otpPhone: "",
     otpRetryAt: null,
+    loginMethod: "email",
+    emailEnabled: false,
+    emailChallengeId: null,
+    emailMaskedAddress: "",
+    emailAddress: "",
+    emailRetryAt: null,
+    authMethods: {
+      email: { bound: false, masked_email: null },
+      phone: { bound: false, masked_phone: null },
+    },
+    emailBindingChallengeId: null,
+    emailBindingMaskedAddress: "",
+    emailBindingAddress: "",
     oauthProviders: {
       google: false,
       wechat: false,
@@ -1404,9 +1417,12 @@ function liveAppReady() {
 
 function renderLiveGate() {
   if (state.live.authStatus === "required") {
-    const verifyingCode = Boolean(state.live.otpChallengeId);
+    const usesEmail = state.live.emailEnabled && state.live.loginMethod === "email";
+    const verifyingEmail = usesEmail && Boolean(state.live.emailChallengeId);
+    const verifyingPhone = !usesEmail && Boolean(state.live.otpChallengeId);
+    const verifyingCode = verifyingEmail || verifyingPhone;
     const fixedDemoOtp = state.live.otpDeliveryMode === "fixed_demo";
-    const retrySeconds = otpRetrySeconds();
+    const retrySeconds = usesEmail ? emailRetrySeconds() : otpRetrySeconds();
     const isAndroidApp = initialParams.get("source") === "android-app";
     const isWechatBrowser = /MicroMessenger/i.test(navigator.userAgent);
     const oauthButton = (provider, label, mark) => {
@@ -1429,31 +1445,44 @@ function renderLiveGate() {
       oauthButton("wechat", "微信登录", "微"),
       oauthButton("google", "Google 登录", "G"),
     ].filter(Boolean).join("");
+    const loginMethodSwitch = state.live.emailEnabled ? `<div class="live-login-methods" aria-label="选择登录方式">
+      <button type="button" data-action="switch-login-method" data-method="email" class="${usesEmail ? "active" : ""}">邮箱登录</button>
+      <button type="button" data-action="switch-login-method" data-method="phone" class="${usesEmail ? "" : "active"}">手机号</button>
+    </div>` : "";
+    const verifyDescription = verifyingEmail
+      ? `验证码已发送至 ${escapeHtml(state.live.emailMaskedAddress)}，10 分钟内有效。`
+      : fixedDemoOtp
+        ? `当前为现场固定验证码模式，不会向 ${escapeHtml(state.live.otpMaskedPhone)} 发送短信，请联系现场工作人员获取验证码。`
+        : `验证码已发送至 ${escapeHtml(state.live.otpMaskedPhone)}，5 分钟内有效。`;
     return `<div class="live-gate">
       <div class="live-gate-brand"><strong>COSPAN</strong><span>合拍 · 人与人先相遇，人与 Agent 再共创。</span></div>
       <section class="live-login-card">
         <p class="micro-label">${verifyingCode ? "VERIFY" : "WELCOME"}</p>
-        <h2>${verifyingCode ? "输入验证码" : "手机号登录"}</h2>
+        <h2>${verifyingCode ? "输入验证码" : usesEmail ? "邮箱登录" : "手机号登录"}</h2>
         <p>${verifyingCode
-          ? fixedDemoOtp
-            ? `当前为现场固定验证码模式，不会向 ${escapeHtml(state.live.otpMaskedPhone)} 发送短信，请联系现场工作人员获取验证码。`
-            : `验证码已发送至 ${escapeHtml(state.live.otpMaskedPhone)}，5 分钟内有效。`
-          : "验证手机号后，用 4 个轻量步骤完成自我介绍。手机号不会出现在公开卡片上。"}</p>
+          ? verifyDescription
+          : usesEmail
+            ? "无需密码。验证后可在换设备时恢复同一个 COSPAN 账号，邮箱不会出现在公开卡片上。"
+            : "验证手机号后，用 4 个轻量步骤完成自我介绍。手机号不会出现在公开卡片上。"}</p>
         ${verifyingCode ? `
-          <form data-live-otp-verify>
-            <label><span>6 位验证码</span><input name="code" required inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" placeholder="请输入短信验证码"></label>
+          <form ${verifyingEmail ? "data-live-email-verify" : "data-live-otp-verify"}>
+            <label><span>6 位验证码</span><input name="code" required inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" placeholder="请输入验证码"></label>
             <button class="primary-button full" type="submit" ${state.live.meLoading ? "disabled" : ""}>${state.live.meLoading ? "正在验证…" : "验证并进入 COSPAN"}</button>
           </form>
           <div class="live-otp-actions">
-            <button type="button" data-action="edit-live-phone">更换手机号</button>
-            <button type="button" data-action="resend-live-otp" ${retrySeconds > 0 || state.live.meLoading ? "disabled" : ""}>${retrySeconds > 0 ? `${retrySeconds} 秒后可重发` : "重新获取验证码"}</button>
+            <button type="button" data-action="${verifyingEmail ? "edit-live-email" : "edit-live-phone"}">更换${verifyingEmail ? "邮箱" : "手机号"}</button>
+            <button type="button" data-action="${verifyingEmail ? "resend-live-email" : "resend-live-otp"}" ${retrySeconds > 0 || state.live.meLoading ? "disabled" : ""}>${retrySeconds > 0 ? `${retrySeconds} 秒后可重发` : "重新获取验证码"}</button>
           </div>
         ` : `
+          ${loginMethodSwitch}
           ${oauthOptions ? `<div class="live-oauth-options" aria-label="第三方登录方式">${oauthOptions}</div><div class="live-login-divider"><span>或</span></div>` : ""}
-          <form data-live-otp-request>
+          ${usesEmail ? `<form data-live-email-request>
+            <label><span>邮箱</span><input name="email" type="email" required inputmode="email" autocomplete="email" autocapitalize="off" spellcheck="false" placeholder="name@example.com" value="${escapeHtml(state.live.emailAddress)}"></label>
+            <button class="primary-button full" type="submit" ${state.live.meLoading ? "disabled" : ""}>${state.live.meLoading ? "正在发送…" : "获取邮箱验证码"}</button>
+          </form>` : `<form data-live-otp-request>
             <label><span>手机号</span><input name="phone" type="tel" required inputmode="tel" autocomplete="tel" placeholder="请输入中国大陆手机号" value="${escapeHtml(state.live.otpPhone)}"></label>
             <button class="primary-button full" type="submit" ${state.live.meLoading ? "disabled" : ""}>${state.live.meLoading ? "正在发送…" : "获取短信验证码"}</button>
-          </form>
+          </form>`}
           <p class="live-login-consent">登录即表示你同意使用所选账号完成身份验证。</p>
         `}
         <details class="live-analytics-privacy" data-analytics-privacy-notice><summary>隐私与数据说明</summary><span>COSPAN 只记录改进登录、发现和组队所需的白名单事件，不收集验证码、Token、自由文本或精确位置；演示阶段不向第三方统计平台发送数据。</span></details>
@@ -2548,6 +2577,12 @@ function renderDiscoveryFilterSheet() {
 
 function renderProfileSettingsSheet() {
   const activeContext = activeExhibition();
+  const emailMethod = state.live.authMethods.email;
+  const emailDetail = emailMethod.bound
+    ? `${emailMethod.masked_email} · 可换设备登录`
+    : state.live.emailEnabled
+      ? "未绑定 · 绑定后可恢复同一账号"
+      : "邮件服务尚未配置";
   const settings = [
     ["device", "设备与隐私", "1 台 AI Passport 已连接", "⌁"],
     ["authorization", "数据与授权", "管理公开字段和平台链接权限", "◎"],
@@ -2561,7 +2596,11 @@ function renderProfileSettingsSheet() {
         <div><p class="micro-label">COSPAN SETTINGS</p><h3>设置</h3></div>
       </header>
       <p class="profile-settings-copy">管理设备、隐私和展会账号。这些次级选项不会打断你的协作身份编辑。</p>
-      <div class="profile-settings-list"><button class="settings-sound-toggle" data-action="toggle-swipe-sound" aria-pressed="${state.swipeSoundEnabled}">
+      <div class="profile-settings-list">${state.live.enabled ? `<button data-action="open-email-binding">
+        <span class="settings-row-mark" aria-hidden="true">@</span>
+        <span><strong>登录邮箱</strong><small>${escapeHtml(emailDetail)}</small></span>
+        <b>${emailMethod.bound ? "✓" : "›"}</b>
+      </button>` : ""}<button class="settings-sound-toggle" data-action="toggle-swipe-sound" aria-pressed="${state.swipeSoundEnabled}">
         <span class="settings-row-mark" aria-hidden="true">SFX</span>
         <span><strong>滑动声效</strong><small>${state.swipeSoundEnabled ? "左右滑动使用 COSPAN 方向声纹" : "已关闭，仅保留视觉反馈"}</small></span>
         <i class="settings-toggle ${state.swipeSoundEnabled ? "on" : ""}" aria-hidden="true"><b></b></i>
@@ -2571,6 +2610,33 @@ function renderProfileSettingsSheet() {
         <b>›</b>
       </button>`).join("")}</div>
       <aside class="settings-privacy-note"><b>默认最小公开</b><span>${activeContext ? "COSPAN 只展示你在本场展会主动授权的字段，展会结束后自动隐藏。" : "COSPAN 只在你主动开启附近发现时展示授权字段，关闭后立即隐藏。"}</span></aside>
+    </section>
+  </div>`;
+}
+
+function renderEmailBindingSheet() {
+  const emailMethod = state.live.authMethods.email;
+  const verifying = Boolean(state.live.emailBindingChallengeId);
+  return `<div class="overlay profile-settings-overlay">
+    <button class="overlay-backdrop" data-action="close-email-binding" aria-label="关闭邮箱绑定"></button>
+    <section class="bottom-sheet profile-settings-sheet email-binding-sheet" aria-label="登录邮箱">
+      <header class="profile-settings-head">
+        <button data-action="close-email-binding" aria-label="返回设置">←</button>
+        <div><p class="micro-label">ACCOUNT RECOVERY</p><h3>登录邮箱</h3></div>
+      </header>
+      ${emailMethod.bound ? `<div class="email-binding-complete"><span aria-hidden="true">✓</span><strong>已绑定 ${escapeHtml(emailMethod.masked_email || "")}</strong><p>换手机或清理浏览器后，使用这个邮箱验证码即可恢复当前 COSPAN 账号。</p></div>` : !state.live.emailEnabled ? `<div class="email-binding-complete"><strong>邮件服务待配置</strong><p>服务器配置发件域名后即可绑定；当前账号和体验数据不受影响。</p></div>` : verifying ? `
+        <p class="profile-settings-copy">验证码已发送至 ${escapeHtml(state.live.emailBindingMaskedAddress)}，10 分钟内有效。</p>
+        <form class="email-binding-form" data-email-binding-verify>
+          <label><span>6 位验证码</span><input name="code" required inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" placeholder="请输入邮箱验证码"></label>
+          <button class="primary-button full" type="submit" ${state.live.meLoading ? "disabled" : ""}>${state.live.meLoading ? "正在验证…" : "验证并绑定"}</button>
+          <button class="text-action" type="button" data-action="edit-binding-email">更换邮箱</button>
+        </form>` : `
+        <p class="profile-settings-copy">绑定邮箱不会更换账号，只会为当前账号增加一种恢复方式。邮箱默认不公开。</p>
+        <form class="email-binding-form" data-email-binding-request>
+          <label><span>邮箱</span><input name="email" type="email" required inputmode="email" autocomplete="email" autocapitalize="off" spellcheck="false" placeholder="name@example.com" value="${escapeHtml(state.live.emailBindingAddress)}"></label>
+          <button class="primary-button full" type="submit" ${state.live.meLoading ? "disabled" : ""}>${state.live.meLoading ? "正在发送…" : "发送验证码"}</button>
+        </form>`}
+      ${state.live.error ? `<div class="live-error" role="alert">${escapeHtml(state.live.error)}</div>` : ""}
     </section>
   </div>`;
 }
@@ -2789,6 +2855,7 @@ function renderOverlay() {
   if (state.overlay === "context-switcher") return renderContextSwitcherSheet();
   if (state.overlay === "filters") return renderDiscoveryFilterSheet();
   if (state.overlay === "profile-settings") return renderProfileSettingsSheet();
+  if (state.overlay === "email-binding") return renderEmailBindingSheet();
   if (state.overlay === "profile-editor") return renderLiveProfileEditor();
   if (state.overlay === "profile-block-library") return renderProfileBlockLibrary();
   if (state.overlay === "profile-block-editor") return renderProfileBlockEditor();
@@ -3107,6 +3174,22 @@ function bindEvents() {
   document.querySelector("[data-live-otp-verify]")?.addEventListener("submit", (event) => {
     event.preventDefault();
     if (event.currentTarget.reportValidity()) verifyLiveOtp(event.currentTarget);
+  });
+  document.querySelector("[data-live-email-request]")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    if (event.currentTarget.reportValidity()) requestLiveEmail(event.currentTarget);
+  });
+  document.querySelector("[data-live-email-verify]")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    if (event.currentTarget.reportValidity()) verifyLiveEmail(event.currentTarget);
+  });
+  document.querySelector("[data-email-binding-request]")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    if (event.currentTarget.reportValidity()) requestEmailBinding(event.currentTarget);
+  });
+  document.querySelector("[data-email-binding-verify]")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    if (event.currentTarget.reportValidity()) verifyEmailBinding(event.currentTarget);
   });
   document.querySelector("[data-live-profile-form]")?.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -3645,6 +3728,23 @@ function handleAction(action, element) {
     state.overlay = null;
     showToast(`在这里管理${activeExhibition() ? "本场活动" : "日常附近"}的公开状态`);
   }
+  if (action === "switch-login-method") {
+    const method = element.dataset.method;
+    if (!new Set(["email", "phone"]).has(method)) return;
+    state.live.loginMethod = method;
+    state.live.error = "";
+    render();
+    return;
+  }
+  if (action === "edit-live-email") {
+    resetLiveEmailChallenge();
+    render();
+    return;
+  }
+  if (action === "resend-live-email") {
+    requestLiveEmail(null, { email: state.live.emailAddress });
+    return;
+  }
   if (action === "edit-live-phone") {
     resetLiveOtpChallenge();
     render();
@@ -3666,6 +3766,21 @@ function handleAction(action, element) {
   }
   if (action === "logout-live") {
     logoutLive();
+    return;
+  }
+  if (action === "open-email-binding") {
+    state.live.error = "";
+    state.overlay = "email-binding";
+  }
+  if (action === "close-email-binding") {
+    state.live.error = "";
+    resetEmailBindingChallenge();
+    state.overlay = "profile-settings";
+  }
+  if (action === "edit-binding-email") {
+    state.live.error = "";
+    resetEmailBindingChallenge();
+    render();
     return;
   }
   if (action === "sync-live-now") {
@@ -4321,6 +4436,23 @@ function clearExperienceInviteParameter() {
   history.replaceState(history.state, "", url);
 }
 
+async function loadEmailStatus() {
+  if (!state.live.enabled) return;
+  try {
+    const payload = await api.get("/api/auth/email/status", {
+      authenticate: false,
+      retryDelaysMs: [],
+    });
+    state.live.emailEnabled = payload.enabled === true;
+    if (!state.live.emailEnabled) state.live.loginMethod = "phone";
+  } catch {
+    state.live.emailEnabled = false;
+    state.live.loginMethod = "phone";
+  } finally {
+    render();
+  }
+}
+
 async function loadOAuthProviders() {
   if (!state.live.enabled) return;
   try {
@@ -4424,6 +4556,8 @@ async function finishLiveAuthentication(payload, successMessage) {
   localStorage.setItem("rally_api_base", liveConfig.apiBase);
   resetLiveOtpChallenge();
   clearLiveOtpIdentity();
+  resetLiveEmailChallenge();
+  clearLiveEmailIdentity();
   state.live.meLoading = false;
   state.tab = "discover";
   await loadLiveMe({ force: true });
@@ -4502,6 +4636,7 @@ async function exchangeExperienceInvite(token) {
 
 async function initializeLiveAuthentication() {
   if (!state.live.enabled) return;
+  await loadEmailStatus();
   const hasOAuthCallbackParameters = initialParams.has("oauth_ticket")
     || initialParams.has("oauth_provider")
     || initialParams.has("oauth_error");
@@ -4541,6 +4676,11 @@ function otpRetrySeconds() {
   return Math.max(0, Math.ceil((state.live.otpRetryAt - Date.now()) / 1000));
 }
 
+function emailRetrySeconds() {
+  if (!state.live.emailRetryAt) return 0;
+  return Math.max(0, Math.ceil((state.live.emailRetryAt - Date.now()) / 1000));
+}
+
 function stopLiveOtpCountdown() {
   if (liveOtpCountdownTimer) window.clearInterval(liveOtpCountdownTimer);
   liveOtpCountdownTimer = null;
@@ -4548,14 +4688,23 @@ function stopLiveOtpCountdown() {
 
 function startLiveOtpCountdown() {
   stopLiveOtpCountdown();
-  if (otpRetrySeconds() <= 0) return;
+  const remaining = state.live.loginMethod === "email"
+    ? emailRetrySeconds()
+    : otpRetrySeconds();
+  if (remaining <= 0) return;
   liveOtpCountdownTimer = window.setInterval(() => {
-    if (state.live.authStatus !== "required" || !state.live.otpChallengeId) {
+    if (
+      state.live.authStatus !== "required"
+      || (!state.live.otpChallengeId && !state.live.emailChallengeId)
+    ) {
       stopLiveOtpCountdown();
       return;
     }
     render();
-    if (otpRetrySeconds() <= 0) stopLiveOtpCountdown();
+    const seconds = state.live.loginMethod === "email"
+      ? emailRetrySeconds()
+      : otpRetrySeconds();
+    if (seconds <= 0) stopLiveOtpCountdown();
   }, 1000);
 }
 
@@ -4572,6 +4721,23 @@ function clearLiveOtpIdentity() {
   state.live.otpPhone = "";
 }
 
+function resetLiveEmailChallenge() {
+  stopLiveOtpCountdown();
+  state.live.emailChallengeId = null;
+  state.live.emailMaskedAddress = "";
+  state.live.emailRetryAt = null;
+  state.live.error = "";
+}
+
+function clearLiveEmailIdentity() {
+  state.live.emailAddress = "";
+}
+
+function resetEmailBindingChallenge() {
+  state.live.emailBindingChallengeId = null;
+  state.live.emailBindingMaskedAddress = "";
+}
+
 function clearLiveSession() {
   liveConfig.accessToken = null;
   localStorage.removeItem("rally_access_token");
@@ -4586,6 +4752,9 @@ function clearLiveSession() {
   state.live.currentProfile = null;
   resetLiveOtpChallenge();
   clearLiveOtpIdentity();
+  resetLiveEmailChallenge();
+  clearLiveEmailIdentity();
+  resetEmailBindingChallenge();
   state.live.discover = [];
   state.live.nearby = [];
   state.live.connectionRequests = [];
@@ -4622,6 +4791,120 @@ async function runLiveMutation(resourceKey, operation) {
 
 function liveBusyAttributes(resourceKey) {
   return state.live.pendingOperations.has(resourceKey) ? 'disabled aria-busy="true"' : "";
+}
+
+async function requestLiveEmail(form, savedValues = null) {
+  if (state.live.meLoading) return;
+  const formData = form ? new FormData(form) : null;
+  const email = String(savedValues?.email ?? formData?.get("email") ?? "").trim();
+  state.live.meLoading = true;
+  state.live.error = "";
+  render();
+  try {
+    const payload = await api.post("/api/auth/email/challenges", { email }, {
+      authenticate: false,
+    });
+    state.live.emailChallengeId = payload.challenge_id;
+    state.live.emailMaskedAddress = payload.masked_email;
+    state.live.emailAddress = email;
+    state.live.emailRetryAt = Date.now() + Number(payload.retry_after_seconds || 60) * 1000;
+    startLiveOtpCountdown();
+  } catch (error) {
+    if (error instanceof ApiError && error.code === "EMAIL_RATE_LIMITED") {
+      state.live.error = "验证码请求太频繁，请稍后再试";
+    } else if (error instanceof ApiError && error.code === "EMAIL_DELIVERY_FAILED") {
+      state.live.error = "邮件暂时没有发送成功，请重新获取";
+    } else if (error instanceof ApiError && error.code === "INVALID_EMAIL") {
+      state.live.error = "请输入有效邮箱";
+    } else {
+      handleLiveFailure(error, "邮箱验证码发送失败，请稍后重试");
+    }
+  } finally {
+    state.live.meLoading = false;
+    render();
+  }
+}
+
+async function verifyLiveEmail(form) {
+  if (state.live.meLoading || !state.live.emailChallengeId) return;
+  const code = String(new FormData(form).get("code") || "").trim();
+  state.live.meLoading = true;
+  state.live.error = "";
+  render();
+  try {
+    const payload = await api.post("/api/auth/email/sessions", {
+      challenge_id: state.live.emailChallengeId,
+      code,
+    }, { authenticate: false });
+    await finishLiveAuthentication(payload, "邮箱验证成功");
+  } catch (error) {
+    if (error instanceof ApiError && error.code === "INVALID_EMAIL_CODE") {
+      state.live.error = "验证码错误、已过期或尝试次数已用完";
+    } else {
+      handleLiveFailure(error, "邮箱验证失败，请稍后重试");
+    }
+  } finally {
+    state.live.meLoading = false;
+    render();
+  }
+}
+
+async function requestEmailBinding(form) {
+  if (state.live.meLoading) return;
+  const email = String(new FormData(form).get("email") || "").trim();
+  state.live.meLoading = true;
+  state.live.error = "";
+  render();
+  try {
+    const payload = await api.post("/api/me/email/challenges", { email });
+    state.live.emailBindingChallengeId = payload.challenge_id;
+    state.live.emailBindingMaskedAddress = payload.masked_email;
+    state.live.emailBindingAddress = email;
+  } catch (error) {
+    if (error instanceof ApiError && error.code === "INVALID_EMAIL") {
+      state.live.error = "请输入有效邮箱";
+    } else if (error instanceof ApiError && error.code === "EMAIL_RATE_LIMITED") {
+      state.live.error = "验证码请求太频繁，请稍后再试";
+    } else {
+      handleLiveFailure(error, "邮箱验证码发送失败");
+    }
+  } finally {
+    state.live.meLoading = false;
+    render();
+  }
+}
+
+async function verifyEmailBinding(form) {
+  if (state.live.meLoading || !state.live.emailBindingChallengeId) return;
+  const code = String(new FormData(form).get("code") || "").trim();
+  state.live.meLoading = true;
+  state.live.error = "";
+  render();
+  try {
+    const payload = await api.put("/api/me/email", {
+      challenge_id: state.live.emailBindingChallengeId,
+      code,
+    });
+    state.live.authMethods.email = {
+      bound: true,
+      masked_email: payload.masked_email,
+    };
+    resetEmailBindingChallenge();
+    state.live.emailBindingAddress = "";
+    state.overlay = "profile-settings";
+    showToast("邮箱已绑定，换设备后可恢复当前账号");
+  } catch (error) {
+    if (error instanceof ApiError && error.code === "INVALID_EMAIL_CODE") {
+      state.live.error = "验证码错误、已过期或尝试次数已用完";
+    } else if (error instanceof ApiError && error.code === "EMAIL_ALREADY_BOUND") {
+      state.live.error = "这个邮箱已绑定其他账号，请更换邮箱";
+    } else {
+      handleLiveFailure(error, "邮箱绑定失败");
+    }
+  } finally {
+    state.live.meLoading = false;
+    render();
+  }
 }
 
 async function requestLiveOtp(form, savedValues = null) {
@@ -5056,7 +5339,13 @@ async function loadLiveMe({ force = false } = {}) {
   state.live.error = "";
   render();
   try {
-    const payload = await api.get("/api/me");
+    const [payload, authMethods] = await Promise.all([
+      api.get("/api/me"),
+      api.get("/api/me/auth-methods").catch(() => null),
+    ]);
+    if (authMethods?.email && authMethods?.phone) {
+      state.live.authMethods = authMethods;
+    }
     const eventProfile = (payload.profiles || []).find((profile) => profile.event_id === liveConfig.eventId);
     state.live.platformLinks = payload.platform_links || [];
     state.live.currentProfile = eventProfile || null;

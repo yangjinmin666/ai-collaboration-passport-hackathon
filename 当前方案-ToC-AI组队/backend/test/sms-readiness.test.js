@@ -31,6 +31,8 @@ describe("SMS login readiness", () => {
       service: "rally-api",
       sms_login: "ready",
       sms_delivery: "tencent_cloud",
+      email_login: "disabled",
+      email_delivery: "disabled",
       analytics: "ready",
     });
   });
