@@ -227,6 +227,12 @@ describe("email one-time-code authentication", () => {
     });
     assert.equal(invalid.response.status, 400);
 
+    const invalidChallenge = await post("/api/auth/email/sessions", {
+      challenge_id: "private.address@example.com",
+      code: "246810",
+    });
+    assert.equal(invalidChallenge.response.status, 400);
+
     deliveryError = new Error("private Resend provider response");
     const deliveryFailed = await post("/api/auth/email/challenges", {
       email: "private.address@example.com",
@@ -269,7 +275,14 @@ describe("email one-time-code authentication", () => {
     ]));
     const verificationFailures = emailEvents
       .filter((event) => event.event_name === "login_otp_verification_failed");
-    assert.equal(verificationFailures.length, 5);
+    assert.equal(verificationFailures.length, 6);
+    assert.equal(
+      verificationFailures.some((event) => (
+        event.object_id === null
+        && !("challenge_id" in event.properties)
+      )),
+      true,
+    );
     assert.equal(
       verificationFailures.some((event) => event.properties.failure_code === "locked"),
       true,

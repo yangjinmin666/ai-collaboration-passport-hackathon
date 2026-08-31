@@ -994,15 +994,16 @@ export function createApi({
       }
       const challengeId = parsedBody.value?.challenge_id;
       const code = parsedBody.value?.code;
+      const validChallengeId = typeof challengeId === "string"
+        && /^email_[0-9a-f-]+$/.test(challengeId);
       if (
-        typeof challengeId !== "string"
-        || !/^email_[0-9a-f-]+$/.test(challengeId)
+        !validChallengeId
         || typeof code !== "string"
         || !/^\d{6}$/.test(code)
       ) {
         if (verifiesEmailLogin) {
           trackEmailLoginFailure(request, "login_otp_verification_failed", "invalid_code", {
-            challengeId: typeof challengeId === "string" ? challengeId : null,
+            challengeId: validChallengeId ? challengeId : null,
             retryable: false,
           });
         }
@@ -1392,14 +1393,15 @@ export function createApi({
       }
       const challengeId = parsedBody.value?.challenge_id;
       const code = parsedBody.value?.code;
+      const validChallengeId = typeof challengeId === "string"
+        && /^otp_[0-9a-f-]+$/.test(challengeId);
       if (
-        typeof challengeId !== "string"
-        || !/^otp_[0-9a-f-]+$/.test(challengeId)
+        !validChallengeId
         || typeof code !== "string"
         || !/^\d{6}$/.test(code)
       ) {
         trackAuthenticationFailure(request, "login_otp_verification_failed", "invalid_code", {
-          challengeId: typeof challengeId === "string" ? challengeId : null,
+          challengeId: validChallengeId ? challengeId : null,
           retryable: false,
         });
         sendError(response, 400, "INVALID_OTP", "The verification code is invalid or expired.");
