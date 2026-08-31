@@ -357,7 +357,7 @@ paths:
               type: object
               required: [challenge_id, code]
               properties:
-                challenge_id: { type: string }
+                challenge_id: { type: string, pattern: "^otp_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$" }
                 code: { type: string, pattern: "^[0-9]{6}$" }
       responses:
         "201":
