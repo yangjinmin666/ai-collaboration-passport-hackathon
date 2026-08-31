@@ -1484,7 +1484,7 @@ components:
       type: object
       required: [challenge_id, masked_phone, delivery_mode, expires_at, retry_after_seconds]
       properties:
-        challenge_id: { type: string, pattern: "^otp_[0-9a-f-]+$" }
+        challenge_id: { type: string, pattern: "^otp_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$" }
         masked_phone: { type: string, pattern: "^[0-9]{3}\\*{4}[0-9]{4}$" }
         delivery_mode: { type: string, enum: [tencent_cloud, fixed_demo, test] }
         expires_at: { type: string, format: date-time }
@@ -1493,7 +1493,7 @@ components:
       type: object
       required: [challenge_id, masked_email, expires_at, retry_after_seconds]
       properties:
-        challenge_id: { type: string, pattern: "^email_[0-9a-f-]+$" }
+        challenge_id: { type: string, pattern: "^email_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$" }
         masked_email: { type: string }
         expires_at: { type: string, format: date-time }
         retry_after_seconds: { type: integer, minimum: 1 }
@@ -1501,7 +1501,7 @@ components:
       type: object
       required: [challenge_id, code]
       properties:
-        challenge_id: { type: string, pattern: "^email_[0-9a-f-]+$" }
+        challenge_id: { type: string, pattern: "^email_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$" }
         code: { type: string, pattern: "^[0-9]{6}$" }
     AuthMethodsResponse:
       type: object

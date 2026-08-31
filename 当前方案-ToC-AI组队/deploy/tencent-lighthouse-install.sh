@@ -37,6 +37,7 @@ if [[ ! -f /etc/rally/rally.env ]]; then
   DEMO_ACCESS_KEY="$(openssl rand -hex 32)"
   TOUCH_DEVICE_ACCESS_KEY="$(openssl rand -hex 32)"
   AUTH_OTP_SECRET="$(openssl rand -hex 32)"
+  AUTH_EMAIL_SECRET="$(openssl rand -hex 32)"
   AUTH_OAUTH_STATE_SECRET="$(openssl rand -hex 32)"
   EXPERIENCE_INVITE_SECRET="$(openssl rand -hex 32)"
   ANALYTICS_ADMIN_TOKEN="$(openssl rand -hex 32)"
@@ -53,6 +54,7 @@ if [[ ! -f /etc/rally/rally.env ]]; then
     "DEMO_ACCESS_KEY=${DEMO_ACCESS_KEY}" \
     "TOUCH_DEVICE_ACCESS_KEY=${TOUCH_DEVICE_ACCESS_KEY}" \
     "AUTH_OTP_SECRET=${AUTH_OTP_SECRET}" \
+    "AUTH_EMAIL_SECRET=${AUTH_EMAIL_SECRET}" \
     "EXPERIENCE_INVITE_SECRET=${EXPERIENCE_INVITE_SECRET}" \
     "ANALYTICS_ADMIN_TOKEN=${ANALYTICS_ADMIN_TOKEN}" \
     "RALLY_APP_VERSION=${RELEASE_ID}" \
@@ -83,6 +85,10 @@ append_secret_from_environment() {
 if ! grep -q '^AUTH_OTP_SECRET=' /etc/rally/rally.env; then
   ensure_env_default AUTH_OTP_SECRET "$(openssl rand -hex 32)"
 fi
+append_secret_from_environment AUTH_EMAIL_SECRET
+if ! grep -q '^AUTH_EMAIL_SECRET=' /etc/rally/rally.env; then
+  ensure_env_default AUTH_EMAIL_SECRET "$(openssl rand -hex 32)"
+fi
 if ! grep -q '^AUTH_OAUTH_STATE_SECRET=' /etc/rally/rally.env; then
   ensure_env_default AUTH_OAUTH_STATE_SECRET "$(openssl rand -hex 32)"
 fi
@@ -104,6 +110,9 @@ for sms_secret in \
   TENCENT_SMS_TEMPLATE_ID
 do
   append_secret_from_environment "${sms_secret}"
+done
+for email_setting in RESEND_API_KEY AUTH_EMAIL_FROM; do
+  append_secret_from_environment "${email_setting}"
 done
 for oauth_secret in \
   GOOGLE_OAUTH_CLIENT_ID \

@@ -99,6 +99,8 @@ import {
 
 const SOURCES = new Set(["nfc", "qr", "link"]);
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const EMAIL_CHALLENGE_ID_PATTERN = /^email_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const OTP_CHALLENGE_ID_PATTERN = /^otp_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const CONNECTION_REQUEST_STATUSES = new Set([
   "REQUESTED",
   "ACCEPTED",
@@ -995,7 +997,7 @@ export function createApi({
       const challengeId = parsedBody.value?.challenge_id;
       const code = parsedBody.value?.code;
       const validChallengeId = typeof challengeId === "string"
-        && /^email_[0-9a-f-]+$/.test(challengeId);
+        && EMAIL_CHALLENGE_ID_PATTERN.test(challengeId);
       if (
         !validChallengeId
         || typeof code !== "string"
@@ -1394,7 +1396,7 @@ export function createApi({
       const challengeId = parsedBody.value?.challenge_id;
       const code = parsedBody.value?.code;
       const validChallengeId = typeof challengeId === "string"
-        && /^otp_[0-9a-f-]+$/.test(challengeId);
+        && OTP_CHALLENGE_ID_PATTERN.test(challengeId);
       if (
         !validChallengeId
         || typeof code !== "string"
