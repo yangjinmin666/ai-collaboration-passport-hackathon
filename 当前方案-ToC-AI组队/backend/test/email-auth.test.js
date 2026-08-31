@@ -21,12 +21,14 @@ describe("email one-time-code authentication", () => {
       databasePath: ":memory:",
       clock: () => new Date(now),
       emailSecret,
+      emailCodeGenerator: () => "246810",
       emailSender: async (message) => {
         if (deliveryError) throw deliveryError;
         sentMessages.push(message);
       },
       experienceInviteSecret: inviteSecret,
       analyticsAdminToken: "email-test-analytics-admin-token-123456789",
+      analyticsDebugEnabled: true,
     });
     const address = await api.start(0);
     baseUrl = `http://127.0.0.1:${address.port}`;
@@ -217,5 +219,65 @@ describe("email one-time-code authentication", () => {
     });
     assert.equal(retried.response.status, 201);
     assert.equal(sentMessages.length, 1);
+  });
+
+  test("records coarse email failures without leaking authentication data", async () => {
+    const invalid = await post("/api/auth/email/challenges", {
+      email: "not-an-email",
+    });
+    assert.equal(invalid.response.status, 400);
+
+    deliveryError = new Error("private Resend provider response");
+    const deliveryFailed = await post("/api/auth/email/challenges", {
+      email: "private.address@example.com",
+    });
+    assert.equal(deliveryFailed.response.status, 502);
+
+    deliveryError = null;
+    const requested = await post("/api/auth/email/challenges", {
+      email: "private.address@example.com",
+    });
+    assert.equal(requested.response.status, 201);
+
+    const limited = await post("/api/auth/email/challenges", {
+      email: "private.address@example.com",
+    });
+    assert.equal(limited.response.status, 429);
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const rejected = await post("/api/auth/email/sessions", {
+        challenge_id: requested.body.challenge_id,
+        code: "000000",
+      });
+      assert.equal(rejected.response.status, 400);
+    }
+
+    const recent = await fetch(
+      `${baseUrl}/api/admin/analytics/events?exhibition_id=hackathon-2026`,
+      { headers: { "x-analytics-admin-token": "email-test-analytics-admin-token-123456789" } },
+    );
+    assert.equal(recent.status, 200);
+    const emailEvents = (await recent.json()).events
+      .filter((event) => event.source === "email_login");
+    const requestFailures = emailEvents
+      .filter((event) => event.event_name === "login_otp_request_failed")
+      .map((event) => event.properties.failure_code);
+    assert.deepEqual(new Set(requestFailures), new Set([
+      "invalid_request",
+      "provider_error",
+      "rate_limited",
+    ]));
+    const verificationFailures = emailEvents
+      .filter((event) => event.event_name === "login_otp_verification_failed");
+    assert.equal(verificationFailures.length, 5);
+    assert.equal(
+      verificationFailures.some((event) => event.properties.failure_code === "locked"),
+      true,
+    );
+
+    const serializedEvents = JSON.stringify(emailEvents);
+    assert.equal(serializedEvents.includes("private.address@example.com"), false);
+    assert.equal(serializedEvents.includes("246810"), false);
+    assert.equal(serializedEvents.includes("private Resend provider response"), false);
   });
 });

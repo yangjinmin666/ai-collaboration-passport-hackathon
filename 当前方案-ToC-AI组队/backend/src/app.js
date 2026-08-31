@@ -372,10 +372,12 @@ export function createApi({
       console.error("Analytics event could not be recorded", error);
     }
   };
-  const trackOtpFailure = (request, eventName, failureCode, {
+  const trackAuthenticationFailure = (request, eventName, failureCode, {
     challengeId = null,
     attemptBucket = null,
     retryable = true,
+    source = "sms_login",
+    challengeType = "otp_challenge",
   } = {}) => {
     const properties = eventName === "login_otp_request_failed"
       ? { failure_code: failureCode, retryable }
@@ -387,14 +389,21 @@ export function createApi({
     trackBackendAnalytics({
       eventName,
       exhibitionId: otpEventId,
-      source: "sms_login",
-      objectType: challengeId ? "otp_challenge" : null,
+      source,
+      objectType: challengeId ? challengeType : null,
       objectId: challengeId,
       properties,
       request,
       occurredAt: clock().toISOString(),
     });
   };
+  const trackEmailLoginFailure = (request, eventName, failureCode, options = {}) => (
+    trackAuthenticationFailure(request, eventName, failureCode, {
+      ...options,
+      source: "email_login",
+      challengeType: "email_challenge",
+    })
+  );
   const trackGuardrail = (request, {
     userId = null,
     exhibitionId = otpEventId,
@@ -812,6 +821,9 @@ export function createApi({
       && url.pathname === "/api/me/email/challenges";
     if (requestsEmailLogin || requestsEmailBinding) {
       if (!emailLoginReady) {
+        if (requestsEmailLogin) {
+          trackEmailLoginFailure(request, "login_otp_request_failed", "unavailable");
+        }
         sendError(
           response,
           503,
@@ -830,9 +842,21 @@ export function createApi({
         return;
       }
       const parsedBody = await readJsonBody(request, response);
-      if (!parsedBody.ok) return;
+      if (!parsedBody.ok) {
+        if (requestsEmailLogin) {
+          trackEmailLoginFailure(request, "login_otp_request_failed", "invalid_request", {
+            retryable: false,
+          });
+        }
+        return;
+      }
       const email = normalizeEmail(parsedBody.value?.email);
       if (!email) {
+        if (requestsEmailLogin) {
+          trackEmailLoginFailure(request, "login_otp_request_failed", "invalid_request", {
+            retryable: false,
+          });
+        }
         sendError(response, 400, "INVALID_EMAIL", "A valid email address is required.");
         return;
       }
@@ -852,6 +876,9 @@ export function createApi({
             + 60 * 60 * 1000
             - nowDate.getTime()) / 1000,
         ));
+        if (requestsEmailLogin) {
+          trackEmailLoginFailure(request, "login_otp_request_failed", "rate_limited");
+        }
         sendError(
           response,
           429,
@@ -866,6 +893,9 @@ export function createApi({
         const elapsedMs = nowDate.getTime() - new Date(latestChallengeAt).getTime();
         if (elapsedMs < 60_000) {
           const retryAfterSeconds = Math.ceil((60_000 - elapsedMs) / 1000);
+          if (requestsEmailLogin) {
+            trackEmailLoginFailure(request, "login_otp_request_failed", "rate_limited");
+          }
           sendError(
             response,
             429,
@@ -894,6 +924,9 @@ export function createApi({
         await emailSender({ email, code, expiresInMinutes: 10 });
       } catch {
         deleteEmailChallenge(database, challengeId);
+        if (requestsEmailLogin) {
+          trackEmailLoginFailure(request, "login_otp_request_failed", "provider_error");
+        }
         sendError(
           response,
           502,
@@ -930,6 +963,9 @@ export function createApi({
       && url.pathname === "/api/me/email";
     if (verifiesEmailLogin || verifiesEmailBinding) {
       if (!emailLoginReady) {
+        if (verifiesEmailLogin) {
+          trackEmailLoginFailure(request, "login_otp_verification_failed", "unavailable");
+        }
         sendError(
           response,
           503,
@@ -948,7 +984,14 @@ export function createApi({
         return;
       }
       const parsedBody = await readJsonBody(request, response);
-      if (!parsedBody.ok) return;
+      if (!parsedBody.ok) {
+        if (verifiesEmailLogin) {
+          trackEmailLoginFailure(request, "login_otp_verification_failed", "invalid_request", {
+            retryable: false,
+          });
+        }
+        return;
+      }
       const challengeId = parsedBody.value?.challenge_id;
       const code = parsedBody.value?.code;
       if (
@@ -957,6 +1000,12 @@ export function createApi({
         || typeof code !== "string"
         || !/^\d{6}$/.test(code)
       ) {
+        if (verifiesEmailLogin) {
+          trackEmailLoginFailure(request, "login_otp_verification_failed", "invalid_code", {
+            challengeId: typeof challengeId === "string" ? challengeId : null,
+            retryable: false,
+          });
+        }
         sendError(
           response,
           400,
@@ -979,6 +1028,25 @@ export function createApi({
         && !emailCodeHashesEqual(challenge.codeHash, suppliedHash)
       ) {
         recordEmailFailure(database, { challengeId, now });
+        if (verifiesEmailLogin) {
+          trackEmailLoginFailure(
+            request,
+            "login_otp_verification_failed",
+            challenge.attemptsRemaining <= 1 ? "locked" : "invalid_code",
+            {
+              challengeId,
+              attemptBucket: challenge.attemptsRemaining >= 4 ? "1-2" : "3-5",
+              retryable: challenge.attemptsRemaining > 1,
+            },
+          );
+        }
+        sendError(
+          response,
+          400,
+          "INVALID_EMAIL_CODE",
+          "The email code is invalid or expired.",
+        );
+        return;
       }
       if (
         !challengeMatches
@@ -987,6 +1055,19 @@ export function createApi({
         || challenge.attemptsRemaining <= 0
         || !emailCodeHashesEqual(challenge.codeHash, suppliedHash)
       ) {
+        if (verifiesEmailLogin) {
+          const failureCode = !challengeMatches || challenge.consumedAt
+            ? "invalid_code"
+            : challenge.expiresAt <= now
+              ? "expired"
+              : challenge.attemptsRemaining <= 0
+                ? "locked"
+                : "invalid_code";
+          trackEmailLoginFailure(request, "login_otp_verification_failed", failureCode, {
+            challengeId,
+            retryable: false,
+          });
+        }
         sendError(
           response,
           400,
@@ -1003,6 +1084,12 @@ export function createApi({
       try {
         if (!consumeEmailChallenge(database, { challengeId, now })) {
           database.exec("ROLLBACK");
+          if (verifiesEmailLogin) {
+            trackEmailLoginFailure(request, "login_otp_verification_failed", "expired", {
+              challengeId,
+              retryable: false,
+            });
+          }
           sendError(
             response,
             400,
@@ -1164,13 +1251,13 @@ export function createApi({
 
     if (request.method === "POST" && url.pathname === "/api/auth/otp/challenges") {
       if (!smsLoginReady) {
-        trackOtpFailure(request, "login_otp_request_failed", "unavailable");
+        trackAuthenticationFailure(request, "login_otp_request_failed", "unavailable");
         sendError(response, 503, "OTP_UNAVAILABLE", "SMS login is temporarily unavailable.");
         return;
       }
       const parsedBody = await readJsonBody(request, response);
       if (!parsedBody.ok) {
-        trackOtpFailure(request, "login_otp_request_failed", "invalid_request", {
+        trackAuthenticationFailure(request, "login_otp_request_failed", "invalid_request", {
           retryable: false,
         });
         return;
@@ -1180,7 +1267,7 @@ export function createApi({
         ? parsedBody.value.display_name.trim()
         : "";
       if (!phone || displayName.length > 40) {
-        trackOtpFailure(request, "login_otp_request_failed", "invalid_request", {
+        trackAuthenticationFailure(request, "login_otp_request_failed", "invalid_request", {
           retryable: false,
         });
         sendError(
@@ -1200,7 +1287,7 @@ export function createApi({
         const retryAfterSeconds = Math.max(1, Math.ceil(
           (new Date(ipWindow.oldestCreatedAt).getTime() + 60 * 60 * 1000 - nowDate.getTime()) / 1000,
         ));
-        trackOtpFailure(request, "login_otp_request_failed", "rate_limited");
+        trackAuthenticationFailure(request, "login_otp_request_failed", "rate_limited");
         sendError(
           response,
           429,
@@ -1218,7 +1305,7 @@ export function createApi({
         const retryAfterSeconds = Math.max(1, Math.ceil(
           (new Date(phoneWindow.oldestCreatedAt).getTime() + 60 * 60 * 1000 - nowDate.getTime()) / 1000,
         ));
-        trackOtpFailure(request, "login_otp_request_failed", "rate_limited");
+        trackAuthenticationFailure(request, "login_otp_request_failed", "rate_limited");
         sendError(
           response,
           429,
@@ -1233,7 +1320,7 @@ export function createApi({
         const elapsedMs = nowDate.getTime() - new Date(latestChallengeAt).getTime();
         if (elapsedMs < 60_000) {
           const retryAfterSeconds = Math.ceil((60_000 - elapsedMs) / 1000);
-          trackOtpFailure(request, "login_otp_request_failed", "rate_limited");
+          trackAuthenticationFailure(request, "login_otp_request_failed", "rate_limited");
           sendError(
             response,
             429,
@@ -1260,7 +1347,7 @@ export function createApi({
         await otpSender({ phone, code });
       } catch {
         deleteOtpChallenge(database, challengeId);
-        trackOtpFailure(request, "login_otp_request_failed", "provider_error");
+        trackAuthenticationFailure(request, "login_otp_request_failed", "provider_error");
         sendError(
           response,
           502,
@@ -1292,13 +1379,13 @@ export function createApi({
 
     if (request.method === "POST" && url.pathname === "/api/auth/otp/sessions") {
       if (typeof otpSecret !== "string" || !otpSecret) {
-        trackOtpFailure(request, "login_otp_verification_failed", "unavailable");
+        trackAuthenticationFailure(request, "login_otp_verification_failed", "unavailable");
         sendError(response, 503, "OTP_UNAVAILABLE", "SMS login is temporarily unavailable.");
         return;
       }
       const parsedBody = await readJsonBody(request, response);
       if (!parsedBody.ok) {
-        trackOtpFailure(request, "login_otp_verification_failed", "invalid_request", {
+        trackAuthenticationFailure(request, "login_otp_verification_failed", "invalid_request", {
           retryable: false,
         });
         return;
@@ -1311,7 +1398,7 @@ export function createApi({
         || typeof code !== "string"
         || !/^\d{6}$/.test(code)
       ) {
-        trackOtpFailure(request, "login_otp_verification_failed", "invalid_code", {
+        trackAuthenticationFailure(request, "login_otp_verification_failed", "invalid_code", {
           challengeId: typeof challengeId === "string" ? challengeId : null,
           retryable: false,
         });
@@ -1330,7 +1417,7 @@ export function createApi({
         && !otpCodeHashesEqual(challenge.codeHash, suppliedHash)
       ) {
         recordOtpFailure(database, { challengeId, now });
-        trackOtpFailure(
+        trackAuthenticationFailure(
           request,
           "login_otp_verification_failed",
           challenge.attemptsRemaining <= 1 ? "locked" : "invalid_code",
@@ -1357,7 +1444,7 @@ export function createApi({
             : challenge.attemptsRemaining <= 0
               ? "locked"
               : "invalid_code";
-        trackOtpFailure(request, "login_otp_verification_failed", failureCode, {
+        trackAuthenticationFailure(request, "login_otp_verification_failed", failureCode, {
           challengeId,
           retryable: false,
         });
@@ -1372,7 +1459,7 @@ export function createApi({
       try {
         if (!consumeOtpChallenge(database, { challengeId, now })) {
           database.exec("ROLLBACK");
-          trackOtpFailure(request, "login_otp_verification_failed", "expired", {
+          trackAuthenticationFailure(request, "login_otp_verification_failed", "expired", {
             challengeId,
             retryable: false,
           });
