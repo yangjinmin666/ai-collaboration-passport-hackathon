@@ -1,0 +1,40 @@
+.plan-state,
+.task-mode,
+.task-status {
+  padding: 7rpx 14rpx;
+  border-radius: 999rpx;
+  background: #e9ebee;
+  color: #626873;
+  font-size: 21rpx;
+}
+
+.task-number {
+  color: #a0a4ac;
+  font-size: 22rpx;
+  font-weight: 700;
+  letter-spacing: 2rpx;
+}
+
+.task-title {
+  margin-top: 20rpx;
+}
+
+.task-copy {
+  margin-top: 14rpx;
+  color: #4f555f;
+  line-height: 1.6;
+}
+
+.acceptance {
+  margin-top: 18rpx;
+  padding: 18rpx 20rpx;
+  border-radius: 18rpx;
+  background: #f0f1f3;
+  color: #656b75;
+  font-size: 24rpx;
+  line-height: 1.55;
+}
+
+.owner-line {
+  margin-top: 18rpx;
+}

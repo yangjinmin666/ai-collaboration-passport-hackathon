@@ -96,6 +96,11 @@ import {
   hashExperienceClientId,
   verifyExperienceInviteToken,
 } from "./experience-invite.js";
+import {
+  exchangeWechatMiniProgramCode,
+  WECHAT_MINI_PROGRAM_PROVIDER,
+  wechatMiniProgramIsConfigured,
+} from "./wechat-mini-auth.js";
 
 const SOURCES = new Set(["nfc", "qr", "link"]);
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -318,6 +323,8 @@ export function createApi({
   oauthProviders = {},
   androidAppLinkReady = false,
   oauthIdentityResolver = exchangeOAuthCode,
+  wechatMiniProgram = {},
+  wechatMiniIdentityResolver = exchangeWechatMiniProgramCode,
   experienceInviteSecret = null,
   analyticsAdminToken = null,
   analyticsAppVersion = "development",
@@ -338,6 +345,8 @@ export function createApi({
   const emailLoginReady = typeof emailSecret === "string"
     && emailSecret.length > 0
     && typeof emailSender === "function";
+  const wechatMiniLoginReady = wechatMiniProgramIsConfigured(wechatMiniProgram)
+    && typeof wechatMiniIdentityResolver === "function";
   const database = openDatabase(databasePath);
   const analytics = createAnalyticsService(database, {
     clock,
@@ -486,6 +495,7 @@ export function createApi({
         sms_delivery: resolvedOtpDeliveryMode,
         email_login: emailLoginReady ? "ready" : "disabled",
         email_delivery: emailLoginReady ? "resend" : "disabled",
+        wechat_mini_login: wechatMiniLoginReady ? "ready" : "disabled",
         analytics: "ready",
       });
       return;
@@ -787,6 +797,90 @@ export function createApi({
         is_new_user: exchange.isNewUser,
         provider: exchange.provider,
         user: findUserIdentity(database, exchange.userId),
+      });
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/auth/wechat-mini/sessions") {
+      if (!wechatMiniLoginReady) {
+        sendError(
+          response,
+          503,
+          "WECHAT_MINI_LOGIN_UNAVAILABLE",
+          "WeChat Mini Program login is not configured.",
+        );
+        return;
+      }
+      const parsedBody = await readJsonBody(request, response);
+      if (!parsedBody.ok) return;
+      const code = parsedBody.value?.code;
+      if (
+        typeof code !== "string"
+        || !/^[A-Za-z0-9_-]{1,512}$/.test(code)
+      ) {
+        sendError(
+          response,
+          400,
+          "INVALID_WECHAT_MINI_CODE",
+          "A valid wx.login code is required.",
+        );
+        return;
+      }
+
+      let identity;
+      try {
+        identity = await wechatMiniIdentityResolver({
+          code,
+          config: wechatMiniProgram,
+        });
+      } catch {
+        sendError(
+          response,
+          502,
+          "WECHAT_MINI_LOGIN_FAILED",
+          "WeChat Mini Program login could not be completed.",
+        );
+        return;
+      }
+      if (
+        !identity
+        || typeof identity.subject !== "string"
+        || !identity.subject
+        || identity.subject.length > 512
+      ) {
+        sendError(
+          response,
+          502,
+          "WECHAT_MINI_LOGIN_FAILED",
+          "WeChat Mini Program returned an invalid identity.",
+        );
+        return;
+      }
+
+      const nowDate = clock();
+      const now = nowDate.toISOString();
+      const { userId, isNewUser } = findOrCreateOAuthUser(database, {
+        provider: WECHAT_MINI_PROGRAM_PROVIDER,
+        subject: identity.subject,
+        email: null,
+        emailVerified: false,
+        displayName: null,
+        eventId: otpEventId,
+        now,
+      });
+      const expiresAt = new Date(nowDate.getTime() + sessionTtlMs).toISOString();
+      const session = createAuthSession(database, {
+        userId,
+        now,
+        expiresAt,
+      });
+      sendJson(response, 201, {
+        access_token: session.token,
+        token_type: "Bearer",
+        expires_at: session.expiresAt,
+        is_new_user: isNewUser,
+        provider: WECHAT_MINI_PROGRAM_PROVIDER,
+        user: findUserIdentity(database, userId),
       });
       return;
     }

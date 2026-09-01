@@ -1,0 +1,30 @@
+<view class="page" wx:if="{{user}}">
+  <view class="hero profile-hero">
+    <view class="avatar">{{initials}}</view>
+    <view>
+      <view class="title profile-name">{{user.display_name}}</view>
+      <view class="subtitle">{{profile.role}}·{{profile.status}}</view>
+    </view>
+  </view>
+
+  <view class="card switch-row">
+    <view>
+      <view class="card-title">展会可见</view>
+      <view class="meta">关闭后不再出现于发现和附近</view>
+    </view>
+    <switch checked="{{visible}}" disabled="{{saving}}" color="#282b31" bindchange="toggleVisibility" />
+  </view>
+
+  <view class="card" wx:if="{{profile}}">
+    <view class="card-title">我的协作身份</view>
+    <view class="tag-row">
+      <view class="tag" wx:for="{{profile.skills}}" wx:key="*this">{{item}}</view>
+    </view>
+    <view class="profile-line">可投入：{{profile.availability}}</view>
+    <view class="profile-line">正在寻找：{{profile.collaboration_need}}</view>
+    <button class="secondary-button" bindtap="editProfile">编辑资料</button>
+  </view>
+
+  <view class="notice">微信 OpenID 只用于识别登录，COSPAN 内部账号和业务数据独立存储。</view>
+  <button class="quiet-button" bindtap="logout">退出当前账号</button>
+</view>

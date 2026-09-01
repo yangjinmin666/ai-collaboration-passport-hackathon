@@ -28,6 +28,7 @@ describe("NFC card public profile", () => {
       sms_delivery: "disabled",
       email_login: "disabled",
       email_delivery: "disabled",
+      wechat_mini_login: "disabled",
       analytics: "ready",
     });
   });

@@ -1,0 +1,41 @@
+.login-page {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.brand-mark {
+  display: flex;
+  width: 84rpx;
+  height: 84rpx;
+  align-items: center;
+  justify-content: center;
+  margin-left: 4rpx;
+  border-radius: 28rpx;
+  background: #282b31;
+  color: #fff;
+  font-size: 42rpx;
+  font-weight: 700;
+}
+
+.promise-card {
+  margin-top: 10rpx;
+}
+
+.promise {
+  padding: 12rpx 0;
+  color: #5f6570;
+}
+
+.login-button {
+  width: 100%;
+  margin-top: 24rpx;
+}
+
+.privacy-note {
+  padding: 24rpx 24rpx 0;
+  color: #92969e;
+  font-size: 22rpx;
+  line-height: 1.55;
+  text-align: center;
+}

@@ -169,6 +169,35 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "413": { $ref: "#/components/responses/PayloadTooLarge" }
+  /api/auth/wechat-mini/sessions:
+    post:
+      tags: [Identity]
+      summary: Exchange a wx.login code for a revocable COSPAN Bearer session
+      description: >-
+        The backend exchanges the one-time code through WeChat jscode2session, binds the
+        resulting app-scoped OpenID to an internal COSPAN user, and never returns session_key.
+        The Mini Program AppSecret is a server-only setting.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [code]
+              properties:
+                code: { type: string, minLength: 1, maxLength: 512, pattern: "^[A-Za-z0-9_-]+$" }
+      responses:
+        "201":
+          description: Bearer session issued for a new or returning Mini Program identity
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WechatMiniSessionResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "502": { description: WeChat code exchange failed or returned an invalid identity }
+        "503": { description: Mini Program login is not configured on the server }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
   /api/auth/experience-sessions:
     post:
       tags: [Identity]
@@ -1398,7 +1427,7 @@ components:
   schemas:
     HealthResponse:
       type: object
-      required: [status, service, sms_login, sms_delivery, email_login, email_delivery, analytics]
+      required: [status, service, sms_login, sms_delivery, email_login, email_delivery, wechat_mini_login, analytics]
       properties:
         status: { type: string, const: ok }
         service: { type: string, const: rally-api }
@@ -1406,6 +1435,7 @@ components:
         sms_delivery: { type: string, enum: [tencent_cloud, fixed_demo, test, disabled] }
         email_login: { type: string, enum: [ready, disabled] }
         email_delivery: { type: string, enum: [resend, disabled] }
+        wechat_mini_login: { type: string, enum: [ready, disabled] }
         analytics: { type: string, const: ready }
     AnalyticsBatch:
       type: object
@@ -1553,6 +1583,13 @@ components:
           required: [provider]
           properties:
             provider: { type: string, enum: [google, wechat] }
+    WechatMiniSessionResponse:
+      allOf:
+        - $ref: "#/components/schemas/OtpSessionResponse"
+        - type: object
+          required: [provider]
+          properties:
+            provider: { type: string, const: wechat_mini_program }
     ProfileInput:
       type: object
       required: [role, status, skills, interests, availability, collaboration_preferences, collaboration_need, evidence]

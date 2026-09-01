@@ -1,0 +1,61 @@
+<view class="page">
+  <view class="hero">
+    <view class="eyebrow">COSPAN SPACE</view>
+    <view class="title">从认识到一起做事</view>
+    <view class="subtitle">Agent 只提议任务和风险，加入团队、领取任务和确认计划都由人决定。</view>
+  </view>
+
+  <block wx:if="{{invitations.length}}">
+    <view class="section-title">待确认的入队邀请</view>
+    <view class="card" wx:for="{{invitations}}" wx:key="id">
+      <view class="card-title">{{item.project.title}}</view>
+      <view class="meta">{{item.counterpart.display_name}} 邀请你负责「{{item.role_need.title}}」</view>
+      <view class="tag-row">
+        <view class="tag" wx:for="{{item.role_need.skills}}" wx:key="*this" wx:for-item="skill">{{skill}}</view>
+      </view>
+      <button class="primary-button" data-invitation-id="{{item.id}}" bindtap="acceptInvitation">确认加入</button>
+    </view>
+  </block>
+
+  <view class="status-line section-heading">
+    <view class="section-title">我的协作空间</view>
+    <button class="mini-action" bindtap="toggleCreate">{{showCreate ? '收起' : '新建'}}</button>
+  </view>
+
+  <view class="card" wx:if="{{showCreate}}">
+    <view class="card-title">创建一个真实项目</view>
+    <label class="field-label">项目名</label>
+    <input class="input" placeholder="例如：现场 AI 工牌" data-field="title" bindinput="updateProjectField" />
+    <label class="field-label">一句话目标</label>
+    <textarea class="textarea" placeholder="这个项目要解决什么" data-field="summary" bindinput="updateProjectField" />
+    <label class="field-label">当前最缺的角色</label>
+    <input class="input" placeholder="例如：交互设计" data-field="roleTitle" bindinput="updateProjectField" />
+    <label class="field-label">该角色需要的技能</label>
+    <input class="input" placeholder="交互，视觉，用户测试" data-field="roleSkills" bindinput="updateProjectField" />
+    <button class="primary-button" loading="{{creating}}" bindtap="createProject">创建 COSPAN Space</button>
+  </view>
+
+  <view class="card" wx:for="{{projects}}" wx:key="id">
+    <view class="status-line">
+      <view class="card-title">{{item.title}}</view>
+      <view class="project-status">{{item.status}}</view>
+    </view>
+    <view class="meta">{{item.summary}}</view>
+    <view class="member-line">{{item.members.length}} 人·你是 {{item.my_membership.membership_role}}</view>
+    <button class="secondary-button" data-project-id="{{item.id}}" bindtap="openRoom">进入协作空间</button>
+    <button
+      wx:for="{{item.inviteOptions}}"
+      wx:key="key"
+      wx:for-item="option"
+      class="quiet-button"
+      data-project-id="{{item.id}}"
+      data-option-key="{{option.key}}"
+      bindtap="inviteCandidate"
+    >
+      邀请 {{option.displayName}} 负责「{{option.roleTitle}}」
+    </button>
+  </view>
+  <block wx:if="{{!projects.length}}">
+    <view class="empty" wx:if="{{!showCreate}}">还没有项目，可以先认识一位搭档，再一起创建</view>
+  </block>
+</view>

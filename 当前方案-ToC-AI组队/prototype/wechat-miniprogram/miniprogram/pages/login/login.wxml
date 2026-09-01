@@ -1,0 +1,17 @@
+<view class="page login-page">
+  <view class="brand-mark">C</view>
+  <view class="hero">
+    <view class="eyebrow">COSPAN｜合拍</view>
+    <view class="title">在现场找到能一起做成事的人</view>
+    <view class="subtitle">你的协作身份、真实建联和人机任务空间，都在一个现场流程里。</view>
+  </view>
+  <view class="card promise-card">
+    <view class="promise">① 完善你今天的协作资料</view>
+    <view class="promise">② 发现附近互补的参与者</view>
+    <view class="promise">③ 双方确认后进入 COSPAN Space</view>
+  </view>
+  <button class="primary-button login-button" loading="{{loading}}" bindtap="login">
+    微信一键进入
+  </button>
+  <view class="privacy-note">无需手输账号或现场访问码。你开启现场可见前，资料默认隐藏。</view>
+</view>

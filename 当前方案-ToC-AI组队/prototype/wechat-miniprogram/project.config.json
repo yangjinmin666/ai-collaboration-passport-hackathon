@@ -1,0 +1,16 @@
+{
+  "appid": "touristappid",
+  "compileType": "miniprogram",
+  "libVersion": "trial",
+  "miniprogramRoot": "miniprogram/",
+  "projectname": "COSPAN-WeChat-Mini-Program",
+  "setting": {
+    "checkInvalidKey": true,
+    "coverView": true,
+    "es6": true,
+    "lazyloadPlaceholderEnable": false,
+    "minified": true,
+    "postcss": true,
+    "urlCheck": false
+  }
+}

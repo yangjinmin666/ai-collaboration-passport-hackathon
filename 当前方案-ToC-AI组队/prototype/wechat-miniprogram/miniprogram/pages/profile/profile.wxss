@@ -1,0 +1,30 @@
+.profile-hero {
+  display: flex;
+  align-items: center;
+  gap: 24rpx;
+}
+
+.avatar {
+  display: flex;
+  width: 112rpx;
+  height: 112rpx;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border-radius: 38rpx;
+  background: #282b31;
+  color: #fff;
+  font-size: 44rpx;
+  font-weight: 700;
+}
+
+.profile-name {
+  margin-top: 0;
+  font-size: 40rpx;
+}
+
+.profile-line {
+  margin-top: 22rpx;
+  color: #565c66;
+  line-height: 1.6;
+}

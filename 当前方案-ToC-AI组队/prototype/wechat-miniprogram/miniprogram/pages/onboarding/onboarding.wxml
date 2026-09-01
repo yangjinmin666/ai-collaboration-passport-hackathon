@@ -1,0 +1,40 @@
+<view class="page">
+  <view class="hero">
+    <view class="eyebrow">今天的协作身份</view>
+    <view class="title">让别人知道为什么要找你</view>
+    <view class="subtitle">这些信息只用于活动内匹配，你随时可以暂停现场可见。</view>
+  </view>
+
+  <view class="card">
+    <label class="field-label">你希望别人怎么称呼你</label>
+    <input class="input" placeholder="例如：林海" value="{{form.displayName}}" data-field="displayName" bindinput="updateField" />
+
+    <label class="field-label">你今天的角色</label>
+    <input class="input" placeholder="例如：嵌入式工程师" value="{{form.role}}" data-field="role" bindinput="updateField" />
+
+    <label class="field-label">组队状态</label>
+    <picker class="picker" mode="selector" range="{{statuses}}" value="{{statusIndex}}" bindchange="changeStatus">
+      {{form.status}}
+    </picker>
+
+    <label class="field-label">3–5 个技能</label>
+    <input class="input" placeholder="ESP32，IoT，硬件" value="{{form.skills}}" data-field="skills" bindinput="updateField" />
+
+    <label class="field-label">感兴趣的方向</label>
+    <input class="input" placeholder="AI 硬件，空间交互" value="{{form.interests}}" data-field="interests" bindinput="updateField" />
+
+    <label class="field-label">今天可投入的时间</label>
+    <input class="input" placeholder="今晚 18:00–22:00" value="{{form.availability}}" data-field="availability" bindinput="updateField" />
+
+    <label class="field-label">协作偏好</label>
+    <input class="input" placeholder="结对协作，快速原型" value="{{form.collaborationPreferences}}" data-field="collaborationPreferences" bindinput="updateField" />
+
+    <label class="field-label">现在想找什么协作</label>
+    <textarea class="textarea" placeholder="例如：寻找产品与设计搭档" value="{{form.collaborationNeed}}" data-field="collaborationNeed" bindinput="updateField" />
+
+    <label class="field-label">经历证据（可选）</label>
+    <textarea class="textarea" placeholder="作品、项目或经验，用逗号分隔" value="{{form.evidence}}" data-field="evidence" bindinput="updateField" />
+  </view>
+
+  <button class="primary-button" loading="{{saving}}" bindtap="save">保存并开启现场可见</button>
+</view>

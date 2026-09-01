@@ -118,7 +118,9 @@ for oauth_secret in \
   GOOGLE_OAUTH_CLIENT_ID \
   GOOGLE_OAUTH_CLIENT_SECRET \
   WECHAT_OAUTH_APP_ID \
-  WECHAT_OAUTH_APP_SECRET
+  WECHAT_OAUTH_APP_SECRET \
+  WECHAT_MINI_PROGRAM_APP_ID \
+  WECHAT_MINI_PROGRAM_APP_SECRET
 do
   append_secret_from_environment "${oauth_secret}"
 done

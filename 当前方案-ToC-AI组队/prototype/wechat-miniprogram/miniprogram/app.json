@@ -1,0 +1,36 @@
+{
+  "pages": [
+    "pages/login/login",
+    "pages/onboarding/onboarding",
+    "pages/discover/discover",
+    "pages/collaboration/collaboration",
+    "pages/room/room",
+    "pages/profile/profile"
+  ],
+  "window": {
+    "backgroundColor": "#f4f5f7",
+    "backgroundTextStyle": "light",
+    "navigationBarBackgroundColor": "#f7f8fa",
+    "navigationBarTextStyle": "black",
+    "navigationBarTitleText": "COSPAN｜合拍"
+  },
+  "tabBar": {
+    "backgroundColor": "#ffffff",
+    "borderStyle": "white",
+    "color": "#8b8f98",
+    "selectedColor": "#25282e",
+    "list": [
+      { "pagePath": "pages/discover/discover", "text": "发现" },
+      { "pagePath": "pages/collaboration/collaboration", "text": "协作" },
+      { "pagePath": "pages/profile/profile", "text": "我" }
+    ]
+  },
+  "permission": {
+    "scope.userLocation": {
+      "desc": "仅在你开启现场可见时，用于计算附近参与者的距离区间"
+    }
+  },
+  "requiredPrivateInfos": ["getLocation"],
+  "sitemapLocation": "sitemap.json",
+  "style": "v2"
+}

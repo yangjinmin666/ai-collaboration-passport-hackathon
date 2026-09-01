@@ -1,0 +1,55 @@
+<view class="page">
+  <view class="hero">
+    <view class="eyebrow">{{eventName}}</view>
+    <view class="title">现场找搭档</view>
+    <view class="subtitle">COSPAN 说清互补的理由，是否认识由你们双方决定。</view>
+  </view>
+
+  <view class="card switch-row">
+    <view>
+      <view class="card-title">附近模式</view>
+      <view class="meta">前台短时定位，不展示精确坐标</view>
+    </view>
+    <switch checked="{{nearbyEnabled}}" color="#282b31" bindchange="toggleNearby" />
+  </view>
+
+  <block wx:if="{{nearbyEnabled}}">
+    <view class="section-title">真实在附近</view>
+    <view class="card" wx:for="{{nearby}}" wx:key="user_id">
+      <view class="status-line">
+        <view class="card-title">{{item.display_name}}</view>
+        <view class="distance">{{item.distanceLabel}}</view>
+      </view>
+      <view class="meta">{{item.role}}</view>
+    </view>
+    <view class="empty" wx:if="{{!nearby.length}}">还没有其他开启附近模式的人</view>
+  </block>
+
+  <block wx:if="{{incoming.length}}">
+    <view class="section-title">想认识你</view>
+    <view class="card" wx:for="{{incoming}}" wx:key="id">
+      <view class="card-title">{{item.counterpart.display_name}}</view>
+      <view class="meta">{{item.counterpart.role}}·{{item.message || '希望在现场认识你'}}</view>
+      <button class="primary-button" data-request-id="{{item.id}}" bindtap="acceptConnection">{{item.view.label}}</button>
+    </view>
+  </block>
+
+  <view class="section-title">今天值得认识</view>
+  <view class="card person-card" wx:for="{{people}}" wx:key="user_id">
+    <view class="status-line">
+      <view>
+        <view class="card-title">{{item.display_name}}</view>
+        <view class="meta">{{item.role}}·{{item.status}}</view>
+      </view>
+    </view>
+    <view class="need">{{item.collaboration_need}}</view>
+    <view class="tag-row">
+      <view class="tag" wx:for="{{item.skills}}" wx:key="*this" wx:for-item="skill">{{skill}}</view>
+    </view>
+    <view class="reason" wx:if="{{item.recommendation.reasons.length}}">
+      合拍理由：{{item.recommendation.reasons[0]}}
+    </view>
+    <button class="secondary-button" data-user-id="{{item.user_id}}" bindtap="requestConnection">想认识</button>
+  </view>
+  <view class="empty" wx:if="{{showEmptyPeople}}">暂时没有新的匹配，稍后再来看看</view>
+</view>

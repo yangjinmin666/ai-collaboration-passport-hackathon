@@ -36,6 +36,10 @@ const oauthProviders = {
     clientSecret: process.env.WECHAT_OAUTH_APP_SECRET,
   },
 };
+const wechatMiniProgram = {
+  appId: process.env.WECHAT_MINI_PROGRAM_APP_ID,
+  appSecret: process.env.WECHAT_MINI_PROGRAM_APP_SECRET,
+};
 const tencentSmsConfig = {
   secretId: process.env.TENCENT_SMS_SECRET_ID,
   secretKey: process.env.TENCENT_SMS_SECRET_KEY,
@@ -115,6 +119,7 @@ const api = createApi({
   publicApiOrigin,
   oauthStateSecret,
   oauthProviders,
+  wechatMiniProgram,
   experienceInviteSecret,
   emailSecret,
   emailSender,
@@ -156,6 +161,10 @@ for (const [provider, config] of Object.entries(oauthProviders)) {
   if (!oauthBaseReady || !providerReady) {
     console.warn(`${provider} OAuth login is disabled because its server settings are incomplete.`);
   }
+}
+if (![wechatMiniProgram.appId, wechatMiniProgram.appSecret]
+  .every((value) => typeof value === "string" && value.trim())) {
+  console.warn("WeChat Mini Program login is disabled because its server settings are incomplete.");
 }
 if (allowInsecureDemoAuth) {
   console.warn("Insecure x-demo-user-id authentication is enabled. Use only on a trusted local demo network.");

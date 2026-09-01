@@ -33,6 +33,7 @@ describe("SMS login readiness", () => {
       sms_delivery: "tencent_cloud",
       email_login: "disabled",
       email_delivery: "disabled",
+      wechat_mini_login: "disabled",
       analytics: "ready",
     });
   });

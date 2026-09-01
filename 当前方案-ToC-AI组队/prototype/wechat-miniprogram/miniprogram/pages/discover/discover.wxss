@@ -1,0 +1,23 @@
+.need {
+  margin-top: 22rpx;
+  color: #3f444c;
+  line-height: 1.6;
+}
+
+.reason {
+  margin-top: 22rpx;
+  padding: 18rpx 20rpx;
+  border-radius: 18rpx;
+  background: #f0f1f3;
+  color: #5e646e;
+  font-size: 24rpx;
+  line-height: 1.55;
+}
+
+.distance {
+  padding: 8rpx 14rpx;
+  border-radius: 999rpx;
+  background: #eceef1;
+  color: #626873;
+  font-size: 22rpx;
+}

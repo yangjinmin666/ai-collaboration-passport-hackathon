@@ -1,0 +1,42 @@
+<view class="page" wx:if="{{room}}">
+  <view class="hero">
+    <view class="eyebrow">COSPAN SPACE</view>
+    <view class="title">{{room.project.title}}</view>
+    <view class="subtitle">{{room.project.summary}}</view>
+  </view>
+
+  <view class="card">
+    <view class="status-line">
+      <view class="card-title">共同计划</view>
+      <view class="plan-state">{{room.starter_pack ? room.starter_pack.status : '尚未生成'}}</view>
+    </view>
+    <view class="meta">{{room.members.length}} 位成员·{{room.confirmation_progress.confirmed}}/{{room.confirmation_progress.required}} 人已确认</view>
+    <view class="notice" wx:if="{{room.starter_pack}}">
+      Agent 建议不会自动派单。每项任务需要成员亲自领取，全员确认后才能开始执行。
+    </view>
+    <button wx:if="{{!room.starter_pack}}" class="primary-button" loading="{{working}}" bindtap="generatePlan">
+      请 Agent 生成 3 项起步任务
+    </button>
+    <button wx:if="{{room.canConfirmPlan}}" class="secondary-button" loading="{{working}}" bindtap="confirmPlan">
+      我确认这份共同计划
+    </button>
+  </view>
+
+  <view class="section-title">任务编排</view>
+  <view class="card task-card" wx:for="{{room.tasks}}" wx:key="id">
+    <view class="status-line">
+      <view class="task-number">0{{index + 1}}</view>
+      <view class="task-mode">{{item.mode}}</view>
+    </view>
+    <view class="card-title task-title">{{item.title}}</view>
+    <view class="task-copy">{{item.objective}}</view>
+    <view class="acceptance">验收：{{item.acceptance_criteria}}</view>
+    <view class="status-line owner-line">
+      <view class="meta">负责人：{{item.ownerName}}</view>
+      <view class="task-status">{{item.status}}</view>
+    </view>
+    <button wx:if="{{item.canClaim}}" class="primary-button" data-task-id="{{item.id}}" bindtap="claimTask">{{item.claimLabel}}</button>
+    <button wx:if="{{item.canStart}}" class="secondary-button" data-task-id="{{item.id}}" data-action="start" bindtap="moveTask">开始执行</button>
+    <button wx:if="{{item.canComplete}}" class="secondary-button" data-task-id="{{item.id}}" data-action="complete" bindtap="moveTask">标记完成</button>
+  </view>
+</view>

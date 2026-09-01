@@ -55,6 +55,8 @@ GOOGLE_OAUTH_CLIENT_ID='google-client-id' \
 GOOGLE_OAUTH_CLIENT_SECRET='google-client-secret' \
 WECHAT_OAUTH_APP_ID='wechat-app-id' \
 WECHAT_OAUTH_APP_SECRET='wechat-app-secret' \
+WECHAT_MINI_PROGRAM_APP_ID='wx-mini-program-app-id' \
+WECHAT_MINI_PROGRAM_APP_SECRET='mini-program-app-secret' \
 ANDROID_APP_SHA256_CERT_FINGERPRINT='AA:BB:...:FF' \
 TENCENT_SMS_SECRET_ID='rally-sms-sub-user-secret-id' \
 TENCENT_SMS_SECRET_KEY='rally-sms-sub-user-secret-key' \
@@ -181,6 +183,12 @@ Google: https://<api-domain>/api/auth/oauth/google/callback
 Android App Link 只有在服务器设置 `ANDROID_APP_SHA256_CERT_FINGERPRINT` 后启用。部署脚本会据此生成 `/.well-known/assetlinks.json`；值必须是当前 APK 签名证书的 32 组大写十六进制 SHA-256 指纹。调试包与正式包签名不同，上线时必须替换为正式签名指纹。没有这项配置时，API 的 `android_enabled` 为 `false`，体验包会禁用 Google 按钮，避免把未验证 HTTPS 回调当成安全可用。
 
 当前微信实现是公众号网页授权（`snsapi_userinfo`），用于用户在微信内打开 COSPAN 网页版的场景。Android 原生一键微信登录需要另外接入微信 OpenSDK、应用签名与 Universal Link；在这套配置完成前，体验包会明确提示“请从微信打开网页版”，不会把系统浏览器流程伪装成可用的原生微信登录。
+
+## 微信小程序登录
+
+小程序使用 `wx.login` 获取一次性 `code`，再调用 `POST /api/auth/wechat-mini/sessions` 换取 COSPAN Bearer Session。服务器通过微信 `jscode2session` 完成校验，以“AppID + OpenID”作为稳定的小程序登录主体，避免 UnionID 后续变为可用时重复建号；COSPAN 内部 UUID 仍是业务主键。`session_key` 不返回客户端，也不作为 COSPAN Session。
+
+`WECHAT_MINI_PROGRAM_APP_ID` 和 `WECHAT_MINI_PROGRAM_APP_SECRET` 只写入腾讯云服务器环境文件。AppSecret 不能进入小程序代码、Git、聊天或截图。小程序与公众号网页 OAuth 的 App ID / Secret 不是同一组配置。
 
 ## 体验群免输码链接
 
